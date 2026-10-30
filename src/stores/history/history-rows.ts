@@ -1,5 +1,6 @@
 import { ExecutionHistoryStatus, type ExecutionHistoryRecord } from "@agboss/core";
 import { z } from "zod";
+import { unescapedJson } from "../nul-escape.js";
 
 /**
  * A row of `agboss_execution_history` read back: its `record` column is the record `save` wrote,
@@ -33,7 +34,7 @@ const isHistoryRecord = (value: unknown): value is ExecutionHistoryRecord =>
 
 /** The record of a row (`SELECT record …`). */
 export function historyRecordOf(row: unknown): ExecutionHistoryRecord {
-  const { record } = HistoryRow.parse(row);
+  const record = unescapedJson(HistoryRow.parse(row).record);
   if (!isHistoryRecord(record))
     throw new Error(`a stored execution history record is not readable: ${JSON.stringify(record)}`);
   return record;

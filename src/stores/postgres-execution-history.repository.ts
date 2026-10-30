@@ -7,6 +7,7 @@ import {
 import { PostgresConnection } from "../connection/postgres-connection.js";
 import { changesOf, rowsOf, type Parameters } from "../connection/query.js";
 import { historyRecordOf } from "./history/history-rows.js";
+import { escapedJsonOf } from "./nul-escape.js";
 
 /** Replaces the row of the record's tenant and execution (the last save wins). */
 const UPSERT = `INSERT INTO agboss_execution_history
@@ -55,7 +56,7 @@ export class PostgresExecutionHistoryRepository extends ExecutionHistoryReposito
       record.threadId,
       momentOf(record.startedAt),
       momentOf(record.endedAt),
-      JSON.stringify(record),
+      escapedJsonOf(record),
     ]);
   }
 

@@ -171,11 +171,11 @@ npx agboss-postgres migrate --url "$DATABASE_URL"   # or DATABASE_URL alone
 ```text
 applied 0001_execution_leases (public)
 …
-applied 0012_mesh_requests (public)
+applied 0013_nul_escape (public)
 applied 6 LangGraph checkpoint migration(s)
 ```
 
-A second run prints `nothing to apply: public is at migration 12`. Exit codes: `0` done, `1` the
+A second run prints `nothing to apply: public is at migration 13`. Exit codes: `0` done, `1` the
 migration failed (the reason on stderr), `2` a usage error.
 
 In Kubernetes, the command is a Job run before the Deployment rolls out (a Helm `pre-upgrade` hook,
@@ -243,7 +243,20 @@ a pod never waits on another's migration at start (both are safe: they serialize
 | `0010_execution_history`      | `agboss_execution_history`                                                                                                                              |
 | `0011_rate_limits`            | `agboss_rate_limit_keys`, `agboss_rate_limit_slots`, `agboss_rate_limit_window_buckets`, `agboss_rate_limit_pauses`                                     |
 | `0012_mesh_requests`          | `agboss_mesh_requests`                                                                                                                                  |
+| `0013_nul_escape`             | none: doubles U+E000 in the columns the stores now escape (agbossjs/agboss#521)                                                                         |
 | LangGraph                     | `checkpoints`, `checkpoint_blobs`, `checkpoint_writes`, `checkpoint_migrations`                                                                         |
+
+## Text with a NUL character
+
+PostgreSQL keeps no NUL character (U+0000): `text` refuses it and `jsonb` refuses the escape
+`\u0000`. A model's or a tool's answer may hold one, and a store gives back what the framework hands
+it (agbossjs/agboss#521, the NUL case of each contract suite). So every framework string kept in
+`jsonb` (records' route and steps, tree values, pauses, lease events, history, mesh answers) or as
+free text (a record's task, answer and stop reason, a summary) is escaped on the way in and back on
+the way out — U+0000 → U+E000 `0`, U+E000 → U+E000 U+E000 (`src/stores/nul-escape.ts`); nothing else
+changes, so `jsonb`'s operators keep working. Columns that keep JSON as `text` (a paused run, the
+pause log, the child queue, fenced-effect results) hold `\u0000` as an escape already. Checkpoints
+are LangGraph's `bytea` blobs.
 
 ## Semantics per operation
 

@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { ExecutionRecordStatus } from "@agboss/core";
 import { z } from "zod";
 import { changesOf, firstRowOf, rowsOf, type Queryable } from "../../connection/query.js";
+import { escapedJsonOf, escapedText } from "../nul-escape.js";
 import {
   outcomeParameters,
   type NewRecord,
@@ -69,12 +70,12 @@ export async function appendRecord(
       stored.threadId,
       stored.bundle,
       now,
-      stored.task,
-      stored.replyWith,
+      escapedText(stored.task),
+      escapedText(stored.replyWith),
       stored.status,
-      stored.stopReason,
-      JSON.stringify(stored.route),
-      JSON.stringify(stored.steps),
+      escapedText(stored.stopReason),
+      escapedJsonOf(stored.route),
+      escapedJsonOf(stored.steps),
       stored.costUsd,
       stored.promptVersion,
       stored.modelVersion,

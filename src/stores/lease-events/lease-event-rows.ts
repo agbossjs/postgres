@@ -9,6 +9,7 @@ import {
   type ExecutionLeaseEventRecord,
 } from "@agboss/core";
 import { z } from "zod";
+import { unescapedJson } from "../nul-escape.js";
 
 /**
  * A row of `agboss_execution_lease_events` read back: its `record` column is the record `save`
@@ -79,4 +80,4 @@ const EventRow = z.object({ record: z.unknown() });
 
 /** The record of a row (`SELECT record …`). */
 export const leaseEventOf = (row: unknown): ExecutionLeaseEventRecord =>
-  Record.parse(EventRow.parse(row).record);
+  Record.parse(unescapedJson(EventRow.parse(row).record));

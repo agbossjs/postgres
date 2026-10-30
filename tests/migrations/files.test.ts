@@ -24,8 +24,9 @@ describe("the package's migration files", () => {
       "10:execution_history",
       "11:rate_limits",
       "12:mesh_requests",
+      "13:nul_escape",
     ]);
-    expect(newestVersionOf(files)).toBe(12);
+    expect(newestVersionOf(files)).toBe(13);
     expect(files.every((file) => file.checksum === checksumOf(file.sql))).toBe(true);
   });
 
@@ -65,8 +66,8 @@ describe("the package's migration files", () => {
       .map(({ version, name, checksum }) => ({ version, name, checksum }));
 
     expect(pendingMigrations(files, applied).map((file) => file.version)).toEqual([
-      5, 6, 7, 8, 9, 10, 11, 12,
+      5, 6, 7, 8, 9, 10, 11, 12, 13,
     ]);
-    expect(pendingMigrations(files, [])).toHaveLength(12);
+    expect(pendingMigrations(files, [])).toHaveLength(13);
   });
 });

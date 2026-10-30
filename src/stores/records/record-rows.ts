@@ -10,6 +10,7 @@ import type {
   VersionScore,
 } from "@agboss/core";
 import { z } from "zod";
+import { escapedJsonOf, escapedText, unescapedText } from "../nul-escape.js";
 
 /**
  * The shapes `ExecutionRecordRepository` reads and writes — the core's own types, exported with its
@@ -57,6 +58,9 @@ export const RECORD_COLUMNS_OF_R = RECORD_COLUMNS.split(",")
   .map((column) => `r.${column.trim()}`)
   .join(", ");
 
+/** A string a column keeps escaped (agbossjs/agboss#521: no U+0000 in PostgreSQL). */
+const kept = z.string().transform(unescapedText);
+
 const RecordRow = z.object({
   id: z.string(),
   run_id: z.string().nullable(),
@@ -64,12 +68,12 @@ const RecordRow = z.object({
   thread_id: z.string(),
   workflow: z.string(),
   created_at: z.date(),
-  task: z.string(),
-  reply_with: z.string(),
+  task: kept,
+  reply_with: kept,
   status: z.enum(STATUSES),
-  stop_reason: z.string(),
-  route: z.array(z.string()),
-  steps: z.array(z.object({ agent: z.string(), content: z.string() })),
+  stop_reason: kept,
+  route: z.array(kept),
+  steps: z.array(z.object({ agent: kept, content: kept })),
   cost_usd: z.number(),
   prompt_version: z.string(),
   model_version: z.string(),
@@ -108,10 +112,10 @@ export const recordsOf = (rows: readonly unknown[]): StoredRecord[] => rows.map(
 
 /** The outcome's columns as statement parameters, in `SET` order. */
 export const outcomeParameters = (outcome: RecordOutcome): readonly unknown[] => [
-  outcome.replyWith,
+  escapedText(outcome.replyWith),
   outcome.status,
-  outcome.stopReason,
-  JSON.stringify(outcome.route),
-  JSON.stringify(outcome.steps),
+  escapedText(outcome.stopReason),
+  escapedJsonOf(outcome.route),
+  escapedJsonOf(outcome.steps),
   outcome.costUsd,
 ];

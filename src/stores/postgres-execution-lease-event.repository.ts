@@ -6,6 +6,7 @@ import {
 import { PostgresConnection } from "../connection/postgres-connection.js";
 import { changesOf, rowsOf } from "../connection/query.js";
 import { leaseEventOf } from "./lease-events/lease-event-rows.js";
+import { escapedJsonOf } from "./nul-escape.js";
 
 /**
  * `ExecutionLeaseEventRepository` on PostgreSQL (#501, #482): the append-only lease log, one row
@@ -31,12 +32,7 @@ export class PostgresExecutionLeaseEventRepository extends ExecutionLeaseEventRe
       this.connection.pool,
       `INSERT INTO agboss_execution_lease_events (tenant_id, root_execution_id, occurred_at, record)
        VALUES ($1, $2, $3, $4::jsonb)`,
-      [
-        record.tenantId,
-        record.rootExecutionId,
-        new Date(record.occurredAt),
-        JSON.stringify(record),
-      ],
+      [record.tenantId, record.rootExecutionId, new Date(record.occurredAt), escapedJsonOf(record)],
     );
   }
 
