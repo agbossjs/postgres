@@ -1,0 +1,8 @@
+node_modules
+dist
+coverage
+.packed
+.agboss-source
+temp
+api/*.api.md
+package-lock.json
