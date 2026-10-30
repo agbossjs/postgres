@@ -1,31 +1,40 @@
-import type { ExecutionRecordRepository } from "@agboss/core";
+import type {
+  ConfigSnapshot,
+  NewSummary,
+  NewTern,
+  NewThread,
+  PauseAnswerRecord,
+  Summary,
+  Tern,
+  TernOutcome,
+  VersionScore,
+} from "@agboss/core";
 import { z } from "zod";
 
 /**
- * The shapes `ExecutionRecordRepository` reads and writes, derived from its public signatures —
- * `@agboss/core` names them (`Tern`, `NewTern`, `TernOutcome`, `Summary`, …) but does not export
- * them — and the rows of `agboss_execution_records`, validated on the way out.
+ * The shapes `ExecutionRecordRepository` reads and writes — the core's own types, exported with its
+ * contract (agbossjs/agboss#511) — and the rows of `agboss_execution_records`, validated on the way
+ * out.
  */
-type Records = ExecutionRecordRepository;
 
-/** One execution's record as the repository gives it (the core's `Tern`). */
-export type StoredRecord = Awaited<ReturnType<Records["append"]>>;
-/** A record to append (the core's `NewTern`). */
-export type NewRecord = Parameters<Records["append"]>[0];
-/** What completing a record changes (the core's `TernOutcome`). */
-export type RecordOutcome = Parameters<Records["complete"]>[1];
+/** One execution's record as the repository gives it. */
+export type StoredRecord = Tern;
+/** A record to append. */
+export type NewRecord = NewTern;
+/** What completing a record changes. */
+export type RecordOutcome = TernOutcome;
 /** A thread to create. */
-export type NewThreadRecord = Parameters<Records["createThread"]>[0];
-/** A memory summary of a thread's turns (the core's `Summary`). */
-export type StoredSummary = Awaited<ReturnType<Records["addSummary"]>>;
-/** A summary to add (the core's `NewSummary`). */
-export type NewSummaryRecord = Parameters<Records["addSummary"]>[0];
-/** A resolved config first seen under a version (the core's `ConfigSnapshot`). */
-export type StoredConfigSnapshot = Awaited<ReturnType<Records["configSnapshots"]>>[number];
-/** Mean score and cost of one prompt version (the core's `VersionScore`). */
-export type StoredVersionScore = Awaited<ReturnType<Records["summary"]>>[number];
+export type NewThreadRecord = NewThread;
+/** A memory summary of a thread's turns. */
+export type StoredSummary = Summary;
+/** A summary to add. */
+export type NewSummaryRecord = NewSummary;
+/** A resolved config first seen under a version. */
+export type StoredConfigSnapshot = ConfigSnapshot;
+/** Mean score and cost of one prompt version. */
+export type StoredVersionScore = VersionScore;
 /** A resolved pause as the permanent log keeps it. */
-export type PauseAnswer = Parameters<Records["savePauseAnswer"]>[2];
+export type PauseAnswer = PauseAnswerRecord;
 
 /** The statuses a record has (`ExecutionRecordStatus`'s values). */
 const STATUSES = [

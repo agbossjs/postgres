@@ -23,20 +23,6 @@ import { once } from "../connection/once.js";
  * recovery continues a `running` tree from its last checkpoint. It never ends the shared pool:
  * `PostgresConnection` does, when the instance stops.
  */
-/**
- * The current version of every channel the checkpoint holds a value of. `PostgresSaver` writes the
- * blobs of `newVersions` only; the core's checkpoint contract (as its SQLite saver, which keeps the
- * whole checkpoint) expects every value of a `put` back — so each value is written under its
- * current version too: one already stored is left as it is (`ON CONFLICT DO NOTHING`).
- */
-function storedVersionsOf(checkpoint: Checkpoint): ChannelVersions {
-  return Object.fromEntries(
-    Object.entries(checkpoint.channel_versions).filter(
-      ([channel]) => channel in checkpoint.channel_values,
-    ),
-  );
-}
-
 @Injectable({ deps: [PostgresConnection] })
 export class PostgresCheckpointSaver extends BaseCheckpointSaver {
   readonly #saver: () => Promise<PostgresSaver>;
@@ -72,10 +58,8 @@ export class PostgresCheckpointSaver extends BaseCheckpointSaver {
     metadata: CheckpointMetadata,
     newVersions: ChannelVersions,
   ): Promise<RunnableConfig> {
-    return (await this.#saver()).put(config, checkpoint, metadata, {
-      ...storedVersionsOf(checkpoint),
-      ...newVersions,
-    });
+    // the versions LangGraph passes, as they are: the core's contract passes them too (#511)
+    return (await this.#saver()).put(config, checkpoint, metadata, newVersions);
   }
 
   async putWrites(
