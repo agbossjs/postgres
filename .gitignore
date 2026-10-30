@@ -3,6 +3,8 @@ dist
 coverage
 .packed
 .agboss-source
+# the fixtures' flow types `npm run check:types` generates (agboss check): never committed
+.agboss
 temp
 *.tsbuildinfo
 .DS_Store

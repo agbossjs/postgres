@@ -3,6 +3,7 @@ dist
 coverage
 .packed
 .agboss-source
+.agboss
 temp
 api/*.api.md
 package-lock.json

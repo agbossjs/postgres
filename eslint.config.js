@@ -9,7 +9,7 @@ import { agbossPlugin } from "@agboss/core/eslint";
  * `scripts/check-suppressions.mjs`, whose budget is zero.
  */
 export default tseslint.config(
-  { ignores: ["dist", "coverage", "node_modules", ".packed", ".agboss-source", "temp"] },
+  { ignores: ["dist", "coverage", "node_modules", ".packed", ".agboss-source", ".agboss", "temp"] },
   js.configs.recommended,
   ...tseslint.configs.strictTypeChecked,
   ...tseslint.configs.stylisticTypeChecked,
