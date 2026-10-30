@@ -1,8 +1,9 @@
 # AGENTS.md — @agboss/postgres
 
-AGBoss's coordination stores on PostgreSQL (agbossjs/agboss#482): several application instances,
-each its own process with no shared disk, share execution trees on one database. The package
-implements the core's infrastructure contracts; it never changes them.
+AGBoss's stores on PostgreSQL (agbossjs/agboss#482, #483): several application instances, each its
+own process with no shared disk, share execution trees, budgets, history, rate limits and mesh
+requests on one database. The package implements the core's infrastructure contracts; it never
+changes them.
 
 ## Stack
 
@@ -33,9 +34,10 @@ PostgreSQL (`AGBOSS_POSTGRES_TEST_URL`) · api-extractor (`api/postgres.api.md`)
   locking are stated in each store's doc comment. Time only from the `Clock` (parameters, never
   `now()`).
 - `src/cli.ts` + `bin/agboss-postgres.js` — the command.
-- `tests/processes/` + `tests/fixtures/` — the two-process tests (AC1–AC3): each instance a `node`
-  child (`--import tsx`) running `ProcessApplication` on the test's schema, driven over stdin/stdout.
-  Typed by `tsconfig.processes.json` (the generated flow types stay out of the other tests).
+- `tests/processes/` + `tests/fixtures/` — the two-process tests (#482 AC1–AC3, #483 AC1–AC4):
+  each instance a `node` child (`--import tsx`) running `ProcessApplication` on the test's schema,
+  driven over stdin/stdout, serving A2A on a port of its own. Typed by `tsconfig.processes.json`
+  (the generated flow types stay out of the other tests).
 
 ## Rules
 

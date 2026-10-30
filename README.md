@@ -4,11 +4,14 @@ PostgreSQL stores for [AGBoss](https://github.com/agbossjs/agboss): several appl
 each its own process, no shared disk (pods on different Kubernetes nodes) — share execution trees on
 one PostgreSQL database. A pod that dies mid-run is taken over by another from its last checkpoint;
 children queued with `ChildPlacement.AnyInstance` are claimed by any instance, each exactly once; a
-pause made on one instance is resumed on another. Each of these is proven by two real `node`
-processes on one database (see [Tests](#tests)).
+pause made on one instance is resumed on another. Budgets, provider rate limits, the execution
+history and mesh request deduplication are shared too: a tenant's $10 day is $10 across every pod.
+Each of these is proven by two real `node` processes on one database (see [Tests](#tests)).
 
-> Status: leases, records, trees, pauses, the child queue, checkpoints, the fenced effect (#500) and
-> the lease log (#501). The outbound-call store (#505) comes next.
+> Status: leases, records, trees, pauses, the child queue, checkpoints, the fenced effect (#500),
+> the lease log (#501), the cost ledger, the execution history, rate limits and mesh requests
+> (#483): an application runs on PostgreSQL alone. Only the outbound-call store (#505), for calls
+> recorded as leaving the system, comes next.
 
 ## Install
 
@@ -26,15 +29,20 @@ Every coordination store has a PostgreSQL implementation. List them in the appli
 
 ```ts
 import { Application } from "@agboss/core";
+import { days } from "@agboss/core/units";
 import {
   PostgresCheckpointSaver,
   PostgresChildExecutionQueueRepository,
+  PostgresCostLedgerRepository,
+  PostgresExecutionHistoryRepository,
   PostgresExecutionLeaseEventRepository,
   PostgresExecutionLeaseRepository,
   PostgresExecutionRecordRepository,
   PostgresExecutionTreeRepository,
   PostgresFencedEffectRepository,
+  PostgresMeshRequestRepository,
   PostgresPausedExecutionRepository,
+  PostgresRateLimitRepository,
 } from "@agboss/postgres";
 import { AppEnvironment } from "./environments/app.environment.js";
 
@@ -43,34 +51,43 @@ import { AppEnvironment } from "./environments/app.environment.js";
   version: "1.0.0",
   environment: AppEnvironment,
   workflows: [DeskWorkflow],
+  executionRecordRetention: days(30), // keeps the history `agboss records export` reads
   providers: [
     PostgresCheckpointSaver, // LangGraph's PostgresSaver on the shared pool
     PostgresChildExecutionQueueRepository, // ChildPlacement.AnyInstance children
+    PostgresCostLedgerRepository, // budgets: every pod's spend in one counter
+    PostgresExecutionHistoryRepository, // agboss records export, from any pod
     PostgresExecutionLeaseEventRepository, // the lease log: app.leaseEventsOf
     PostgresExecutionLeaseRepository, // who moves a tree, fenced by epoch
     PostgresExecutionRecordRepository, // threads, records, scores, summaries
     PostgresExecutionTreeRepository, // a tree's keys (saveIfAbsent)
     PostgresFencedEffectRepository, // with PostgresExecutionLeaseRepository: it reads its leases
+    PostgresMeshRequestRepository, // a mesh request retried on another pod runs once
     PostgresPausedExecutionRepository, // pauses, answered on any instance
+    PostgresRateLimitRepository, // maxConcurrentCalls, per-minute windows, 429 pauses, breakers
   ],
 })
 export class DeskApplication {}
 ```
 
-| Store                                   | Core contract                        | Tables                                                       |
-| --------------------------------------- | ------------------------------------ | ------------------------------------------------------------ |
-| `PostgresExecutionLeaseRepository`      | `ExecutionLeaseRepository`           | `agboss_execution_leases`                                    |
-| `PostgresExecutionRecordRepository`     | `ExecutionRecordRepository`          | `agboss_threads`, `agboss_execution_records`, … (`0002`)     |
-| `PostgresExecutionTreeRepository`       | `ExecutionTreeRepository`            | `agboss_execution_tree_keys`                                 |
-| `PostgresPausedExecutionRepository`     | `PausedExecutionRepository`          | `agboss_paused_executions`, `agboss_pauses`                  |
-| `PostgresChildExecutionQueueRepository` | `ChildExecutionQueueRepository`      | `agboss_child_execution_queue`                               |
-| `PostgresCheckpointSaver`               | LangGraph `BaseCheckpointSaver`      | `checkpoints`, `checkpoint_blobs`, `checkpoint_writes`       |
-| `PostgresFencedEffectRepository`        | `FencedEffectRepository<PoolClient>` | `agboss_fenced_effect_marks`, `agboss_fenced_effect_results` |
-| `PostgresExecutionLeaseEventRepository` | `ExecutionLeaseEventRepository`      | `agboss_execution_lease_events`                              |
+| Store                                   | Core contract                        | Tables                                                              |
+| --------------------------------------- | ------------------------------------ | ------------------------------------------------------------------- |
+| `PostgresExecutionLeaseRepository`      | `ExecutionLeaseRepository`           | `agboss_execution_leases`                                           |
+| `PostgresExecutionRecordRepository`     | `ExecutionRecordRepository`          | `agboss_threads`, `agboss_execution_records`, … (`0002`)            |
+| `PostgresExecutionTreeRepository`       | `ExecutionTreeRepository`            | `agboss_execution_tree_keys`                                        |
+| `PostgresPausedExecutionRepository`     | `PausedExecutionRepository`          | `agboss_paused_executions`, `agboss_pauses`                         |
+| `PostgresChildExecutionQueueRepository` | `ChildExecutionQueueRepository`      | `agboss_child_execution_queue`                                      |
+| `PostgresCheckpointSaver`               | LangGraph `BaseCheckpointSaver`      | `checkpoints`, `checkpoint_blobs`, `checkpoint_writes`              |
+| `PostgresFencedEffectRepository`        | `FencedEffectRepository<PoolClient>` | `agboss_fenced_effect_marks`, `agboss_fenced_effect_results`        |
+| `PostgresExecutionLeaseEventRepository` | `ExecutionLeaseEventRepository`      | `agboss_execution_lease_events`                                     |
+| `PostgresCostLedgerRepository`          | `CostLedgerRepository`               | `agboss_cost_counters`, `agboss_cost_max_spend`                     |
+| `PostgresExecutionHistoryRepository`    | `ExecutionHistoryRepository`         | `agboss_execution_history`                                          |
+| `PostgresRateLimitRepository`           | `RateLimitRepository`                | `agboss_rate_limit_keys`, `…_slots`, `…_window_buckets`, `…_pauses` |
+| `PostgresMeshRequestRepository`         | `MeshRequestRepository`              | `agboss_mesh_requests`                                              |
 
-The cost ledger, rate limits, history and mesh requests are not in this package yet (the next
-sub-issue of agbossjs/agboss#469): until then each instance counts budgets on its own, which the
-application's start warns about (`application.in-memory-cost-ledger`).
+With all of them listed, nothing of the application is per pod: budgets sum every pod's spend, a
+provider's limits hold across pods, `agboss records export` on any pod lists every pod's
+executions, and a mesh request retried against another pod is answered from the first run.
 
 Every store injects `PostgresConnection` — one `pg.Pool` per application instance, ended when the
 instance stops — and answers `ping()` with `SELECT 1` (`app.checkReadiness()`). Time always comes
@@ -154,11 +171,11 @@ npx agboss-postgres migrate --url "$DATABASE_URL"   # or DATABASE_URL alone
 ```text
 applied 0001_execution_leases (public)
 …
-applied 0008_execution_lease_yield (public)
+applied 0012_mesh_requests (public)
 applied 6 LangGraph checkpoint migration(s)
 ```
 
-A second run prints `nothing to apply: public is at migration 8`. Exit codes: `0` done, `1` the
+A second run prints `nothing to apply: public is at migration 12`. Exit codes: `0` done, `1` the
 migration failed (the reason on stderr), `2` a usage error.
 
 In Kubernetes, the command is a Job run before the Deployment rolls out (a Helm `pre-upgrade` hook,
@@ -193,7 +210,7 @@ spec:
 import { migratePostgres } from "@agboss/postgres";
 
 const report = await migratePostgres({ url, signal });
-// { schema: "public", applied: [{ version: 8, name: "execution_lease_yield" }], version: 8, checkpointMigrations: 0 }
+// { schema: "public", applied: [{ version: 12, name: "mesh_requests" }], version: 12, checkpointMigrations: 0 }
 ```
 
 **The start flag.** At `onInit`, `PostgresConnection` compares the database with the package:
@@ -222,6 +239,10 @@ a pod never waits on another's migration at start (both are safe: they serialize
 | `0006_fenced_effects`         | `agboss_fenced_effect_marks`, `agboss_fenced_effect_results`                                                                                            |
 | `0007_execution_lease_events` | `agboss_execution_lease_events`                                                                                                                         |
 | `0008_execution_lease_yield`  | `agboss_execution_leases.yielded` (agbossjs/agboss#516)                                                                                                 |
+| `0009_cost_ledger`            | `agboss_cost_counters`, `agboss_cost_max_spend`                                                                                                         |
+| `0010_execution_history`      | `agboss_execution_history`                                                                                                                              |
+| `0011_rate_limits`            | `agboss_rate_limit_keys`, `agboss_rate_limit_slots`, `agboss_rate_limit_window_buckets`, `agboss_rate_limit_pauses`                                     |
+| `0012_mesh_requests`          | `agboss_mesh_requests`                                                                                                                                  |
 | LangGraph                     | `checkpoints`, `checkpoint_blobs`, `checkpoint_writes`, `checkpoint_migrations`                                                                         |
 
 ## Semantics per operation
@@ -241,6 +262,14 @@ the tree over, so a pod never moves a tree whose lease it could not renew.
 | Paused        | `Pending → …`        | `UPDATE … WHERE status = 'pending' RETURNING` (none → `NotPausedError` from the core)                           |
 | Fenced effect | `saveResultIfAbsent` | one transaction: lease row `FOR UPDATE`, mark upsert, key lookup, `await work(client)`, insert                  |
 | Lease events  | `save`               | append-only `INSERT`; read `ORDER BY occurred_at, id` (one moment: the order saved)                             |
+| Cost ledger   | `saveAll`            | one `INSERT … ON CONFLICT DO UPDATE SET spent_usd = spent_usd + $cost` of every counter, in key order           |
+| Cost ledger   | `findSpentByCounter` | `SELECT` of the counter's row; no other locking (the core accepts a small overrun on a race, nothing reserved)  |
+| History       | `save`               | upsert of the root's row (`jsonb` record); reads by tenant, id, thread, period (`LIMIT`/`OFFSET`), oldest first |
+| Rate limit    | `acquire`            | one transaction: the key's row `FOR UPDATE`, then sweep expired + `INSERT … WHERE count(valid) < max`           |
+| Rate limit    | `renew` / `release`  | `UPDATE … WHERE slot_id AND expires_at > $now` (0 rows: expired) / `DELETE`                                     |
+| Rate limit    | `addToWindow`        | the key's row `FOR UPDATE`, old buckets forgotten, sum, add to this millisecond's bucket if within the limit    |
+| Rate limit    | `pauseUntil`         | upsert keeping `GREATEST(paused_until, $until)`: a 429 pause or an open breaker, seen by every pod              |
+| Mesh request  | `saveIfAbsent`       | `INSERT … ON CONFLICT DO NOTHING` by (tenant, peer, idempotency key); `deleteCreatedBefore` for the sweep       |
 | Checkpoints   | —                    | LangGraph's `PostgresSaver` on the shared pool                                                                  |
 
 ## Tests
@@ -253,7 +282,7 @@ export AGBOSS_POSTGRES_TEST_URL=postgres://postgres:pw@localhost:5432/postgres
 npm ci
 npm run pack:framework   # @agboss/core and @agboss/cli from the SHA in .agboss-version.json
 npm run install:packed   # installs those tarballs (package.json unchanged)
-npm test                 # every test, the process tests included (~35 s: one waits out a lease)
+npm test                 # every test, the process tests included (~45 s: one waits out a lease)
 npm run check            # format, suppressions, flow types, lint, types, tests + coverage, API report
 ```
 
@@ -273,6 +302,14 @@ Each test file works in a schema of its own (`t_<random>`), dropped after it.
     each hold one at the same time, and every child runs once (a few seconds).
   - `pause-resume.test.ts` (AC3): a pause made on A is answered on B; the tool runs on B, once
     (a few seconds).
+  - `shared-budget.test.ts` (#483 AC1): a $5 call on A and one on B spend the tenant's $10 day;
+    the next execution, on either process, is refused with `BudgetExceededError` before any call.
+  - `shared-rate-limit.test.ts` (#483 AC2): four executions on A and B against a provider with
+    `maxConcurrentCalls: 1`; the provider's calls, timed on the `Clock`, never overlap.
+  - `history-export.test.ts` (#483 AC3): `agboss records export --all-tenants`, run with B's
+    environment, lists the executions run on A and on B.
+  - `mesh-dedup.test.ts` (#483 AC4): a signed A2A request sent to A, then the same one to B, runs
+    once; B answers with A's answer.
 - **Migrations** (`tests/migrations/`) — AC5: a second run changes nothing (a schema dump compared),
   concurrent runs serialize, a changed file fails, too new / too old fail at start.
 

@@ -23,7 +23,7 @@ describe("agboss-postgres migrate", () => {
     expect(await runCommand(["migrate", "--url", url], first)).toBe(ExitCode.Ok);
     expect(await runCommand(["migrate", "--url", url], second)).toBe(ExitCode.Ok);
 
-    expect(first.lines.slice(0, 8)).toEqual([
+    expect(first.lines.slice(0, 12)).toEqual([
       expect.stringMatching(/^applied 0001_execution_leases \(t_/),
       expect.stringMatching(/^applied 0002_execution_records/),
       expect.stringMatching(/^applied 0003_execution_trees/),
@@ -32,10 +32,14 @@ describe("agboss-postgres migrate", () => {
       expect.stringMatching(/^applied 0006_fenced_effects/),
       expect.stringMatching(/^applied 0007_execution_lease_events/),
       expect.stringMatching(/^applied 0008_execution_lease_yield/),
+      expect.stringMatching(/^applied 0009_cost_ledger/),
+      expect.stringMatching(/^applied 0010_execution_history/),
+      expect.stringMatching(/^applied 0011_rate_limits/),
+      expect.stringMatching(/^applied 0012_mesh_requests/),
     ]);
-    expect(first.lines[8]).toMatch(/^applied \d+ LangGraph checkpoint migration\(s\)$/);
+    expect(first.lines[12]).toMatch(/^applied \d+ LangGraph checkpoint migration\(s\)$/);
     expect(second.lines).toEqual([
-      expect.stringMatching(/^nothing to apply: t_\w+ is at migration 8$/),
+      expect.stringMatching(/^nothing to apply: t_\w+ is at migration 12$/),
     ]);
     expect([...first.errors, ...second.errors]).toEqual([]);
   });
@@ -45,7 +49,7 @@ describe("agboss-postgres migrate", () => {
     const io = ioOf({ DATABASE_URL: url });
 
     expect(await runCommand(["migrate"], io)).toBe(ExitCode.Ok);
-    expect(io.lines).toHaveLength(9);
+    expect(io.lines).toHaveLength(13);
   });
 
   it("neither --url nor DATABASE_URL: a usage error, exit code 2", async () => {
@@ -89,13 +93,13 @@ describe("agboss-postgres migrate", () => {
     const url = await freshSchema();
     await migrateWith(
       { url },
-      migrationsIn(migrationsFolder({ "0009_later.sql": "CREATE TABLE later (id integer);" })),
+      migrationsIn(migrationsFolder({ "0013_later.sql": "CREATE TABLE later (id integer);" })),
     );
     const io = ioOf();
 
     expect(await runCommand(["migrate", "--url", url], io)).toBe(ExitCode.Failed);
     expect(io.errors[0]).toMatch(
-      /^agboss-postgres: the migration failed — the PostgreSQL schema is at migration 9/,
+      /^agboss-postgres: the migration failed — the PostgreSQL schema is at migration 13/,
     );
   });
 

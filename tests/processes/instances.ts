@@ -1,15 +1,29 @@
 import { spawn, type ChildProcess } from "node:child_process";
+import { generateKeyPairSync } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { afterEach } from "vitest";
 
 /**
  * The application instances of a process test: each a separate `node` process running
  * `instance.ts` (its own pool on the test's schema), driven over stdin and read over stdout — one
- * JSON object per line. Every instance still running after a test is killed.
+ * JSON object per line. Every instance still running after a test is killed. The mesh peer the
+ * instances trust (`orders-application`) signs with this file's key pair: a test signs as it.
  */
 
 const SCRIPT = fileURLToPath(new URL("./instance.ts", import.meta.url));
 const ROOT = fileURLToPath(new URL("../../", import.meta.url));
+
+/** The Ed25519 pair of the mesh peer `orders-application`: its private key signs a test's envelopes. */
+export const ORDERS_KEYS = generateKeyPairSync("ed25519");
+
+/** The environment of a process of the instances' application (an instance, a CLI command). */
+export const processEnvOf = (url: string): NodeJS.ProcessEnv => ({
+  ...process.env,
+  AGBOSS_PROCESS_DATABASE_URL: url,
+  AGBOSS_PROCESS_MESH_PEER_KEY: ORDERS_KEYS.publicKey
+    .export({ type: "spki", format: "pem" })
+    .toString(),
+});
 
 /** One line an instance wrote. */
 export type InstanceEvent = Readonly<Record<string, unknown>> & { readonly event: string };
@@ -17,6 +31,8 @@ export type InstanceEvent = Readonly<Record<string, unknown>> & { readonly event
 export interface Instance {
   /** Its `ApplicationContext.instanceId`. */
   readonly instanceId: string;
+  /** Where it serves A2A (`http://127.0.0.1:<port>`). */
+  readonly a2aUrl: string;
   /** Every event it wrote so far, in order. */
   readonly events: () => readonly InstanceEvent[];
   /** The first event (written so far or later) `matches` accepts. */
@@ -57,11 +73,7 @@ export async function launch(
 ): Promise<Instance> {
   const child = spawn(process.execPath, ["--import", "tsx", SCRIPT], {
     cwd: ROOT,
-    env: {
-      ...process.env,
-      AGBOSS_PROCESS_DATABASE_URL: url,
-      AGBOSS_PROCESS_GATE: options.gate ?? "",
-    },
+    env: { ...processEnvOf(url), AGBOSS_PROCESS_GATE: options.gate ?? "" },
     stdio: ["pipe", "pipe", "pipe"],
   });
   running.add(child);
@@ -108,7 +120,11 @@ export async function launch(
     const id = sent;
     child.stdin.write(`${JSON.stringify({ id, op, ...fields })}\n`);
     const reply = await next((event) => event.event === "reply" && event.id === id, 90_000);
-    if (typeof reply.error === "string") throw new Error(reply.error);
+    if (typeof reply.error === "string") {
+      const failure = new Error(reply.error);
+      failure.name = String(reply.errorName);
+      throw failure;
+    }
     return reply.result;
   };
   const kill = async (): Promise<NodeJS.Signals | null> => {
@@ -117,7 +133,14 @@ export async function launch(
     return exited;
   };
   const ready = await next((event) => event.event === "ready", 30_000);
-  return { instanceId: String(ready.instanceId), events: () => events, next, send, kill };
+  return {
+    instanceId: String(ready.instanceId),
+    a2aUrl: `http://127.0.0.1:${String(ready.port)}`,
+    events: () => events,
+    next,
+    send,
+    kill,
+  };
 }
 
 /** The events of `kind` an instance wrote. */
