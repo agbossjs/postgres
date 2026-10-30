@@ -59,11 +59,13 @@
     "coverage": "vitest run --coverage",
     "check:api": "npm run build && node scripts/api-report.mjs",
     "api:update": "npm run build && node scripts/api-report.mjs --write",
-    "check": "npm run format:check && npm run check:suppressions && npm run check:types && npm run lint && npm run typecheck && npm run coverage && npm run check:api",
+    "check": "npm run format:check && npm run check:suppressions && npm run check:installs && npm run check:real-time && npm run check:types && npm run lint && npm run typecheck && npm run coverage && npm run check:api",
     "pack:framework": "node scripts/pack-framework.mjs",
     "install:packed": "node scripts/install-packed.mjs",
     "install:published": "node scripts/install-published.mjs",
-    "check:suppressions": "node scripts/check-suppressions.mjs"
+    "check:suppressions": "node scripts/check-suppressions.mjs",
+    "check:installs": "node scripts/check-installs.mjs",
+    "check:real-time": "node scripts/check-real-time.mjs"
   },
   "peerDependencies": {
     "@agboss/core": "^0.1.1",

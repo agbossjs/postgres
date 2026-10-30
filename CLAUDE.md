@@ -15,7 +15,9 @@ PostgreSQL (`AGBOSS_POSTGRES_TEST_URL`) · api-extractor (`api/postgres.api.md`)
 
 - `npm run pack:framework && npm run install:packed` — `@agboss/core` and `@agboss/cli` at the SHA
   pinned in `.agboss-version.json` (pin the current agboss `main` when a store needs a newer core).
-- `npm run check` — format, suppressions (budget 0), flow types (`check:types`: the CLI's
+- `npm run check` — format, suppressions (budget 0), reviewed installs (`check:installs`: a
+  workflow installs with `npm ci`, a script resolves ranges only with `--before`, three days back —
+  agbossjs/agboss#523), no real-time threshold in a test (`check:real-time`), flow types (`check:types`: the CLI's
   `agboss check` on `tests/fixtures/`, writes the uncommitted `.agboss/types.d.ts`), lint, types,
   tests with coverage, API report.
 - `npx agboss-postgres migrate --url <url>` — the migrations (after `npm run build`).
