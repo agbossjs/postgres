@@ -154,11 +154,11 @@ npx agboss-postgres migrate --url "$DATABASE_URL"   # or DATABASE_URL alone
 ```text
 applied 0001_execution_leases (public)
 …
-applied 0007_execution_lease_events (public)
+applied 0008_execution_lease_yield (public)
 applied 6 LangGraph checkpoint migration(s)
 ```
 
-A second run prints `nothing to apply: public is at migration 7`. Exit codes: `0` done, `1` the
+A second run prints `nothing to apply: public is at migration 8`. Exit codes: `0` done, `1` the
 migration failed (the reason on stderr), `2` a usage error.
 
 In Kubernetes, the command is a Job run before the Deployment rolls out (a Helm `pre-upgrade` hook,
@@ -193,7 +193,7 @@ spec:
 import { migratePostgres } from "@agboss/postgres";
 
 const report = await migratePostgres({ url, signal });
-// { schema: "public", applied: [{ version: 7, name: "execution_lease_events" }], version: 7, checkpointMigrations: 0 }
+// { schema: "public", applied: [{ version: 8, name: "execution_lease_yield" }], version: 8, checkpointMigrations: 0 }
 ```
 
 **The start flag.** At `onInit`, `PostgresConnection` compares the database with the package:
@@ -221,6 +221,7 @@ a pod never waits on another's migration at start (both are safe: they serialize
 | `0005_child_execution_queue`  | `agboss_child_execution_queue`                                                                                                                          |
 | `0006_fenced_effects`         | `agboss_fenced_effect_marks`, `agboss_fenced_effect_results`                                                                                            |
 | `0007_execution_lease_events` | `agboss_execution_lease_events`                                                                                                                         |
+| `0008_execution_lease_yield`  | `agboss_execution_leases.yielded` (agbossjs/agboss#516)                                                                                                 |
 | LangGraph                     | `checkpoints`, `checkpoint_blobs`, `checkpoint_writes`, `checkpoint_migrations`                                                                         |
 
 ## Semantics per operation
@@ -233,6 +234,7 @@ the tree over, so a pod never moves a tree whose lease it could not renew.
 | ------------- | -------------------- | --------------------------------------------------------------------------------------------------------------- |
 | Lease         | `acquire`            | `INSERT … ON CONFLICT DO UPDATE … WHERE released OR expires_at <= $now` → epoch + 1, `takenOverFrom` if expired |
 | Lease         | `renew` / `release`  | `UPDATE … WHERE holder AND lease_epoch` (a renewal also `expires_at >= $now`); 0 rows: lost                     |
+| Lease         | `yield` / `reclaim`  | `UPDATE … WHERE holder AND lease_epoch AND expires_at >= $now`: `yielded = true` / epoch + 1; 0 rows: lost      |
 | Record        | `completeIfStatus`   | `UPDATE … WHERE status = $expected`                                                                             |
 | Tree          | `saveIfAbsent`       | `INSERT … ON CONFLICT DO NOTHING RETURNING`                                                                     |
 | Child queue   | claim                | `UPDATE … FROM (SELECT … FOR UPDATE SKIP LOCKED LIMIT 1)`                                                       |

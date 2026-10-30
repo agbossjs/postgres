@@ -5,15 +5,17 @@
  * claimed at once, and B, started while the others wait in the queue, claims one at its start;
  * once the gates open, the rest are claimed as the slots free up. No lease runs out: a few seconds.
  *
- * Where the parent ends depends on a race the core leaves open across processes: while A's parent
- * waits for its remote children it releases its lease in the store (#333 PR 4, the yield), and
- * only A's own memory knows it is yielded (`leaseReleases`). B's recovery sweep at its start takes
- * the root over when it runs before B's child worker fills B's one slot: A's execute then rejects
- * with `ExecutionLeaseLostError` (or `RemoteChildLostError`, once B's join removed the children
- * A waits for) and B finishes the parent (reported on agbossjs/agboss#482). Either way each child
- * runs once and the tree finishes once; the test checks both paths.
+ * While A's parent waits for its remote children it yields its lease in the store — still A's,
+ * renewed on (agbossjs/agboss#516) — so B's recovery sweep at its start, with its one slot free,
+ * finds the root held and takes nothing over: A's execute gets the finished output, A ends the
+ * tree, and the lease log has no takeover of the root (before #516 the yield was a release, and B
+ * took the root over in 15 of 16 runs under load).
  */
-import { ExecutionLeaseEventKind, type ExecutionLeaseEventRecord } from "@agboss/core";
+import {
+  ExecutionLeaseEventKind,
+  LeaseTakeoverReason,
+  type ExecutionLeaseEventRecord,
+} from "@agboss/core";
 import { describe, expect, it } from "vitest";
 import { onSchema, testDatabase } from "../support/database.js";
 import { eventsOf, launch, type Instance, type InstanceEvent } from "./instances.js";
@@ -44,14 +46,12 @@ const rootEndsOf = (instance: Instance, root: string): readonly InstanceEvent[] 
   eventsOf(instance, "end").filter((event) => event.executionId === root);
 
 describe("AC2: AnyInstance children across two processes", () => {
-  it("AC2: each AnyInstance child claimed once", async () => {
+  it("AC2: each AnyInstance child claimed once, and the caller of execute gets the finished output (agbossjs/agboss#516)", async () => {
     const a = await launch(database.url());
-    const batch = a
-      .send("execute", { workflow: "batch", input: JOBS.map((name) => ({ name })) })
-      .then(
-        (result) => ({ result: result as { status: string; output: { text: string } } }),
-        (error: unknown) => ({ error: String(error) }),
-      );
+    const batch = a.send("execute", {
+      workflow: "batch",
+      input: JOBS.map((name) => ({ name })),
+    }) as Promise<{ status: string; output: { text: string } }>;
     const first = await a.next((event) => event.event === "child-ran");
     const root = String(first.rootExecutionId);
     const b = await launch(database.url());
@@ -78,9 +78,11 @@ describe("AC2: AnyInstance children across two processes", () => {
 
     await Promise.all([a.send("open"), b.send("open")]);
     const done = await batch;
-    const finisher = "result" in done ? a : b;
-    await finisher.next((event) => event.event === "end" && event.executionId === root);
+    await a.next((event) => event.event === "end" && event.executionId === root);
 
+    // the caller of execute gets the finished output: every child's result, in the join
+    expect(done.status).toBe("finished");
+    expect(done.output.text.split(", ").sort()).toEqual(JOBS);
     // every child ran once, on one of the two instances, and both instances ran some
     const ran = [...eventsOf(a, "child-ran"), ...eventsOf(b, "child-ran")];
     expect(ran.map((event) => event.name).sort()).toEqual(JOBS);
@@ -88,32 +90,25 @@ describe("AC2: AnyInstance children across two processes", () => {
     expect(new Set(ran.map((event) => event.instanceId))).toEqual(
       new Set([a.instanceId, b.instanceId]),
     );
-    // the tree finished once, at its finish, on the instance that held it last
+    // the tree finished once, at its finish, on A, which held it all along
     expect([...rootEndsOf(a, root), ...rootEndsOf(b, root)]).toEqual([
       expect.objectContaining({ finish: "batch-workflow-finish" }),
     ]);
-    expect(rootEndsOf(finisher, root)).toHaveLength(1);
-    if ("result" in done) {
-      expect(done.result.status).toBe("finished");
-      expect(done.result.output.text.split(", ").sort()).toEqual(JOBS);
-    } else {
-      // the race: B's sweep took the yielded root over; A's parent stops when it re-acquires the
-      // lease, or sooner, when B's join has removed the children it waits for
-      expect(done.error).toMatch(
-        /ExecutionLeaseLostError: .*another instance took it|RemoteChildLostError: child execution .* is no longer queued/,
-      );
-      const rows = (await b.send("lease-events", {
-        tenantId: String(first.tenantId),
-        rootExecutionId: root,
-      })) as ExecutionLeaseEventRecord[];
-      expect(rows).toContainEqual(
-        expect.objectContaining({
-          kind: ExecutionLeaseEventKind.Takeover,
-          executionId: root,
-          holderInstanceId: b.instanceId,
-        }),
-      );
-    }
+    expect(rootEndsOf(a, root)).toHaveLength(1);
+    // no instance took the root's lease over: only A's own reclaims after each wait
+    const rows = (await b.send("lease-events", {
+      tenantId: String(first.tenantId),
+      rootExecutionId: root,
+    })) as ExecutionLeaseEventRecord[];
+    const rootTakes = rows.filter(
+      (row) => row.kind === ExecutionLeaseEventKind.Takeover && row.executionId === root,
+    );
+    expect(rootTakes.length).toBeGreaterThan(0);
+    expect(
+      new Set(
+        rootTakes.map((row) => `${row.holderInstanceId} ${"reason" in row ? row.reason : ""}`),
+      ),
+    ).toEqual(new Set([`${a.instanceId} ${LeaseTakeoverReason.Reacquired}`]));
     // the tree joined its children: none is left in the queue to be claimed again
     expect(await queueOf(root)).toEqual([]);
   }, 120_000);

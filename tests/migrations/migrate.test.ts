@@ -18,6 +18,7 @@ const PACKAGE_MIGRATIONS = [
   "5:child_execution_queue",
   "6:fenced_effects",
   "7:execution_lease_events",
+  "8:execution_lease_yield",
 ];
 
 const rejectionOf = async (call: Promise<unknown>): Promise<unknown> =>
@@ -37,7 +38,7 @@ describe("migratePostgres (AC5)", () => {
     const second = await migratePostgres({ url });
 
     expect(first.applied.map((m) => `${String(m.version)}:${m.name}`)).toEqual(PACKAGE_MIGRATIONS);
-    expect(first.version).toBe(7);
+    expect(first.version).toBe(8);
     expect(first.checkpointMigrations).toBeGreaterThan(0);
     expect(second).toEqual({ ...first, applied: [], checkpointMigrations: 0 });
     expect(await schemaDumpOf(url)).toBe(dumped);
@@ -79,7 +80,7 @@ describe("migratePostgres (AC5)", () => {
     const reports = await Promise.all([1, 2, 3].map(() => migratePostgres({ url })));
 
     const applied = reports.map((report) => report.applied.length).sort();
-    expect(applied).toEqual([0, 0, 7]);
+    expect(applied).toEqual([0, 0, 8]);
     expect(await historyOf(url)).toEqual(PACKAGE_MIGRATIONS);
   });
 
@@ -105,14 +106,14 @@ describe("migratePostgres (AC5)", () => {
     await holder.end();
 
     expect(doneWhileLocked).toBe(false);
-    expect((await run).applied).toHaveLength(7);
+    expect((await run).applied).toHaveLength(8);
   });
 
   it("a migration changed after it was applied fails the run, and nothing more is applied", async () => {
     const url = await freshSchema();
     await migrateWith(
       { url },
-      migrationsIn(migrationsFolder({ "0007_execution_lease_events.sql": null })),
+      migrationsIn(migrationsFolder({ "0008_execution_lease_yield.sql": null })),
     );
     const changed = migrationsFolder({
       "0002_execution_records.sql": "CREATE TABLE edited_after_release (id integer);",
@@ -126,8 +127,15 @@ describe("migratePostgres (AC5)", () => {
       version: 2,
       migration: "execution_records",
     });
-    expect(await historyOf(url)).toEqual(PACKAGE_MIGRATIONS.slice(0, 6));
-    expect(await tablesOf(url)).not.toContain("agboss_execution_lease_events");
+    expect(await historyOf(url)).toEqual(PACKAGE_MIGRATIONS.slice(0, 7));
+    const leaseColumns = await onSchema(
+      url,
+      `SELECT column_name FROM information_schema.columns
+       WHERE table_schema = current_schema() AND table_name = 'agboss_execution_leases'`,
+    );
+    expect(leaseColumns.rows.map((row: { column_name: string }) => row.column_name)).not.toContain(
+      "yielded",
+    );
   });
 
   it("an applied migration renamed in the package fails the run", async () => {
@@ -147,20 +155,20 @@ describe("migratePostgres (AC5)", () => {
   it("a database a newer package migrated fails the run: PostgresSchemaTooNewError", async () => {
     const url = await freshSchema();
     const newer = migrationsFolder({
-      "0008_later_feature.sql": "CREATE TABLE later (id integer);",
+      "0009_later_feature.sql": "CREATE TABLE later (id integer);",
     });
     await migrateWith({ url }, migrationsIn(newer));
 
     const error = await rejectionOf(migratePostgres({ url }));
 
     expect(error).toBeInstanceOf(PostgresSchemaTooNewError);
-    expect(error).toMatchObject({ code: "postgres.schema-too-new", applied: 8, expected: 7 });
+    expect(error).toMatchObject({ code: "postgres.schema-too-new", applied: 9, expected: 8 });
   });
 
   it("a failing migration is rolled back alone: the ones before it stay applied", async () => {
     const url = await freshSchema();
     const broken = migrationsFolder({
-      "0008_broken.sql": "CREATE TABLE half_made (id integer); SELECT no_such_function();",
+      "0009_broken.sql": "CREATE TABLE half_made (id integer); SELECT no_such_function();",
     });
 
     await expect(migrateWith({ url }, migrationsIn(broken))).rejects.toThrow(/no_such_function/);
@@ -173,12 +181,12 @@ describe("migratePostgres (AC5)", () => {
     const url = await freshSchema();
     await migrateWith(
       { url },
-      migrationsIn(migrationsFolder({ "0007_execution_lease_events.sql": null })),
+      migrationsIn(migrationsFolder({ "0008_execution_lease_yield.sql": null })),
     );
 
     const report = await migratePostgres({ url });
 
-    expect(report.applied).toEqual([{ version: 7, name: "execution_lease_events" }]);
+    expect(report.applied).toEqual([{ version: 8, name: "execution_lease_yield" }]);
     expect(report.checkpointMigrations).toBe(0);
   });
 

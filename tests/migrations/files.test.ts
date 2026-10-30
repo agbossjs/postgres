@@ -19,8 +19,9 @@ describe("the package's migration files", () => {
       "5:child_execution_queue",
       "6:fenced_effects",
       "7:execution_lease_events",
+      "8:execution_lease_yield",
     ]);
-    expect(newestVersionOf(files)).toBe(7);
+    expect(newestVersionOf(files)).toBe(8);
     expect(files.every((file) => file.checksum === checksumOf(file.sql))).toBe(true);
   });
 
@@ -59,7 +60,7 @@ describe("the package's migration files", () => {
       .slice(0, 4)
       .map(({ version, name, checksum }) => ({ version, name, checksum }));
 
-    expect(pendingMigrations(files, applied).map((file) => file.version)).toEqual([5, 6, 7]);
-    expect(pendingMigrations(files, [])).toHaveLength(7);
+    expect(pendingMigrations(files, applied).map((file) => file.version)).toEqual([5, 6, 7, 8]);
+    expect(pendingMigrations(files, [])).toHaveLength(8);
   });
 });
