@@ -18,6 +18,8 @@ import { Class } from '@agboss/core';
 import { Clock } from '@agboss/core';
 import type { ConfigSnapshot } from '@agboss/core';
 import { ExecutionLease } from '@agboss/core';
+import { ExecutionLeaseEventRecord } from '@agboss/core';
+import { ExecutionLeaseEventRepository } from '@agboss/core';
 import { ExecutionLeaseRepository } from '@agboss/core';
 import { ExecutionRecordRepository } from '@agboss/core';
 import { ExecutionRecordStatus } from '@agboss/core';
@@ -134,6 +136,19 @@ export interface PostgresConnectionSettings {
     readonly migrateOnStart?: boolean;
     readonly poolSize?: number;
     readonly url: string;
+}
+
+// @public
+export class PostgresExecutionLeaseEventRepository extends ExecutionLeaseEventRepository {
+    constructor(connection: PostgresConnection);
+    // (undocumented)
+    deleteByOccurredAtBefore(cutoff: Date): Promise<void>;
+    // (undocumented)
+    findAllByTenantIdAndRootExecutionIdOrderByOccurredAt(tenantId: string, rootExecutionId: string): Promise<readonly ExecutionLeaseEventRecord[]>;
+    // (undocumented)
+    ping(): Promise<void>;
+    // (undocumented)
+    save(record: ExecutionLeaseEventRecord): Promise<void>;
 }
 
 // @public
@@ -353,6 +368,10 @@ export interface SchemaVersions {
 // src/stores/postgres-child-execution-queue.repository.ts:127:9 - (ae-undocumented) Missing documentation for "claimFirstByStatusQueuedOrderByDepthDesc".
 // src/stores/postgres-child-execution-queue.repository.ts:135:9 - (ae-undocumented) Missing documentation for "completeByTenantIdAndExecutionId".
 // src/stores/postgres-child-execution-queue.repository.ts:156:9 - (ae-undocumented) Missing documentation for "deleteAllByTenantIdAndRootExecutionId".
+// src/stores/postgres-execution-lease-event.repository.ts:25:3 - (ae-undocumented) Missing documentation for "ping".
+// src/stores/postgres-execution-lease-event.repository.ts:29:9 - (ae-undocumented) Missing documentation for "save".
+// src/stores/postgres-execution-lease-event.repository.ts:43:9 - (ae-undocumented) Missing documentation for "findAllByTenantIdAndRootExecutionIdOrderByOccurredAt".
+// src/stores/postgres-execution-lease-event.repository.ts:56:9 - (ae-undocumented) Missing documentation for "deleteByOccurredAtBefore".
 // src/stores/postgres-execution-lease.repository.ts:80:3 - (ae-undocumented) Missing documentation for "ping".
 // src/stores/postgres-execution-lease.repository.ts:84:9 - (ae-undocumented) Missing documentation for "acquire".
 // src/stores/postgres-execution-lease.repository.ts:116:9 - (ae-undocumented) Missing documentation for "renew".
