@@ -4,6 +4,8 @@
  * each call 300 ms and tells the test when it started and ended on the `Clock`: the four calls
  * never overlap — each starts after the one before it ended, whichever process made either —
  * and both processes made calls. With a slot per process, A's and B's calls would overlap.
+ * Only the order of the moments is asserted, never how long a call took (agbossjs/agboss#523: a
+ * 300 ms floor measured 299 ms — a timer may fire a millisecond before the clock says it is due).
  */
 import { describe, expect, it } from "vitest";
 import { testDatabase } from "../support/database.js";
@@ -56,7 +58,7 @@ describe("AC2: a provider rate limit across two processes", () => {
       new Set([a.instanceId, b.instanceId]),
     );
     for (const [index, call] of calls.entries()) {
-      expect(call.end - call.start).toBeGreaterThanOrEqual(300);
+      expect(call.end).toBeGreaterThan(call.start);
       const before = calls[index - 1];
       if (before !== undefined) expect(call.start).toBeGreaterThanOrEqual(before.end);
     }
