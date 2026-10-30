@@ -24,14 +24,15 @@ const ACQUIRE = `WITH previous AS MATERIALIZED (
     WHERE tenant_id = $1 AND root_execution_id = $2 FOR UPDATE
   )
   INSERT INTO agboss_execution_leases AS lease
-    (tenant_id, root_execution_id, holder_instance_id, lease_epoch, expires_at, released)
-  SELECT $1::text, $2::text, $3::text, 1, $4::timestamptz, false
+    (tenant_id, root_execution_id, holder_instance_id, lease_epoch, expires_at, released, yielded)
+  SELECT $1::text, $2::text, $3::text, 1, $4::timestamptz, false, false
     FROM (SELECT 1) AS one LEFT JOIN previous ON true
   ON CONFLICT (tenant_id, root_execution_id) DO UPDATE SET
     holder_instance_id = EXCLUDED.holder_instance_id,
     lease_epoch = lease.lease_epoch + 1,
     expires_at = EXCLUDED.expires_at,
-    released = false
+    released = false,
+    yielded = false
   WHERE lease.released OR lease.expires_at <= $5
   RETURNING lease.lease_epoch,
     (SELECT holder_instance_id FROM previous WHERE NOT released) AS previous_holder,
@@ -46,10 +47,39 @@ const RENEW = `UPDATE agboss_execution_leases SET expires_at = $1
   WHERE tenant_id = $2 AND root_execution_id = $3 AND holder_instance_id = $4
     AND lease_epoch = $5 AND NOT released AND expires_at >= $6`;
 
+/**
+ * Marks the caller's own lease yielded (agbossjs/agboss#516): its holder waits for children on any
+ * instance. Matched as `renew` matches it — its holder and epoch, not released, not over — and
+ * nothing else changes: `acquire` still finds it valid, `renew` keeps extending it.
+ */
+const YIELD = `UPDATE agboss_execution_leases SET yielded = true
+  WHERE tenant_id = $1 AND root_execution_id = $2 AND holder_instance_id = $3
+    AND lease_epoch = $4 AND NOT released AND expires_at >= $5`;
+
+/**
+ * The holder takes its own lease back at the next epoch (agbossjs/agboss#516), held again — matched
+ * as `renew` matches it, so a lease already over or taken over is not reclaimed.
+ */
+const RECLAIM = `UPDATE agboss_execution_leases
+  SET lease_epoch = lease_epoch + 1, expires_at = $1, yielded = false
+  WHERE tenant_id = $2 AND root_execution_id = $3 AND holder_instance_id = $4
+    AND lease_epoch = $5 AND NOT released AND expires_at >= $6
+  RETURNING lease_epoch`;
+
 /** Gives the caller's own lease up; another holder's row is not matched. */
 const RELEASE = `UPDATE agboss_execution_leases SET released = true
   WHERE tenant_id = $1 AND root_execution_id = $2 AND holder_instance_id = $3
     AND lease_epoch = $4`;
+
+/** The key, holder and epoch of `lease`, as the statements above match them. */
+const heldBy = (lease: ExecutionLease): readonly [string, string, string, number] => [
+  lease.tenantId,
+  lease.rootExecutionId,
+  lease.holderInstanceId,
+  lease.leaseEpoch,
+];
+
+const ReclaimedRow = z.object({ lease_epoch: z.number() });
 
 const TakenRow = z.object({
   lease_epoch: z.number(),
@@ -63,8 +93,8 @@ const TakenRow = z.object({
  * UPDATE … WHERE released OR expired`, so of two instances exactly one takes a free lease (the
  * other's conflicting insert waits for the row and finds it held); `renew` and `release` an
  * `UPDATE` matching the holder and the epoch (0 rows: the lease was lost; a renewal also needs
- * the lease not over yet). Times are the
- * framework clock's. Listed in `@Application({ providers })` with `PostgresConnection`'s
+ * the lease not over yet), and so are `yield` and `reclaim` (agbossjs/agboss#516: `yielded`, the
+ * next epoch). Times are the framework clock's. Listed in `@Application({ providers })` with `PostgresConnection`'s
  * `postgresUrl`; a lost connection rejects the call, and the core's holder hands the tree over.
  */
 @Injectable({ deps: [PostgresConnection, Clock, ApplicationContext] })
@@ -128,11 +158,29 @@ export class PostgresExecutionLeaseRepository extends ExecutionLeaseRepository {
   }
 
   async release(executionLease: ExecutionLease): Promise<void> {
-    await changesOf(this.connection.pool, RELEASE, [
-      executionLease.tenantId,
-      executionLease.rootExecutionId,
-      executionLease.holderInstanceId,
-      executionLease.leaseEpoch,
+    await changesOf(this.connection.pool, RELEASE, heldBy(executionLease));
+  }
+
+  async yield(executionLease: ExecutionLease): Promise<boolean> {
+    const now = this.clock.now();
+    const yielded = await changesOf(this.connection.pool, YIELD, [...heldBy(executionLease), now]);
+    return yielded === 1;
+  }
+
+  async reclaim(
+    executionLease: ExecutionLease,
+    lease: Milliseconds,
+  ): Promise<ExecutionLease | undefined> {
+    const now = this.clock.now();
+    const expiresAt = new Date(now.getTime() + lease);
+    const reclaimed = await firstRowOf(this.connection.pool, RECLAIM, [
+      expiresAt,
+      ...heldBy(executionLease),
+      now,
     ]);
+    if (reclaimed === undefined) return undefined;
+    const { tenantId, rootExecutionId, holderInstanceId } = executionLease;
+    const { lease_epoch: leaseEpoch } = ReclaimedRow.parse(reclaimed);
+    return { tenantId, rootExecutionId, holderInstanceId, leaseEpoch, expiresAt };
   }
 }

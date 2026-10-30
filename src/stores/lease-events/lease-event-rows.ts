@@ -4,13 +4,16 @@ import {
   HandOverReason,
   HandOverSite,
   LeaseTakeoverReason,
+  OutboundCallEventOutcome,
+  OutboundCallStatus,
   type ExecutionLeaseEventRecord,
 } from "@agboss/core";
 import { z } from "zod";
 
 /**
  * A row of `agboss_execution_lease_events` read back: its `record` column is the record `save`
- * wrote, checked against the three kinds of the lease log (#501) — rows are never trusted.
+ * wrote, checked against the four kinds of the lease log (#501; outbound calls, agbossjs/agboss#505) —
+ * rows are never trusted.
  */
 
 const Step = z.strictObject({
@@ -58,7 +61,19 @@ const FencedEffect = z.strictObject({
   observedToken: z.number().int().optional(),
 });
 
-const Record = z.discriminatedUnion("kind", [Takeover, HandedOver, FencedEffect]);
+const OutboundCall = z.strictObject({
+  ...base,
+  kind: z.literal(ExecutionLeaseEventKind.OutboundCall),
+  name: z.string(),
+  target: z.string(),
+  operation: z.string(),
+  status: z.enum(OutboundCallStatus),
+  attempt: z.number().int(),
+  outcome: z.enum(OutboundCallEventOutcome),
+  step: Step,
+});
+
+const Record = z.discriminatedUnion("kind", [Takeover, HandedOver, FencedEffect, OutboundCall]);
 
 const EventRow = z.object({ record: z.unknown() });
 

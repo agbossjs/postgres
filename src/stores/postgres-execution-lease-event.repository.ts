@@ -9,8 +9,8 @@ import { leaseEventOf } from "./lease-events/lease-event-rows.js";
 
 /**
  * `ExecutionLeaseEventRepository` on PostgreSQL (#501, #482): the append-only lease log, one row
- * per takeover, hand-over or fenced effect call — its record as `jsonb` beside the columns it is
- * found by. `save` is one `INSERT` (rows are never changed); a tree's rows are read oldest first by
+ * per takeover, hand-over, fenced effect call or outbound call move (agbossjs/agboss#505) — its
+ * record as `jsonb` beside the columns it is found by. `save` is one `INSERT` (rows are never changed); a tree's rows are read oldest first by
  * `occurred_at`, rows of one moment by their identity `id`, which is the order they were committed
  * in whichever instance saved them. The sweep's `deleteByOccurredAtBefore` is one `DELETE` on the
  * `Clock`'s cutoff, passed as a parameter. Every statement runs alone at `READ COMMITTED`. Listed

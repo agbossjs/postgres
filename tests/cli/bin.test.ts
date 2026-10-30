@@ -25,8 +25,8 @@ describe("the agboss-postgres bin (a Kubernetes Job)", () => {
       (error: unknown) => error,
     );
 
-    expect(first.stdout).toContain("applied 0007_execution_lease_events");
-    expect(second.stdout).toMatch(/nothing to apply: t_\w+ is at migration 7/);
+    expect(first.stdout).toContain("applied 0008_execution_lease_yield");
+    expect(second.stdout).toMatch(/nothing to apply: t_\w+ is at migration 8/);
     expect(usage).toMatchObject({
       code: 2,
       stderr: expect.stringContaining("usage: agboss-postgres"),
