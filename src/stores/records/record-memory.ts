@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { changesOf, firstRowOf, rowsOf, type Queryable } from "../../connection/query.js";
+import { escapedText, unescapedText } from "../nul-escape.js";
 import {
   RECORD_COLUMNS,
   recordsOf,
@@ -24,7 +25,7 @@ const SummaryRow = z.object({
   from_record_id: z.string(),
   to_record_id: z.string(),
   turns: z.number(),
-  text: z.string(),
+  text: z.string().transform(unescapedText),
   cost_usd: z.number(),
   created_at: z.date(),
 });
@@ -127,7 +128,7 @@ export async function addSummary(
       stored.fromTernId,
       stored.toTernId,
       stored.turns,
-      stored.text,
+      escapedText(stored.text),
       stored.costUsd,
       now,
     ],

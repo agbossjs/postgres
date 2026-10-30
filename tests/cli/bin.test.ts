@@ -25,8 +25,8 @@ describe("the agboss-postgres bin (a Kubernetes Job)", () => {
       (error: unknown) => error,
     );
 
-    expect(first.stdout).toContain("applied 0012_mesh_requests");
-    expect(second.stdout).toMatch(/nothing to apply: t_\w+ is at migration 12/);
+    expect(first.stdout).toContain("applied 0013_nul_escape");
+    expect(second.stdout).toMatch(/nothing to apply: t_\w+ is at migration 13/);
     expect(usage).toMatchObject({
       code: 2,
       stderr: expect.stringContaining("usage: agboss-postgres"),

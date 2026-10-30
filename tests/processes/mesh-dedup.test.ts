@@ -3,22 +3,24 @@
  * PostgreSQL. The test signs as the peer `orders-application` (the harness's key pair, which both
  * processes trust) and sends one A2A request — one idempotency key — to A, then the same request to
  * B, as a caller retrying against another pod would: it runs once, on A, and B answers with A's
- * answer. A request of another key runs again.
+ * answer. A request of another key runs again. The envelope is signed by the core's
+ * `signedMeshEnvelope` (agbossjs/agboss#521), never built by hand.
  */
-import { createHash, sign } from "node:crypto";
+import { signedMeshEnvelope } from "@agboss/core/testing";
 import { describe, expect, it } from "vitest";
 import { testDatabase } from "../support/database.js";
 import { eventsOf, launch, ORDERS_KEYS, type Instance } from "./instances.js";
 
 const database = testDatabase();
 
-const part = (value: unknown): string => Buffer.from(JSON.stringify(value)).toString("base64url");
-
-/** The `agboss-mesh` header of `body`: a compact JWS (`EdDSA`) of the mesh envelope, schema 1. */
-function envelopeOf(body: string, idempotencyKey: string): string {
-  const envelope = {
-    schema: 1,
+/** The `agboss-mesh` header of `body`, signed as `orders-application` — the real client's format. */
+const envelopeOf = (body: string, idempotencyKey: string): string =>
+  signedMeshEnvelope({
     issuer: "orders-application",
+    signingKey: ORDERS_KEYS.privateKey,
+    body,
+    // the envelope is the caller's: issued on its own clock, this test's
+    issuedAt: new Date(),
     origin: {
       rootExecutionId: "orders-root-1",
       executionId: "orders-root-1",
@@ -32,15 +34,7 @@ function envelopeOf(body: string, idempotencyKey: string): string {
         executionId: "orders-root-1",
       },
     ],
-    // the envelope is the caller's: issued on its own clock, this test's
-    issuedAt: new Date().toISOString(),
-    expiresIn: "PT60S",
-    bodyHash: `sha256:${createHash("sha256").update(body).digest("hex")}`,
-  };
-  const input = `${part({ alg: "EdDSA", typ: "agboss-mesh" })}.${part(envelope)}`;
-  const signature = sign(null, Buffer.from(input), ORDERS_KEYS.privateKey).toString("base64url");
-  return `${input}.${signature}`;
-}
+  });
 
 /** `POST <instance>/execute` of the limited workflow's start, signed with `idempotencyKey`. */
 async function post(instance: Instance, idempotencyKey: string): Promise<unknown> {

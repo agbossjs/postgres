@@ -7,6 +7,7 @@ import {
 import { z } from "zod";
 import { PostgresConnection } from "../connection/postgres-connection.js";
 import { changesOf, firstRowOf } from "../connection/query.js";
+import { escapedJsonOf, unescapedJson } from "./nul-escape.js";
 
 /** A stored value as JSON gives it back: what `saveIfAbsentInTree` wrote. */
 const TreeValue: z.ZodType<ExecutionTreeValue> = z.lazy(() =>
@@ -47,7 +48,7 @@ export class PostgresExecutionTreeRepository extends ExecutionTreeRepository {
       this.connection.pool,
       `INSERT INTO agboss_execution_tree_keys (tenant_id, root_execution_id, tree_key, value)
        VALUES ($1, $2, $3, $4::jsonb) ON CONFLICT DO NOTHING RETURNING 1`,
-      [tree.tenantId, tree.rootExecutionId, key, JSON.stringify(value)],
+      [tree.tenantId, tree.rootExecutionId, key, escapedJsonOf(value)],
     );
     return saved === 1;
   }
@@ -59,7 +60,9 @@ export class PostgresExecutionTreeRepository extends ExecutionTreeRepository {
        WHERE tenant_id = $1 AND root_execution_id = $2 AND tree_key = $3`,
       [tree.tenantId, tree.rootExecutionId, key],
     );
-    return row === undefined ? undefined : TreeValue.parse(ValueRow.parse(row).value);
+    return row === undefined
+      ? undefined
+      : TreeValue.parse(unescapedJson(ValueRow.parse(row).value));
   }
 
   async deleteAllInTree(tree: ExecutionTree): Promise<void> {

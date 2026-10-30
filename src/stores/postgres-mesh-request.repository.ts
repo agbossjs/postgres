@@ -7,6 +7,7 @@ import {
 import { z } from "zod";
 import { PostgresConnection } from "../connection/postgres-connection.js";
 import { changesOf, firstRowOf } from "../connection/query.js";
+import { escapedJsonOf, unescapedJson } from "./nul-escape.js";
 
 const KEY = "tenant_id = $1 AND peer = $2 AND idempotency_key = $3";
 
@@ -74,7 +75,7 @@ export class PostgresMeshRequestRepository extends MeshRequestRepository {
       peer: parsed.peer,
       idempotencyKey: parsed.idempotency_key,
       createdAt: parsed.created_at.toISOString(),
-      ...(parsed.answered ? { response: parsed.response } : {}),
+      ...(parsed.answered ? { response: unescapedJson(parsed.response) } : {}),
     };
   }
 
@@ -82,7 +83,7 @@ export class PostgresMeshRequestRepository extends MeshRequestRepository {
     await changesOf(
       this.connection.pool,
       `UPDATE agboss_mesh_requests SET response = $4::jsonb WHERE ${KEY}`,
-      [...keyOf(key), JSON.stringify(response)],
+      [...keyOf(key), escapedJsonOf(response)],
     );
   }
 

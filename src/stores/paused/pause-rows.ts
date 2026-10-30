@@ -8,6 +8,7 @@ import type pg from "pg";
 import { z } from "zod";
 import { changesOf, firstRowOf } from "../../connection/query.js";
 import { pauseRecordOf } from "../framework-json.js";
+import { escapedJsonOf, unescapedJson } from "../nul-escape.js";
 
 /**
  * The pauses of `PostgresPausedExecutionRepository` (#267 S35): one row per pause, unique per step
@@ -35,7 +36,7 @@ export class PauseRows {
 
   /** The record a row keeps. */
   recordOfRow(row: unknown): PauseRecord {
-    return pauseRecordOf(RecordRow.parse(row).record);
+    return pauseRecordOf(unescapedJson(RecordRow.parse(row).record));
   }
 
   /** The tenant's pause of the step when one exists, else `pause` saved — one insert, then a read. */
@@ -51,7 +52,7 @@ export class PauseRows {
         pause.stepKey,
         pause.rootExecutionId,
         pause.status,
-        JSON.stringify(pause),
+        escapedJsonOf(pause),
       ],
     );
     if (inserted !== undefined) return this.recordOfRow(inserted);
@@ -87,9 +88,9 @@ export class PauseRows {
       pauseId,
       closing.status,
       closing.at,
-      JSON.stringify(patch),
+      escapedJsonOf(patch),
     ]);
-    return row === undefined ? undefined : RecordRow.parse(row).record;
+    return row === undefined ? undefined : unescapedJson(RecordRow.parse(row).record);
   }
 
   /** A `Resolved` pause becomes `Taken`: its step took the decision. */
