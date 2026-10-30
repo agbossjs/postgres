@@ -7,6 +7,7 @@
 import { AGBossError } from '@agboss/core';
 import { ApplicationContext } from '@agboss/core';
 import { BaseCheckpointSaver } from '@langchain/langgraph-checkpoint';
+import { BudgetAccount } from '@agboss/core';
 import { ChannelVersions } from '@langchain/langgraph-checkpoint';
 import { Checkpoint } from '@langchain/langgraph-checkpoint';
 import { CheckpointListOptions } from '@langchain/langgraph-checkpoint';
@@ -17,6 +18,11 @@ import { ChildExecutionQueueRepository } from '@agboss/core';
 import { Class } from '@agboss/core';
 import { Clock } from '@agboss/core';
 import type { ConfigSnapshot } from '@agboss/core';
+import { CostCounter } from '@agboss/core';
+import { CostLedgerRepository } from '@agboss/core';
+import { ExecutionHistoryPage } from '@agboss/core';
+import { ExecutionHistoryRecord } from '@agboss/core';
+import { ExecutionHistoryRepository } from '@agboss/core';
 import { ExecutionLease } from '@agboss/core';
 import { ExecutionLeaseEventRecord } from '@agboss/core';
 import { ExecutionLeaseEventRepository } from '@agboss/core';
@@ -32,6 +38,9 @@ import { FencedEffectRepository } from '@agboss/core';
 import { FencedEffectSettings } from '@agboss/core';
 import { FencedEffectWork } from '@agboss/core';
 import { IdGenerator } from '@agboss/core';
+import { MeshRequestKey } from '@agboss/core';
+import { MeshRequestRecord } from '@agboss/core';
+import { MeshRequestRepository } from '@agboss/core';
 import type { Milliseconds } from '@agboss/core/units';
 import type { NewSummary } from '@agboss/core';
 import type { NewTern } from '@agboss/core';
@@ -48,10 +57,14 @@ import { PendingWrite } from '@langchain/langgraph-checkpoint';
 import pg from 'pg';
 import type { PoolClient } from 'pg';
 import { QueuedChildExecution } from '@agboss/core';
+import { RateLimitLease } from '@agboss/core';
+import { RateLimitRepository } from '@agboss/core';
 import type { RunnableConfig } from '@langchain/core/runnables';
 import type { Summary } from '@agboss/core';
 import type { Tern } from '@agboss/core';
 import type { TernOutcome } from '@agboss/core';
+import { UsageRecord } from '@agboss/core';
+import { Usd } from '@agboss/core/units';
 import type { VersionScore } from '@agboss/core';
 
 // @public
@@ -136,6 +149,42 @@ export interface PostgresConnectionSettings {
     readonly migrateOnStart?: boolean;
     readonly poolSize?: number;
     readonly url: string;
+}
+
+// @public
+export class PostgresCostLedgerRepository extends CostLedgerRepository {
+    constructor(connection: PostgresConnection);
+    // (undocumented)
+    findMaxSpendByAccount(account: BudgetAccount): Promise<Usd | undefined>;
+    // (undocumented)
+    findSpentByCounter(counter: CostCounter): Promise<Usd>;
+    // (undocumented)
+    ping(): Promise<void>;
+    // (undocumented)
+    saveAll(counters: readonly CostCounter[], records: readonly UsageRecord[]): Promise<void>;
+    // (undocumented)
+    saveMaxSpend(account: BudgetAccount, maxSpend: Usd): Promise<void>;
+}
+
+// @public
+export class PostgresExecutionHistoryRepository extends ExecutionHistoryRepository {
+    constructor(connection: PostgresConnection);
+    // (undocumented)
+    deleteByEndedAtBefore(cutoff: Date): Promise<void>;
+    // (undocumented)
+    findAllByExecutionId(executionId: string): Promise<ExecutionHistoryRecord[]>;
+    // (undocumented)
+    findAllByStartedAtBetween(from: Date, to: Date, page: ExecutionHistoryPage): Promise<ExecutionHistoryRecord[]>;
+    // (undocumented)
+    findAllByTenantIdAndStartedAtBetween(tenantId: string, from: Date, to: Date, page: ExecutionHistoryPage): Promise<ExecutionHistoryRecord[]>;
+    // (undocumented)
+    findAllByTenantIdAndThreadId(tenantId: string, threadId: string): Promise<ExecutionHistoryRecord[]>;
+    // (undocumented)
+    findByTenantIdAndExecutionId(tenantId: string, executionId: string): Promise<ExecutionHistoryRecord | undefined>;
+    // (undocumented)
+    ping(): Promise<void>;
+    // (undocumented)
+    save(record: ExecutionHistoryRecord): Promise<void>;
 }
 
 // @public
@@ -258,6 +307,23 @@ export class PostgresFencedEffectRepository extends FencedEffectRepository<PoolC
 }
 
 // @public
+export class PostgresMeshRequestRepository extends MeshRequestRepository {
+    constructor(connection: PostgresConnection);
+    // (undocumented)
+    deleteByKey(key: MeshRequestKey): Promise<void>;
+    // (undocumented)
+    deleteCreatedBefore(cutoff: Date): Promise<void>;
+    // (undocumented)
+    findByKey(key: MeshRequestKey): Promise<MeshRequestRecord | undefined>;
+    // (undocumented)
+    ping(): Promise<void>;
+    // (undocumented)
+    saveIfAbsent(record: MeshRequestRecord): Promise<boolean>;
+    // (undocumented)
+    saveResponse(key: MeshRequestKey, response: unknown): Promise<void>;
+}
+
+// @public
 export class PostgresMigrationChangedError extends AGBossError {
     constructor(changed: ChangedMigration);
     // (undocumented)
@@ -299,6 +365,27 @@ export class PostgresPausedExecutionRepository extends PausedExecutionRepository
     resolveByTenantIdAndPauseId(tenantId: string, pauseId: string, answer: PauseAnswer_2, at: Date): Promise<PauseRecord | undefined>;
     // (undocumented)
     save(paused: PausedExecution): Promise<void>;
+}
+
+// @public
+export class PostgresRateLimitRepository extends RateLimitRepository {
+    constructor(connection: PostgresConnection, clock: Clock, applicationContext: ApplicationContext);
+    // (undocumented)
+    acquire(key: string, maxSlots: number, lease: Milliseconds): Promise<RateLimitLease | undefined>;
+    // (undocumented)
+    addToWindow(key: string, amount: number, window: Milliseconds, limit?: number): Promise<number | undefined>;
+    // (undocumented)
+    clearWindow(key: string): Promise<void>;
+    // (undocumented)
+    pausedUntil(key: string): Promise<Date | undefined>;
+    // (undocumented)
+    pauseUntil(key: string, until: Date): Promise<void>;
+    // (undocumented)
+    ping(): Promise<void>;
+    // (undocumented)
+    release(rateLimitLease: RateLimitLease): Promise<void>;
+    // (undocumented)
+    renew(rateLimitLease: RateLimitLease, lease: Milliseconds): Promise<boolean>;
 }
 
 // @public
@@ -372,6 +459,19 @@ export interface SchemaVersions {
 // src/stores/postgres-child-execution-queue.repository.ts:127:9 - (ae-undocumented) Missing documentation for "claimFirstByStatusQueuedOrderByDepthDesc".
 // src/stores/postgres-child-execution-queue.repository.ts:135:9 - (ae-undocumented) Missing documentation for "completeByTenantIdAndExecutionId".
 // src/stores/postgres-child-execution-queue.repository.ts:156:9 - (ae-undocumented) Missing documentation for "deleteAllByTenantIdAndRootExecutionId".
+// src/stores/postgres-cost-ledger.repository.ts:56:3 - (ae-undocumented) Missing documentation for "ping".
+// src/stores/postgres-cost-ledger.repository.ts:60:9 - (ae-undocumented) Missing documentation for "findSpentByCounter".
+// src/stores/postgres-cost-ledger.repository.ts:70:9 - (ae-undocumented) Missing documentation for "saveAll".
+// src/stores/postgres-cost-ledger.repository.ts:81:9 - (ae-undocumented) Missing documentation for "findMaxSpendByAccount".
+// src/stores/postgres-cost-ledger.repository.ts:91:9 - (ae-undocumented) Missing documentation for "saveMaxSpend".
+// src/stores/postgres-execution-history.repository.ts:47:3 - (ae-undocumented) Missing documentation for "ping".
+// src/stores/postgres-execution-history.repository.ts:51:9 - (ae-undocumented) Missing documentation for "save".
+// src/stores/postgres-execution-history.repository.ts:62:9 - (ae-undocumented) Missing documentation for "findByTenantIdAndExecutionId".
+// src/stores/postgres-execution-history.repository.ts:73:3 - (ae-undocumented) Missing documentation for "findAllByExecutionId".
+// src/stores/postgres-execution-history.repository.ts:77:3 - (ae-undocumented) Missing documentation for "findAllByTenantIdAndThreadId".
+// src/stores/postgres-execution-history.repository.ts:84:3 - (ae-undocumented) Missing documentation for "findAllByTenantIdAndStartedAtBetween".
+// src/stores/postgres-execution-history.repository.ts:97:3 - (ae-undocumented) Missing documentation for "findAllByStartedAtBetween".
+// src/stores/postgres-execution-history.repository.ts:105:9 - (ae-undocumented) Missing documentation for "deleteByEndedAtBefore".
 // src/stores/postgres-execution-lease-event.repository.ts:25:3 - (ae-undocumented) Missing documentation for "ping".
 // src/stores/postgres-execution-lease-event.repository.ts:29:9 - (ae-undocumented) Missing documentation for "save".
 // src/stores/postgres-execution-lease-event.repository.ts:43:9 - (ae-undocumented) Missing documentation for "findAllByTenantIdAndRootExecutionIdOrderByOccurredAt".
@@ -416,6 +516,12 @@ export interface SchemaVersions {
 // src/stores/postgres-fenced-effect.repository.ts:59:3 - (ae-undocumented) Missing documentation for "ping".
 // src/stores/postgres-fenced-effect.repository.ts:63:3 - (ae-undocumented) Missing documentation for "runInTransaction".
 // src/stores/postgres-fenced-effect.repository.ts:70:9 - (ae-undocumented) Missing documentation for "deleteByStoredAtBefore".
+// src/stores/postgres-mesh-request.repository.ts:48:3 - (ae-undocumented) Missing documentation for "ping".
+// src/stores/postgres-mesh-request.repository.ts:52:9 - (ae-undocumented) Missing documentation for "saveIfAbsent".
+// src/stores/postgres-mesh-request.repository.ts:62:9 - (ae-undocumented) Missing documentation for "findByKey".
+// src/stores/postgres-mesh-request.repository.ts:81:9 - (ae-undocumented) Missing documentation for "saveResponse".
+// src/stores/postgres-mesh-request.repository.ts:89:9 - (ae-undocumented) Missing documentation for "deleteByKey".
+// src/stores/postgres-mesh-request.repository.ts:97:9 - (ae-undocumented) Missing documentation for "deleteCreatedBefore".
 // src/stores/postgres-paused-execution.repository.ts:45:3 - (ae-undocumented) Missing documentation for "ping".
 // src/stores/postgres-paused-execution.repository.ts:49:9 - (ae-undocumented) Missing documentation for "findByTenantIdAndThreadId".
 // src/stores/postgres-paused-execution.repository.ts:68:9 - (ae-undocumented) Missing documentation for "save".
@@ -429,6 +535,14 @@ export interface SchemaVersions {
 // src/stores/postgres-paused-execution.repository.ts:161:9 - (ae-undocumented) Missing documentation for "cancelByTenantIdAndPauseId".
 // src/stores/postgres-paused-execution.repository.ts:175:3 - (ae-undocumented) Missing documentation for "markTakenByTenantIdAndPauseId".
 // src/stores/postgres-paused-execution.repository.ts:179:3 - (ae-undocumented) Missing documentation for "deleteResolvedBefore".
+// src/stores/postgres-rate-limit.repository.ts:54:3 - (ae-undocumented) Missing documentation for "ping".
+// src/stores/postgres-rate-limit.repository.ts:58:3 - (ae-undocumented) Missing documentation for "acquire".
+// src/stores/postgres-rate-limit.repository.ts:80:9 - (ae-undocumented) Missing documentation for "renew".
+// src/stores/postgres-rate-limit.repository.ts:90:9 - (ae-undocumented) Missing documentation for "release".
+// src/stores/postgres-rate-limit.repository.ts:98:3 - (ae-undocumented) Missing documentation for "addToWindow".
+// src/stores/postgres-rate-limit.repository.ts:117:9 - (ae-undocumented) Missing documentation for "clearWindow".
+// src/stores/postgres-rate-limit.repository.ts:125:9 - (ae-undocumented) Missing documentation for "pauseUntil".
+// src/stores/postgres-rate-limit.repository.ts:129:9 - (ae-undocumented) Missing documentation for "pausedUntil".
 
 // (No @packageDocumentation comment for this package)
 

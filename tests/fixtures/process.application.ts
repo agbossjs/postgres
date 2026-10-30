@@ -10,16 +10,20 @@ import {
   type OnExecutionEnd,
   type OnExecutionLeaseTakeover,
 } from "@agboss/core";
-import { usd, type Usd } from "@agboss/core/units";
+import { hours, usd, type Usd } from "@agboss/core/units";
 import {
   PostgresCheckpointSaver,
   PostgresChildExecutionQueueRepository,
+  PostgresCostLedgerRepository,
+  PostgresExecutionHistoryRepository,
   PostgresExecutionLeaseEventRepository,
   PostgresExecutionLeaseRepository,
   PostgresExecutionRecordRepository,
   PostgresExecutionTreeRepository,
   PostgresFencedEffectRepository,
+  PostgresMeshRequestRepository,
   PostgresPausedExecutionRepository,
+  PostgresRateLimitRepository,
 } from "../../src/index.js";
 import {
   ApprovalWorkflow,
@@ -29,13 +33,23 @@ import {
 import { BatchWorkflow, ItemWorkflow } from "./batch.workflow.js";
 import { ProcessEnvironment } from "./environments/app.environment.js";
 import { emit } from "./process-log.js";
+import {
+  LimitedModelProvider,
+  LimitedWorkflow,
+  PricedModelProvider,
+  ProcessA2AExpose,
+  SpendExecutionBudget,
+  SpendWorkflow,
+} from "./shared.workflow.js";
 import { TakeoverWorkflow } from "./takeover.workflow.js";
 
 /**
  * The application each process of tests/processes/ runs (`environments/process.environment.ts`):
- * every coordination store on PostgreSQL — nothing on a disk, nothing shared but the database —
- * and one step slot per instance (`maxConcurrentSteps: 1`), so a launch of several children needs
- * both instances. Its observer tells the test of every end and every takeover.
+ * every store on PostgreSQL — nothing on a disk, nothing shared but the database — and one step
+ * slot per instance (`maxConcurrentSteps: 1`), so a launch of several children needs both
+ * instances. It keeps its executions' history (agbossjs/agboss#483 AC3), trusts the mesh peer
+ * `orders-application` (AC4), and its tenant's day is $10 (AC1). Its observer tells the test of
+ * every end and every takeover.
  */
 
 @Budget({
@@ -45,7 +59,7 @@ import { TakeoverWorkflow } from "./takeover.workflow.js";
 })
 export class ProcessApplicationBudget implements BudgetHandler {
   maxSpend(): Usd {
-    return usd(10);
+    return usd(100);
   }
 }
 
@@ -80,24 +94,52 @@ export class ProcessObserver implements OnExecutionEnd, OnExecutionLeaseTakeover
   name: "postgres-process-application",
   version: "1.0.0",
   environment: ProcessEnvironment,
-  workflows: [TakeoverWorkflow, BatchWorkflow, ItemWorkflow, ApprovalWorkflow],
+  workflows: [
+    TakeoverWorkflow,
+    BatchWorkflow,
+    ItemWorkflow,
+    ApprovalWorkflow,
+    SpendWorkflow,
+    LimitedWorkflow,
+  ],
   observers: [ProcessObserver],
-  budgets: [ProcessApplicationBudget, ProcessTenantBudget, ProcessExecutionBudget],
+  budgets: [
+    ProcessApplicationBudget,
+    ProcessTenantBudget,
+    ProcessExecutionBudget,
+    SpendExecutionBudget,
+  ],
   maxConcurrentSteps: 1,
+  executionRecordRetention: hours(24),
+  exposes: [ProcessA2AExpose],
+  mesh: { peers: [{ application: "orders-application", verifyKey: "meshPeerKey" }] },
   providers: [
     OfflineClerkModelProvider,
+    PricedModelProvider,
+    LimitedModelProvider,
     QueuedShipApprovalChannel,
     PostgresCheckpointSaver,
     PostgresChildExecutionQueueRepository,
+    PostgresCostLedgerRepository,
+    PostgresExecutionHistoryRepository,
     PostgresExecutionLeaseEventRepository,
     PostgresExecutionLeaseRepository,
     PostgresExecutionRecordRepository,
     PostgresExecutionTreeRepository,
     PostgresFencedEffectRepository,
+    PostgresMeshRequestRepository,
     PostgresPausedExecutionRepository,
+    PostgresRateLimitRepository,
   ],
 })
 export class ProcessApplication {}
 
 // `agboss check` types the workflows the application module exports (.agboss/types.d.ts)
-export { ApprovalWorkflow, BatchWorkflow, ItemWorkflow, TakeoverWorkflow };
+export {
+  ApprovalWorkflow,
+  BatchWorkflow,
+  ItemWorkflow,
+  LimitedWorkflow,
+  SpendWorkflow,
+  TakeoverWorkflow,
+};

@@ -1,7 +1,7 @@
 {
   "name": "@agboss/postgres",
   "version": "0.1.0",
-  "description": "PostgreSQL stores for AGBoss: several application instances share execution trees on one database \u2014 leases, records, trees, pauses, the child queue, checkpoints, fenced effects and the lease log.",
+  "description": "PostgreSQL stores for AGBoss: several application instances share execution trees on one database \u2014 leases, records, trees, pauses, the child queue, checkpoints, fenced effects, the lease log, budgets, history, rate limits and mesh requests.",
   "type": "module",
   "license": "Apache-2.0",
   "publishConfig": {

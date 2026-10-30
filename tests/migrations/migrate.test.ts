@@ -19,6 +19,10 @@ const PACKAGE_MIGRATIONS = [
   "6:fenced_effects",
   "7:execution_lease_events",
   "8:execution_lease_yield",
+  "9:cost_ledger",
+  "10:execution_history",
+  "11:rate_limits",
+  "12:mesh_requests",
 ];
 
 const rejectionOf = async (call: Promise<unknown>): Promise<unknown> =>
@@ -38,7 +42,7 @@ describe("migratePostgres (AC5)", () => {
     const second = await migratePostgres({ url });
 
     expect(first.applied.map((m) => `${String(m.version)}:${m.name}`)).toEqual(PACKAGE_MIGRATIONS);
-    expect(first.version).toBe(8);
+    expect(first.version).toBe(12);
     expect(first.checkpointMigrations).toBeGreaterThan(0);
     expect(second).toEqual({ ...first, applied: [], checkpointMigrations: 0 });
     expect(await schemaDumpOf(url)).toBe(dumped);
@@ -54,6 +58,9 @@ describe("migratePostgres (AC5)", () => {
     expect(await tablesOf(url)).toEqual([
       "agboss_child_execution_queue",
       "agboss_config_versions",
+      "agboss_cost_counters",
+      "agboss_cost_max_spend",
+      "agboss_execution_history",
       "agboss_execution_lease_events",
       "agboss_execution_leases",
       "agboss_execution_records",
@@ -62,9 +69,14 @@ describe("migratePostgres (AC5)", () => {
       "agboss_execution_tree_keys",
       "agboss_fenced_effect_marks",
       "agboss_fenced_effect_results",
+      "agboss_mesh_requests",
       "agboss_pause_answers",
       "agboss_paused_executions",
       "agboss_pauses",
+      "agboss_rate_limit_keys",
+      "agboss_rate_limit_pauses",
+      "agboss_rate_limit_slots",
+      "agboss_rate_limit_window_buckets",
       "agboss_schema_migrations",
       "agboss_threads",
       "checkpoint_blobs",
@@ -80,7 +92,7 @@ describe("migratePostgres (AC5)", () => {
     const reports = await Promise.all([1, 2, 3].map(() => migratePostgres({ url })));
 
     const applied = reports.map((report) => report.applied.length).sort();
-    expect(applied).toEqual([0, 0, 8]);
+    expect(applied).toEqual([0, 0, 12]);
     expect(await historyOf(url)).toEqual(PACKAGE_MIGRATIONS);
   });
 
@@ -106,15 +118,12 @@ describe("migratePostgres (AC5)", () => {
     await holder.end();
 
     expect(doneWhileLocked).toBe(false);
-    expect((await run).applied).toHaveLength(8);
+    expect((await run).applied).toHaveLength(12);
   });
 
   it("a migration changed after it was applied fails the run, and nothing more is applied", async () => {
     const url = await freshSchema();
-    await migrateWith(
-      { url },
-      migrationsIn(migrationsFolder({ "0008_execution_lease_yield.sql": null })),
-    );
+    await migrateWith({ url }, migrationsIn(migrationsFolder({ "0012_mesh_requests.sql": null })));
     const changed = migrationsFolder({
       "0002_execution_records.sql": "CREATE TABLE edited_after_release (id integer);",
     });
@@ -127,15 +136,8 @@ describe("migratePostgres (AC5)", () => {
       version: 2,
       migration: "execution_records",
     });
-    expect(await historyOf(url)).toEqual(PACKAGE_MIGRATIONS.slice(0, 7));
-    const leaseColumns = await onSchema(
-      url,
-      `SELECT column_name FROM information_schema.columns
-       WHERE table_schema = current_schema() AND table_name = 'agboss_execution_leases'`,
-    );
-    expect(leaseColumns.rows.map((row: { column_name: string }) => row.column_name)).not.toContain(
-      "yielded",
-    );
+    expect(await historyOf(url)).toEqual(PACKAGE_MIGRATIONS.slice(0, 11));
+    expect(await tablesOf(url)).not.toContain("agboss_mesh_requests");
   });
 
   it("an applied migration renamed in the package fails the run", async () => {
@@ -155,20 +157,20 @@ describe("migratePostgres (AC5)", () => {
   it("a database a newer package migrated fails the run: PostgresSchemaTooNewError", async () => {
     const url = await freshSchema();
     const newer = migrationsFolder({
-      "0009_later_feature.sql": "CREATE TABLE later (id integer);",
+      "0013_later_feature.sql": "CREATE TABLE later (id integer);",
     });
     await migrateWith({ url }, migrationsIn(newer));
 
     const error = await rejectionOf(migratePostgres({ url }));
 
     expect(error).toBeInstanceOf(PostgresSchemaTooNewError);
-    expect(error).toMatchObject({ code: "postgres.schema-too-new", applied: 9, expected: 8 });
+    expect(error).toMatchObject({ code: "postgres.schema-too-new", applied: 13, expected: 12 });
   });
 
   it("a failing migration is rolled back alone: the ones before it stay applied", async () => {
     const url = await freshSchema();
     const broken = migrationsFolder({
-      "0009_broken.sql": "CREATE TABLE half_made (id integer); SELECT no_such_function();",
+      "0013_broken.sql": "CREATE TABLE half_made (id integer); SELECT no_such_function();",
     });
 
     await expect(migrateWith({ url }, migrationsIn(broken))).rejects.toThrow(/no_such_function/);
@@ -179,14 +181,11 @@ describe("migratePostgres (AC5)", () => {
 
   it("the migrations of a run are applied after the ones already there", async () => {
     const url = await freshSchema();
-    await migrateWith(
-      { url },
-      migrationsIn(migrationsFolder({ "0008_execution_lease_yield.sql": null })),
-    );
+    await migrateWith({ url }, migrationsIn(migrationsFolder({ "0012_mesh_requests.sql": null })));
 
     const report = await migratePostgres({ url });
 
-    expect(report.applied).toEqual([{ version: 8, name: "execution_lease_yield" }]);
+    expect(report.applied).toEqual([{ version: 12, name: "mesh_requests" }]);
     expect(report.checkpointMigrations).toBe(0);
   });
 
