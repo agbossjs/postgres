@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 /**
  * Once `@agboss/core` is on the registry: installs the published version the peer dependency
- * names (`--version <x.y.z>`, default the lowest of the range) instead of the packed tarball,
- * without changing `package.json` or the lockfile (a devDependency for the install only).
+ * names (`--version <x.y.z>`, default the lowest of the range) and `@agboss/cli` of the same
+ * version (the process tests' `check:types`) instead of the packed tarballs, without changing
+ * `package.json` or the lockfile (devDependencies for the install only).
  */
 import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
@@ -21,7 +22,7 @@ const version =
 try {
   const withPublished = {
     ...pkg,
-    devDependencies: { ...pkg.devDependencies, "@agboss/core": version },
+    devDependencies: { ...pkg.devDependencies, "@agboss/core": version, "@agboss/cli": version },
   };
   writeFileSync(PACKAGE, `${JSON.stringify(withPublished, null, 2)}\n`);
   execFileSync("npm", ["install", "--no-package-lock", "--no-audit", "--no-fund"], {
@@ -31,4 +32,6 @@ try {
 } finally {
   writeFileSync(PACKAGE, original);
 }
-console.log(`[install-published] @agboss/core@${version} from the registry`);
+console.log(
+  `[install-published] @agboss/core@${version} and @agboss/cli@${version} from the registry`,
+);

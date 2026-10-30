@@ -1,9 +1,11 @@
 #!/usr/bin/env node
 /**
- * Packs `@agboss/core` from the commit `.agboss-version.json` pins (the agbossjs/agboss-examples
- * pattern): the source is `AGBOSS_REPO_DIR` when set (its HEAD must be the pinned SHA), else a
- * checkout of the pinned SHA in `.agboss-source` (cloned on first use). The tarball, its SHA-256
- * and integrity go to `.packed/manifest.json`; `npm run install:packed` installs it.
+ * Packs `@agboss/core` and `@agboss/cli` from the commit `.agboss-version.json` pins (the
+ * agbossjs/agboss-examples pattern): the source is `AGBOSS_REPO_DIR` when set (its HEAD must be the
+ * pinned SHA), else a checkout of the pinned SHA in `.agboss-source` (cloned on first use). The
+ * CLI is a dev tool here: `npm run check:types` runs its `agboss check` on the process tests'
+ * application. The tarballs, their SHA-256 and integrity go to `.packed/manifest.json`;
+ * `npm run install:packed` installs them.
  */
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -51,29 +53,39 @@ console.log(`[pack-framework] building @agboss/core at ${head} (${source})`);
 if (!existsSync(join(source, "node_modules", "typescript"))) {
   execFileSync("npm", ["ci", "--no-audit", "--no-fund"], { cwd: source, stdio: "inherit" });
 }
-execFileSync("npm", ["run", "build", "-w", "@agboss/core"], { cwd: source, stdio: "inherit" });
+for (const workspace of ["@agboss/core", "@agboss/cli"])
+  execFileSync("npm", ["run", "build", "-w", workspace], { cwd: source, stdio: "inherit" });
 
 mkdirSync(PACKED_DIR, { recursive: true });
 for (const entry of readdirSync(PACKED_DIR))
   if (entry !== NPM_CACHE) rmSync(join(PACKED_DIR, entry), { recursive: true });
 
-const packageDir = join(source, "packages", "agboss");
-const packed = JSON.parse(
-  run("npm", ["pack", "--json", "--pack-destination", PACKED_DIR], packageDir),
-);
-// npm 10 prints a list, npm 11+ an object by package name
-const info = Array.isArray(packed) ? packed[0] : (packed["@agboss/core"] ?? packed);
-const tarball = join(PACKED_DIR, info.filename);
-const manifest = {
-  packedAt: new Date().toISOString(),
-  sourceCommit: head,
-  package: {
+/** Packs the workspace in `packages/<folder>`: what the manifest records of its tarball. */
+function packOf(folder, name) {
+  const packed = JSON.parse(
+    run(
+      "npm",
+      ["pack", "--json", "--pack-destination", PACKED_DIR],
+      join(source, "packages", folder),
+    ),
+  );
+  // npm 10 prints a list, npm 11+ an object by package name
+  const info = Array.isArray(packed) ? packed[0] : (packed[name] ?? packed);
+  const tarball = join(PACKED_DIR, info.filename);
+  console.log(`[pack-framework] packed ${info.name}@${info.version} -> .packed/${info.filename}`);
+  return {
     name: info.name,
     version: info.version,
     filename: info.filename,
     sha256: createHash("sha256").update(readFileSync(tarball)).digest("hex"),
     integrity: info.integrity,
-  },
+  };
+}
+
+const manifest = {
+  packedAt: new Date().toISOString(),
+  sourceCommit: head,
+  package: packOf("agboss", "@agboss/core"),
+  cli: packOf("agboss-cli", "@agboss/cli"),
 };
 writeFileSync(join(PACKED_DIR, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
-console.log(`[pack-framework] packed ${info.name}@${info.version} -> .packed/${info.filename}`);

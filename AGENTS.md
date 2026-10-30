@@ -12,9 +12,11 @@ PostgreSQL (`AGBOSS_POSTGRES_TEST_URL`) · api-extractor (`api/postgres.api.md`)
 
 ## Commands
 
-- `npm run pack:framework && npm run install:packed` — `@agboss/core` at the SHA pinned in
-  `.agboss-version.json` (pin the current agboss `main` when a store needs a newer core).
-- `npm run check` — format, suppressions (budget 0), lint, types, tests with coverage, API report.
+- `npm run pack:framework && npm run install:packed` — `@agboss/core` and `@agboss/cli` at the SHA
+  pinned in `.agboss-version.json` (pin the current agboss `main` when a store needs a newer core).
+- `npm run check` — format, suppressions (budget 0), flow types (`check:types`: the CLI's
+  `agboss check` on `tests/fixtures/`, writes the uncommitted `.agboss/types.d.ts`), lint, types,
+  tests with coverage, API report.
 - `npx agboss-postgres migrate --url <url>` — the migrations (after `npm run build`).
 
 ## Architecture
@@ -31,6 +33,9 @@ PostgreSQL (`AGBOSS_POSTGRES_TEST_URL`) · api-extractor (`api/postgres.api.md`)
   locking are stated in each store's doc comment. Time only from the `Clock` (parameters, never
   `now()`).
 - `src/cli.ts` + `bin/agboss-postgres.js` — the command.
+- `tests/processes/` + `tests/fixtures/` — the two-process tests (AC1–AC3): each instance a `node`
+  child (`--import tsx`) running `ProcessApplication` on the test's schema, driven over stdin/stdout.
+  Typed by `tsconfig.processes.json` (the generated flow types stay out of the other tests).
 
 ## Rules
 
