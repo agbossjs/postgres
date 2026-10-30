@@ -1,4 +1,10 @@
-import { ApplicationContext, Injectable, type OnDestroy, type OnInit } from "@agboss/core";
+import {
+  ApplicationContext,
+  EnvironmentField,
+  Injectable,
+  type OnDestroy,
+  type OnInit,
+} from "@agboss/core";
 import pg from "pg";
 import { z } from "zod";
 import { migrationsIn } from "../migrations/files.js";
@@ -21,7 +27,16 @@ const SchemaRow = z.object({ schema: z.string().nullable() });
  * migrates it); at `onDestroy`, after its stores, it ends the pool. The DI token a subclass of a
  * PostgreSQL store names in its `deps`.
  */
-@Injectable({ deps: [ApplicationContext] })
+@Injectable({
+  deps: [ApplicationContext],
+  // checked at the application's assembly (agbossjs/agboss#511): a contract without postgresUrl
+  // fails with [environment.missing-field] before anything starts
+  environmentFields: {
+    postgresUrl: EnvironmentField.Secret,
+    postgresPoolSize: EnvironmentField.OptionalInteger,
+    postgresMigrateOnStart: EnvironmentField.OptionalFlag,
+  },
+})
 export class PostgresConnection implements OnInit, OnDestroy {
   /** The instance's pool: every store's statements, every transaction's connection. */
   readonly pool: pg.Pool;

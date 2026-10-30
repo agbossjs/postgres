@@ -62,6 +62,11 @@ export const environment: AppEnvironment = { postgresUrl: secret("DATABASE_URL")
 export class DeskApplication {}
 ```
 
+A contract without `postgresUrl` fails the application's assembly, before anything connects:
+`[environment.missing-field] PostgresExecutionLeaseRepository needs postgresUrl: Secret in
+AppEnvironment (read by PostgresConnection)` — `PostgresConnection` declares the fields it reads
+(`@Injectable({ environmentFields })`, agbossjs/agboss#511); the two optional ones may be absent.
+
 Every store injects `PostgresConnection` — one `pg.Pool` per application instance, ended when the
 instance stops — and answers `ping()` with `SELECT 1` (`app.checkReadiness()`). Time always comes
 from the application's `Clock`, never from the database. A project subclasses a store through public

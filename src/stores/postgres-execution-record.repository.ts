@@ -14,8 +14,6 @@ import type * as rows from "./records/record-rows.js";
 import * as scores from "./records/record-scores.js";
 import * as writes from "./records/record-writes.js";
 
-type Records = ExecutionRecordRepository;
-
 /**
  * `ExecutionRecordRepository` on PostgreSQL (#265 S30, #482): threads with their owners, one
  * record per execution in the order appended (`seq`), scores, memory summaries, config snapshots
@@ -48,8 +46,12 @@ export class PostgresExecutionRecordRepository extends ExecutionRecordRepository
   async hasThread(workflow: string, tenantId: string, threadId: string): Promise<boolean> {
     return (await this.threadOwner(workflow, tenantId, threadId)) !== undefined;
   }
-  threadOwner(...args: Parameters<Records["threadOwner"]>): ReturnType<Records["threadOwner"]> {
-    return writes.threadOwnerOf(this.connection.pool, ...args);
+  threadOwner(
+    workflow: string,
+    tenantId: string,
+    threadId: string,
+  ): Promise<{ readonly owner: string | undefined } | undefined> {
+    return writes.threadOwnerOf(this.connection.pool, workflow, tenantId, threadId);
   }
   append(record: rows.NewRecord): Promise<rows.StoredRecord> {
     return writes.appendRecord(this.connection.pool, record, this.clock.now());
@@ -74,14 +76,18 @@ export class PostgresExecutionRecordRepository extends ExecutionRecordRepository
     status: ExecutionRecordStatus,
     limit: number,
     after?: string,
-  ): ReturnType<Records["findByStatus"]> {
+  ): Promise<rows.StoredRecord[]> {
     return reads.recordsByStatus(this.connection.pool, status, limit, after);
   }
-  byVersion(...args: Parameters<Records["byVersion"]>): Promise<rows.StoredRecord[]> {
-    return reads.recordsByVersion(this.connection.pool, ...args);
+  byVersion(workflow: string, promptVersion: string, limit: number): Promise<rows.StoredRecord[]> {
+    return reads.recordsByVersion(this.connection.pool, workflow, promptVersion, limit);
   }
-  unscored(...args: Parameters<Records["unscored"]>): Promise<rows.StoredRecord[]> {
-    return reads.unscoredRecords(this.connection.pool, ...args);
+  unscored(
+    workflow: string,
+    promptVersion: string | undefined,
+    limit: number,
+  ): Promise<rows.StoredRecord[]> {
+    return reads.unscoredRecords(this.connection.pool, workflow, promptVersion, limit);
   }
   saveScore(recordId: string, judge: string, score: number): Promise<void> {
     return scores.saveScore(this.connection.pool, recordId, judge, score, this.clock.now());
@@ -93,9 +99,13 @@ export class PostgresExecutionRecordRepository extends ExecutionRecordRepository
     return scores.versionScoresOf(this.connection.pool, workflow);
   }
   rememberConfig(
-    ...args: Parameters<Records["rememberConfig"]>
-  ): ReturnType<Records["rememberConfig"]> {
-    return scores.rememberConfig(this.connection.pool, ...args, this.clock.now());
+    workflow: string,
+    version: string,
+    hash: string,
+    snapshot: string,
+  ): Promise<{ readonly drift: boolean }> {
+    const now = this.clock.now();
+    return scores.rememberConfig(this.connection.pool, workflow, version, hash, snapshot, now);
   }
   configSnapshots(workflow: string, version: string): Promise<rows.StoredConfigSnapshot[]> {
     return scores.configSnapshotsOf(this.connection.pool, workflow, version);
@@ -103,23 +113,33 @@ export class PostgresExecutionRecordRepository extends ExecutionRecordRepository
   recentOriginals(workflow: string, limit: number): Promise<rows.StoredRecord[]> {
     return reads.recentOriginalRecords(this.connection.pool, workflow, limit);
   }
-  uncovered(...args: Parameters<Records["uncovered"]>): Promise<rows.StoredRecord[]> {
-    return memory.uncoveredRecords(this.connection.pool, ...args);
+  uncovered(tenantId: string, threadId: string, compaction: string): Promise<rows.StoredRecord[]> {
+    return memory.uncoveredRecords(this.connection.pool, tenantId, threadId, compaction);
   }
-  before(...args: Parameters<Records["before"]>): Promise<rows.StoredRecord[]> {
-    return memory.recordsBefore(this.connection.pool, ...args);
+  before(
+    tenantId: string,
+    threadId: string,
+    ternId: string,
+    limit: number,
+  ): Promise<rows.StoredRecord[]> {
+    return memory.recordsBefore(this.connection.pool, tenantId, threadId, ternId, limit);
   }
-  turnNumber(...args: Parameters<Records["turnNumber"]>): Promise<number> {
-    return memory.turnNumberOf(this.connection.pool, ...args);
+  turnNumber(tenantId: string, threadId: string, ternId: string): Promise<number> {
+    return memory.turnNumberOf(this.connection.pool, tenantId, threadId, ternId);
   }
   addSummary(summary: rows.NewSummaryRecord): Promise<rows.StoredSummary> {
     return memory.addSummary(this.connection.pool, summary, this.clock.now());
   }
-  latestSummaries(...args: Parameters<Records["latestSummaries"]>): Promise<rows.StoredSummary[]> {
-    return memory.latestSummariesOf(this.connection.pool, ...args);
+  latestSummaries(
+    tenantId: string,
+    threadId: string,
+    compaction: string,
+    limit: number,
+  ): Promise<rows.StoredSummary[]> {
+    return memory.latestSummariesOf(this.connection.pool, tenantId, threadId, compaction, limit);
   }
-  summaryCount(...args: Parameters<Records["summaryCount"]>): Promise<number> {
-    return memory.summaryCountOf(this.connection.pool, ...args);
+  summaryCount(tenantId: string, threadId: string, compaction: string): Promise<number> {
+    return memory.summaryCountOf(this.connection.pool, tenantId, threadId, compaction);
   }
   savePauseAnswer(
     tenantId: string,

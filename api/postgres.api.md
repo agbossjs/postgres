@@ -16,6 +16,7 @@ import { ChildExecutionEnd } from '@agboss/core';
 import { ChildExecutionQueueRepository } from '@agboss/core';
 import { Class } from '@agboss/core';
 import { Clock } from '@agboss/core';
+import type { ConfigSnapshot } from '@agboss/core';
 import { ExecutionLease } from '@agboss/core';
 import { ExecutionLeaseRepository } from '@agboss/core';
 import { ExecutionRecordRepository } from '@agboss/core';
@@ -30,9 +31,13 @@ import { FencedEffectSettings } from '@agboss/core';
 import { FencedEffectWork } from '@agboss/core';
 import { IdGenerator } from '@agboss/core';
 import type { Milliseconds } from '@agboss/core/units';
+import type { NewSummary } from '@agboss/core';
+import type { NewTern } from '@agboss/core';
+import type { NewThread } from '@agboss/core';
 import { OnDestroy } from '@agboss/core';
 import { OnInit } from '@agboss/core';
 import { PauseAnswer as PauseAnswer_2 } from '@agboss/core';
+import type { PauseAnswerRecord } from '@agboss/core';
 import { PauseCancellation } from '@agboss/core';
 import { PausedExecution } from '@agboss/core';
 import { PausedExecutionRepository } from '@agboss/core';
@@ -42,6 +47,10 @@ import pg from 'pg';
 import type { PoolClient } from 'pg';
 import { QueuedChildExecution } from '@agboss/core';
 import type { RunnableConfig } from '@langchain/core/runnables';
+import type { Summary } from '@agboss/core';
+import type { Tern } from '@agboss/core';
+import type { TernOutcome } from '@agboss/core';
+import type { VersionScore } from '@agboss/core';
 
 // @public
 export interface AppliedMigrationReport {
@@ -76,7 +85,7 @@ export interface MigrationReport {
     readonly version: number;
 }
 
-// @public (undocumented)
+// @public
 export class PostgresCheckpointSaver extends BaseCheckpointSaver {
     constructor(connection: PostgresConnection);
     // (undocumented)
@@ -148,11 +157,11 @@ export class PostgresExecutionRecordRepository extends ExecutionRecordRepository
     // (undocumented)
     append(record: rows.NewRecord): Promise<rows.StoredRecord>;
     // (undocumented)
-    before(...args: Parameters<Records_2["before"]>): Promise<rows.StoredRecord[]>;
+    before(tenantId: string, threadId: string, ternId: string, limit: number): Promise<rows.StoredRecord[]>;
     // (undocumented)
     byIds(ids: readonly string[]): Promise<rows.StoredRecord[]>;
     // (undocumented)
-    byVersion(...args: Parameters<Records_2["byVersion"]>): Promise<rows.StoredRecord[]>;
+    byVersion(workflow: string, promptVersion: string, limit: number): Promise<rows.StoredRecord[]>;
     // (undocumented)
     complete(id: string, outcome: rows.RecordOutcome): Promise<void>;
     // (undocumented)
@@ -164,7 +173,7 @@ export class PostgresExecutionRecordRepository extends ExecutionRecordRepository
     // (undocumented)
     createThread(thread: rows.NewThreadRecord): Promise<string>;
     // (undocumented)
-    findByStatus(status: ExecutionRecordStatus, limit: number, after?: string): ReturnType<Records_2["findByStatus"]>;
+    findByStatus(status: ExecutionRecordStatus, limit: number, after?: string): Promise<rows.StoredRecord[]>;
     // (undocumented)
     findPauseAnswersByTenantIdAndRootExecutionId(tenantId: string, rootExecutionId: string): Promise<rows.PauseAnswer[]>;
     // (undocumented)
@@ -172,7 +181,7 @@ export class PostgresExecutionRecordRepository extends ExecutionRecordRepository
     // (undocumented)
     lastTerns(tenantId: string, threadId: string, limit: number): Promise<rows.StoredRecord[]>;
     // (undocumented)
-    latestSummaries(...args: Parameters<Records_2["latestSummaries"]>): Promise<rows.StoredSummary[]>;
+    latestSummaries(tenantId: string, threadId: string, compaction: string, limit: number): Promise<rows.StoredSummary[]>;
     // (undocumented)
     meanScore(recordIds: readonly string[]): Promise<number | null>;
     // (undocumented)
@@ -180,7 +189,9 @@ export class PostgresExecutionRecordRepository extends ExecutionRecordRepository
     // (undocumented)
     recentOriginals(workflow: string, limit: number): Promise<rows.StoredRecord[]>;
     // (undocumented)
-    rememberConfig(...args: Parameters<Records_2["rememberConfig"]>): ReturnType<Records_2["rememberConfig"]>;
+    rememberConfig(workflow: string, version: string, hash: string, snapshot: string): Promise<{
+        readonly drift: boolean;
+    }>;
     // (undocumented)
     savePauseAnswer(tenantId: string, rootExecutionId: string, answer: rows.PauseAnswer): Promise<void>;
     // (undocumented)
@@ -188,17 +199,17 @@ export class PostgresExecutionRecordRepository extends ExecutionRecordRepository
     // (undocumented)
     summary(workflow: string): Promise<rows.StoredVersionScore[]>;
     // (undocumented)
-    summaryCount(...args: Parameters<Records_2["summaryCount"]>): Promise<number>;
-    // Warning: (ae-forgotten-export) The symbol "Records_2" needs to be exported by the entry point index.d.ts
-    //
+    summaryCount(tenantId: string, threadId: string, compaction: string): Promise<number>;
     // (undocumented)
-    threadOwner(...args: Parameters<Records_2["threadOwner"]>): ReturnType<Records_2["threadOwner"]>;
+    threadOwner(workflow: string, tenantId: string, threadId: string): Promise<{
+        readonly owner: string | undefined;
+    } | undefined>;
     // (undocumented)
-    turnNumber(...args: Parameters<Records_2["turnNumber"]>): Promise<number>;
+    turnNumber(tenantId: string, threadId: string, ternId: string): Promise<number>;
     // (undocumented)
-    uncovered(...args: Parameters<Records_2["uncovered"]>): Promise<rows.StoredRecord[]>;
+    uncovered(tenantId: string, threadId: string, compaction: string): Promise<rows.StoredRecord[]>;
     // (undocumented)
-    unscored(...args: Parameters<Records_2["unscored"]>): Promise<rows.StoredRecord[]>;
+    unscored(workflow: string, promptVersion: string | undefined, limit: number): Promise<rows.StoredRecord[]>;
 }
 
 // @public
@@ -331,48 +342,47 @@ export interface SchemaVersions {
 // src/errors.ts:93:12 - (ae-undocumented) Missing documentation for "name".
 // src/migrations/migrate.ts:23:3 - (ae-undocumented) Missing documentation for "version".
 // src/migrations/migrate.ts:24:3 - (ae-undocumented) Missing documentation for "name".
-// src/stores/postgres-checkpoint-saver.ts:40:1 - (ae-undocumented) Missing documentation for "PostgresCheckpointSaver".
-// src/stores/postgres-checkpoint-saver.ts:58:9 - (ae-undocumented) Missing documentation for "getTuple".
-// src/stores/postgres-checkpoint-saver.ts:62:10 - (ae-undocumented) Missing documentation for "list".
-// src/stores/postgres-checkpoint-saver.ts:69:9 - (ae-undocumented) Missing documentation for "put".
-// src/stores/postgres-checkpoint-saver.ts:81:9 - (ae-undocumented) Missing documentation for "putWrites".
-// src/stores/postgres-checkpoint-saver.ts:90:9 - (ae-undocumented) Missing documentation for "deleteThread".
+// src/stores/postgres-checkpoint-saver.ts:44:9 - (ae-undocumented) Missing documentation for "getTuple".
+// src/stores/postgres-checkpoint-saver.ts:48:10 - (ae-undocumented) Missing documentation for "list".
+// src/stores/postgres-checkpoint-saver.ts:55:9 - (ae-undocumented) Missing documentation for "put".
+// src/stores/postgres-checkpoint-saver.ts:65:9 - (ae-undocumented) Missing documentation for "putWrites".
+// src/stores/postgres-checkpoint-saver.ts:74:9 - (ae-undocumented) Missing documentation for "deleteThread".
 // src/stores/postgres-child-execution-queue.repository.ts:95:3 - (ae-undocumented) Missing documentation for "ping".
 // src/stores/postgres-child-execution-queue.repository.ts:99:9 - (ae-undocumented) Missing documentation for "saveIfAbsent".
 // src/stores/postgres-child-execution-queue.repository.ts:115:9 - (ae-undocumented) Missing documentation for "findByTenantIdAndExecutionId".
 // src/stores/postgres-child-execution-queue.repository.ts:127:9 - (ae-undocumented) Missing documentation for "claimFirstByStatusQueuedOrderByDepthDesc".
 // src/stores/postgres-child-execution-queue.repository.ts:135:9 - (ae-undocumented) Missing documentation for "completeByTenantIdAndExecutionId".
 // src/stores/postgres-child-execution-queue.repository.ts:156:9 - (ae-undocumented) Missing documentation for "deleteAllByTenantIdAndRootExecutionId".
-// src/stores/postgres-execution-lease.repository.ts:66:3 - (ae-undocumented) Missing documentation for "ping".
-// src/stores/postgres-execution-lease.repository.ts:70:9 - (ae-undocumented) Missing documentation for "acquire".
-// src/stores/postgres-execution-lease.repository.ts:90:9 - (ae-undocumented) Missing documentation for "renew".
-// src/stores/postgres-execution-lease.repository.ts:104:9 - (ae-undocumented) Missing documentation for "release".
-// src/stores/postgres-execution-record.repository.ts:40:3 - (ae-undocumented) Missing documentation for "ping".
-// src/stores/postgres-execution-record.repository.ts:44:3 - (ae-undocumented) Missing documentation for "createThread".
-// src/stores/postgres-execution-record.repository.ts:48:9 - (ae-undocumented) Missing documentation for "hasThread".
-// src/stores/postgres-execution-record.repository.ts:51:3 - (ae-undocumented) Missing documentation for "threadOwner".
-// src/stores/postgres-execution-record.repository.ts:54:3 - (ae-undocumented) Missing documentation for "append".
-// src/stores/postgres-execution-record.repository.ts:57:9 - (ae-undocumented) Missing documentation for "complete".
-// src/stores/postgres-execution-record.repository.ts:60:3 - (ae-undocumented) Missing documentation for "completeIfStatus".
-// src/stores/postgres-execution-record.repository.ts:67:3 - (ae-undocumented) Missing documentation for "lastTerns".
-// src/stores/postgres-execution-record.repository.ts:70:3 - (ae-undocumented) Missing documentation for "byIds".
-// src/stores/postgres-execution-record.repository.ts:73:3 - (ae-undocumented) Missing documentation for "findByStatus".
-// src/stores/postgres-execution-record.repository.ts:80:3 - (ae-undocumented) Missing documentation for "byVersion".
-// src/stores/postgres-execution-record.repository.ts:83:3 - (ae-undocumented) Missing documentation for "unscored".
-// src/stores/postgres-execution-record.repository.ts:86:3 - (ae-undocumented) Missing documentation for "saveScore".
-// src/stores/postgres-execution-record.repository.ts:89:3 - (ae-undocumented) Missing documentation for "meanScore".
-// src/stores/postgres-execution-record.repository.ts:92:3 - (ae-undocumented) Missing documentation for "summary".
-// src/stores/postgres-execution-record.repository.ts:95:3 - (ae-undocumented) Missing documentation for "rememberConfig".
-// src/stores/postgres-execution-record.repository.ts:100:3 - (ae-undocumented) Missing documentation for "configSnapshots".
-// src/stores/postgres-execution-record.repository.ts:103:3 - (ae-undocumented) Missing documentation for "recentOriginals".
-// src/stores/postgres-execution-record.repository.ts:106:3 - (ae-undocumented) Missing documentation for "uncovered".
-// src/stores/postgres-execution-record.repository.ts:109:3 - (ae-undocumented) Missing documentation for "before".
-// src/stores/postgres-execution-record.repository.ts:112:3 - (ae-undocumented) Missing documentation for "turnNumber".
-// src/stores/postgres-execution-record.repository.ts:115:3 - (ae-undocumented) Missing documentation for "addSummary".
-// src/stores/postgres-execution-record.repository.ts:118:3 - (ae-undocumented) Missing documentation for "latestSummaries".
-// src/stores/postgres-execution-record.repository.ts:121:3 - (ae-undocumented) Missing documentation for "summaryCount".
-// src/stores/postgres-execution-record.repository.ts:124:3 - (ae-undocumented) Missing documentation for "savePauseAnswer".
-// src/stores/postgres-execution-record.repository.ts:131:9 - (ae-undocumented) Missing documentation for "findPauseAnswersByTenantIdAndRootExecutionId".
+// src/stores/postgres-execution-lease.repository.ts:80:3 - (ae-undocumented) Missing documentation for "ping".
+// src/stores/postgres-execution-lease.repository.ts:84:9 - (ae-undocumented) Missing documentation for "acquire".
+// src/stores/postgres-execution-lease.repository.ts:116:9 - (ae-undocumented) Missing documentation for "renew".
+// src/stores/postgres-execution-lease.repository.ts:130:9 - (ae-undocumented) Missing documentation for "release".
+// src/stores/postgres-execution-record.repository.ts:38:3 - (ae-undocumented) Missing documentation for "ping".
+// src/stores/postgres-execution-record.repository.ts:42:3 - (ae-undocumented) Missing documentation for "createThread".
+// src/stores/postgres-execution-record.repository.ts:46:9 - (ae-undocumented) Missing documentation for "hasThread".
+// src/stores/postgres-execution-record.repository.ts:49:3 - (ae-undocumented) Missing documentation for "threadOwner".
+// src/stores/postgres-execution-record.repository.ts:56:3 - (ae-undocumented) Missing documentation for "append".
+// src/stores/postgres-execution-record.repository.ts:59:9 - (ae-undocumented) Missing documentation for "complete".
+// src/stores/postgres-execution-record.repository.ts:62:3 - (ae-undocumented) Missing documentation for "completeIfStatus".
+// src/stores/postgres-execution-record.repository.ts:69:3 - (ae-undocumented) Missing documentation for "lastTerns".
+// src/stores/postgres-execution-record.repository.ts:72:3 - (ae-undocumented) Missing documentation for "byIds".
+// src/stores/postgres-execution-record.repository.ts:75:3 - (ae-undocumented) Missing documentation for "findByStatus".
+// src/stores/postgres-execution-record.repository.ts:82:3 - (ae-undocumented) Missing documentation for "byVersion".
+// src/stores/postgres-execution-record.repository.ts:85:3 - (ae-undocumented) Missing documentation for "unscored".
+// src/stores/postgres-execution-record.repository.ts:92:3 - (ae-undocumented) Missing documentation for "saveScore".
+// src/stores/postgres-execution-record.repository.ts:95:3 - (ae-undocumented) Missing documentation for "meanScore".
+// src/stores/postgres-execution-record.repository.ts:98:3 - (ae-undocumented) Missing documentation for "summary".
+// src/stores/postgres-execution-record.repository.ts:101:3 - (ae-undocumented) Missing documentation for "rememberConfig".
+// src/stores/postgres-execution-record.repository.ts:110:3 - (ae-undocumented) Missing documentation for "configSnapshots".
+// src/stores/postgres-execution-record.repository.ts:113:3 - (ae-undocumented) Missing documentation for "recentOriginals".
+// src/stores/postgres-execution-record.repository.ts:116:3 - (ae-undocumented) Missing documentation for "uncovered".
+// src/stores/postgres-execution-record.repository.ts:119:3 - (ae-undocumented) Missing documentation for "before".
+// src/stores/postgres-execution-record.repository.ts:127:3 - (ae-undocumented) Missing documentation for "turnNumber".
+// src/stores/postgres-execution-record.repository.ts:130:3 - (ae-undocumented) Missing documentation for "addSummary".
+// src/stores/postgres-execution-record.repository.ts:133:3 - (ae-undocumented) Missing documentation for "latestSummaries".
+// src/stores/postgres-execution-record.repository.ts:141:3 - (ae-undocumented) Missing documentation for "summaryCount".
+// src/stores/postgres-execution-record.repository.ts:144:3 - (ae-undocumented) Missing documentation for "savePauseAnswer".
+// src/stores/postgres-execution-record.repository.ts:151:9 - (ae-undocumented) Missing documentation for "findPauseAnswersByTenantIdAndRootExecutionId".
 // src/stores/postgres-execution-tree.repository.ts:37:3 - (ae-undocumented) Missing documentation for "ping".
 // src/stores/postgres-execution-tree.repository.ts:41:9 - (ae-undocumented) Missing documentation for "saveIfAbsentInTree".
 // src/stores/postgres-execution-tree.repository.ts:55:9 - (ae-undocumented) Missing documentation for "findByIdInTree".
