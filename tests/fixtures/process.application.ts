@@ -18,7 +18,6 @@ import {
   PostgresCostLedgerRepository,
   PostgresExecutionHistoryRepository,
   PostgresExecutionLeaseEventRepository,
-  PostgresExecutionLeaseRepository,
   PostgresExecutionRecordRepository,
   PostgresExecutionTreeRepository,
   PostgresFencedEffectRepository,
@@ -34,6 +33,7 @@ import {
 } from "./approval.workflow.js";
 import { BatchWorkflow, ItemWorkflow } from "./batch.workflow.js";
 import { ChargeWorkflow, OrderChargeWorkflow } from "./charge.workflow.js";
+import { HeldPostgresExecutionLeaseRepository } from "./held-lease.repository.js";
 import { ProcessEnvironment } from "./environments/app.environment.js";
 import { emit } from "./process-log.js";
 import {
@@ -50,7 +50,8 @@ import { TakeoverWorkflow } from "./takeover.workflow.js";
  * The application each process of tests/processes/ runs (`environments/process.environment.ts`):
  * every store on PostgreSQL, the outbound calls' too (agbossjs/agboss#505) — nothing on a disk, nothing shared but the database — and one step
  * slot per instance (`maxConcurrentSteps: 1`), so a launch of several children needs both
- * instances. It keeps its executions' history (agbossjs/agboss#483 AC3), trusts the mesh peer
+ * instances; its lease store is the package's with the test's hold on an acquire (agbossjs/agboss#520).
+ * It keeps its executions' history (agbossjs/agboss#483 AC3), trusts the mesh peer
  * `orders-application` (AC4), and its tenant's day is $10 (AC1). Its observer tells the test of
  * every end and every takeover.
  */
@@ -129,7 +130,7 @@ export class ProcessObserver implements OnExecutionEnd, OnExecutionLeaseTakeover
     PostgresCostLedgerRepository,
     PostgresExecutionHistoryRepository,
     PostgresExecutionLeaseEventRepository,
-    PostgresExecutionLeaseRepository,
+    HeldPostgresExecutionLeaseRepository,
     PostgresExecutionRecordRepository,
     PostgresExecutionTreeRepository,
     PostgresFencedEffectRepository,

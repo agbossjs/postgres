@@ -18,7 +18,9 @@ import { changesOf, firstRowOf } from "../connection/query.js";
  * locked first (`MATERIALIZED`, joined into the insert's source so it is evaluated before the
  * upsert changes the row; `FOR UPDATE`, so a concurrent take is waited for and its result read),
  * and an expired — not released — one is the lease's `takenOverFrom` (agbossjs/agboss#501), and so
- * is one an outbound call's check closed as expired (`superseded`, agbossjs/agboss#508).
+ * is one an outbound call's check closed as expired (`superseded`, agbossjs/agboss#508). A finished
+ * row (agbossjs/agboss#520) is refused by the same `WHERE`: PostgreSQL evaluates it on the row's
+ * latest committed version, after waiting for a concurrent `finish`, so no take passes a finish.
  */
 const ACQUIRE = `WITH previous AS MATERIALIZED (
     SELECT holder_instance_id, lease_epoch, NOT released OR superseded AS expired
@@ -37,7 +39,7 @@ const ACQUIRE = `WITH previous AS MATERIALIZED (
     released = false,
     yielded = false,
     superseded = false
-  WHERE lease.released OR lease.expires_at <= $5
+  WHERE NOT lease.finished AND (lease.released OR lease.expires_at <= $5)
   RETURNING lease.lease_epoch,
     (SELECT holder_instance_id FROM previous WHERE expired) AS previous_holder,
     (SELECT lease_epoch FROM previous WHERE expired) AS previous_epoch`;
@@ -72,9 +74,19 @@ const RECLAIM = `UPDATE agboss_execution_leases
 
 /**
  * Gives the caller's own lease up; another holder's row is not matched. A lease an outbound call's
- * check closed stays `superseded`: its holder releasing it late does not make it a hand-over.
+ * check closed stays `superseded`: its holder releasing it late does not make it a hand-over; a
+ * finished one stays `finished` (the column is not written).
  */
 const RELEASE = `UPDATE agboss_execution_leases SET released = true
+  WHERE tenant_id = $1 AND root_execution_id = $2 AND holder_instance_id = $3
+    AND lease_epoch = $4`;
+
+/**
+ * Gives the caller's own lease up for good (agbossjs/agboss#520): released and `finished`, so no
+ * `acquire` passes it again. Matched as `release` matches — its holder and epoch, also past its end
+ * or already released — so a lease another instance took meanwhile (a later epoch) is kept.
+ */
+const FINISH = `UPDATE agboss_execution_leases SET released = true, finished = true, yielded = false
   WHERE tenant_id = $1 AND root_execution_id = $2 AND holder_instance_id = $3
     AND lease_epoch = $4`;
 
@@ -101,7 +113,8 @@ const TakenRow = z.object({
  * other's conflicting insert waits for the row and finds it held); `renew` and `release` an
  * `UPDATE` matching the holder and the epoch (0 rows: the lease was lost; a renewal also needs
  * the lease not over yet), and so are `yield` and `reclaim` (agbossjs/agboss#516: `yielded`, the
- * next epoch). Times are the framework clock's. Listed in `@Application({ providers })` with `PostgresConnection`'s
+ * next epoch), and `finish` (agbossjs/agboss#520: `released` and `finished`, refused by every later
+ * `acquire`). Times are the framework clock's. Listed in `@Application({ providers })` with `PostgresConnection`'s
  * `postgresUrl`; a lost connection rejects the call, and the core's holder hands the tree over.
  */
 @Injectable({ deps: [PostgresConnection, Clock, ApplicationContext] })
@@ -166,6 +179,10 @@ export class PostgresExecutionLeaseRepository extends ExecutionLeaseRepository {
 
   async release(executionLease: ExecutionLease): Promise<void> {
     await changesOf(this.connection.pool, RELEASE, heldBy(executionLease));
+  }
+
+  async finish(executionLease: ExecutionLease): Promise<void> {
+    await changesOf(this.connection.pool, FINISH, heldBy(executionLease));
   }
 
   async yield(executionLease: ExecutionLease): Promise<boolean> {
