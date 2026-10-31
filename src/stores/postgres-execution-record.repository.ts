@@ -14,6 +14,9 @@ import type * as rows from "./records/record-rows.js";
 import * as scores from "./records/record-scores.js";
 import * as writes from "./records/record-writes.js";
 
+/** How many minted ids a new thread tries before it gives up (agbossjs/agboss#550). */
+const MINTED_THREAD_TRIES = 100;
+
 /**
  * `ExecutionRecordRepository` on PostgreSQL (#265 S30, #482): threads with their owners, one
  * record per execution in the order appended (`seq`), scores, memory summaries, config snapshots
@@ -24,9 +27,6 @@ import * as writes from "./records/record-writes.js";
  * `@Application({ providers })` with `postgresUrl`; subclassed through public tokens only:
  * `deps: [PostgresConnection, Clock, ApplicationContext, IdGenerator]`.
  */
-/** How many minted ids a new thread tries before it gives up (agbossjs/agboss#550). */
-const MINTED_THREAD_TRIES = 100;
-
 @Injectable({ deps: [PostgresConnection, Clock, ApplicationContext, IdGenerator] })
 export class PostgresExecutionRecordRepository extends ExecutionRecordRepository {
   constructor(
