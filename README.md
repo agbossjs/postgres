@@ -217,11 +217,11 @@ npx agboss-postgres migrate --url "$DATABASE_URL"   # or DATABASE_URL alone
 ```text
 applied 0001_execution_leases (public)
 …
-applied 0016_outbound_calls (public)
+applied 0017_execution_lease_finished (public)
 applied 6 LangGraph checkpoint migration(s)
 ```
 
-A second run prints `nothing to apply: public is at migration 16`. Exit codes: `0` done, `1` the
+A second run prints `nothing to apply: public is at migration 17`. Exit codes: `0` done, `1` the
 migration failed (the reason on stderr), `2` a usage error.
 
 In Kubernetes, the command is a Job run before the Deployment rolls out (a Helm `pre-upgrade` hook,
@@ -293,6 +293,7 @@ a pod never waits on another's migration at start (both are safe: they serialize
 | `0014_execution_lease_superseded`  | `agboss_execution_leases.superseded`: a lease an outbound call's check closed (agbossjs/agboss#508)                                                     |
 | `0015_fenced_effect_business_keys` | `agboss_fenced_effect_business_results` (agbossjs/agboss#508)                                                                                           |
 | `0016_outbound_calls`              | `agboss_outbound_calls` (agbossjs/agboss#505, #508)                                                                                                     |
+| `0017_execution_lease_finished`    | `agboss_execution_leases.finished`: a lease its holder finished, never taken again (agbossjs/agboss#520)                                                |
 | LangGraph                          | `checkpoints`, `checkpoint_blobs`, `checkpoint_writes`, `checkpoint_migrations`                                                                         |
 
 ## Text with a NUL character
@@ -314,30 +315,31 @@ All operations run at `READ COMMITTED`. Losing the connection rejects the operat
 rules then apply — a failed renewal past `confirmedUntil` aborts the execution's signal and hands
 the tree over, so a pod never moves a tree whose lease it could not renew.
 
-| Store         | Operation            | How                                                                                                             |
-| ------------- | -------------------- | --------------------------------------------------------------------------------------------------------------- |
-| Lease         | `acquire`            | `INSERT … ON CONFLICT DO UPDATE … WHERE released OR expires_at <= $now` → epoch + 1, `takenOverFrom` if expired |
-| Lease         | `renew` / `release`  | `UPDATE … WHERE holder AND lease_epoch` (a renewal also `expires_at >= $now`); 0 rows: lost                     |
-| Lease         | `yield` / `reclaim`  | `UPDATE … WHERE holder AND lease_epoch AND expires_at >= $now`: `yielded = true` / epoch + 1; 0 rows: lost      |
-| Record        | `completeIfStatus`   | `UPDATE … WHERE status = $expected`                                                                             |
-| Tree          | `saveIfAbsent`       | `INSERT … ON CONFLICT DO NOTHING RETURNING`                                                                     |
-| Child queue   | claim                | `UPDATE … FROM (SELECT … FOR UPDATE SKIP LOCKED LIMIT 1)`                                                       |
-| Paused        | `Pending → …`        | `UPDATE … WHERE status = 'pending' RETURNING` (none → `NotPausedError` from the core)                           |
-| Fenced effect | `saveResultIfAbsent` | one transaction: lease row `FOR UPDATE`, mark upsert, key lookup, `await work(client)`, insert                  |
-| Fenced effect | business key         | the same, the key's identity serialized by `pg_advisory_xact_lock` first (no lease row covers two trees)        |
-| Outbound call | `saveIfAbsent`       | one transaction: lease row `FOR UPDATE`, mark upsert, `INSERT … ON CONFLICT DO NOTHING` (unique by step / key)  |
-| Outbound call | `mark*`              | the same checks, then one `UPDATE … WHERE status AND attempt AND attempt_owner` as read: a compare-and-set      |
-| Outbound call | `leaseStateOf`       | one transaction: lease row `FOR UPDATE`; held → Live, expired at the token → closed (`superseded`), else Ended  |
-| Lease events  | `save`               | append-only `INSERT`; read `ORDER BY occurred_at, id` (one moment: the order saved)                             |
-| Cost ledger   | `saveAll`            | one `INSERT … ON CONFLICT DO UPDATE SET spent_usd = spent_usd + $cost` of every counter, in key order           |
-| Cost ledger   | `findSpentByCounter` | `SELECT` of the counter's row; no other locking (the core accepts a small overrun on a race, nothing reserved)  |
-| History       | `save`               | upsert of the root's row (`jsonb` record); reads by tenant, id, thread, period (`LIMIT`/`OFFSET`), oldest first |
-| Rate limit    | `acquire`            | one transaction: the key's row `FOR UPDATE`, then sweep expired + `INSERT … WHERE count(valid) < max`           |
-| Rate limit    | `renew` / `release`  | `UPDATE … WHERE slot_id AND expires_at > $now` (0 rows: expired) / `DELETE`                                     |
-| Rate limit    | `addToWindow`        | the key's row `FOR UPDATE`, old buckets forgotten, sum, add to this millisecond's bucket if within the limit    |
-| Rate limit    | `pauseUntil`         | upsert keeping `GREATEST(paused_until, $until)`: a 429 pause or an open breaker, seen by every pod              |
-| Mesh request  | `saveIfAbsent`       | `INSERT … ON CONFLICT DO NOTHING` by (tenant, peer, idempotency key); `deleteCreatedBefore` for the sweep       |
-| Checkpoints   | —                    | LangGraph's `PostgresSaver` on the shared pool                                                                  |
+| Store         | Operation            | How                                                                                                                                   |
+| ------------- | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| Lease         | `acquire`            | `INSERT … ON CONFLICT DO UPDATE … WHERE NOT finished AND (released OR expires_at <= $now)` → epoch + 1, `takenOverFrom` if expired    |
+| Lease         | `finish`             | `UPDATE … SET released, finished WHERE holder AND lease_epoch`: refused by every later `acquire`; a later `release` keeps it finished |
+| Lease         | `renew` / `release`  | `UPDATE … WHERE holder AND lease_epoch` (a renewal also `expires_at >= $now`); 0 rows: lost                                           |
+| Lease         | `yield` / `reclaim`  | `UPDATE … WHERE holder AND lease_epoch AND expires_at >= $now`: `yielded = true` / epoch + 1; 0 rows: lost                            |
+| Record        | `completeIfStatus`   | `UPDATE … WHERE status = $expected`                                                                                                   |
+| Tree          | `saveIfAbsent`       | `INSERT … ON CONFLICT DO NOTHING RETURNING`                                                                                           |
+| Child queue   | claim                | `UPDATE … FROM (SELECT … FOR UPDATE SKIP LOCKED LIMIT 1)`                                                                             |
+| Paused        | `Pending → …`        | `UPDATE … WHERE status = 'pending' RETURNING` (none → `NotPausedError` from the core)                                                 |
+| Fenced effect | `saveResultIfAbsent` | one transaction: lease row `FOR UPDATE`, mark upsert, key lookup, `await work(client)`, insert                                        |
+| Fenced effect | business key         | the same, the key's identity serialized by `pg_advisory_xact_lock` first (no lease row covers two trees)                              |
+| Outbound call | `saveIfAbsent`       | one transaction: lease row `FOR UPDATE`, mark upsert, `INSERT … ON CONFLICT DO NOTHING` (unique by step / key)                        |
+| Outbound call | `mark*`              | the same checks, then one `UPDATE … WHERE status AND attempt AND attempt_owner` as read: a compare-and-set                            |
+| Outbound call | `leaseStateOf`       | one transaction: lease row `FOR UPDATE`; held → Live, expired at the token → closed (`superseded`), else Ended                        |
+| Lease events  | `save`               | append-only `INSERT`; read `ORDER BY occurred_at, id` (one moment: the order saved)                                                   |
+| Cost ledger   | `saveAll`            | one `INSERT … ON CONFLICT DO UPDATE SET spent_usd = spent_usd + $cost` of every counter, in key order                                 |
+| Cost ledger   | `findSpentByCounter` | `SELECT` of the counter's row; no other locking (the core accepts a small overrun on a race, nothing reserved)                        |
+| History       | `save`               | upsert of the root's row (`jsonb` record); reads by tenant, id, thread, period (`LIMIT`/`OFFSET`), oldest first                       |
+| Rate limit    | `acquire`            | one transaction: the key's row `FOR UPDATE`, then sweep expired + `INSERT … WHERE count(valid) < max`                                 |
+| Rate limit    | `renew` / `release`  | `UPDATE … WHERE slot_id AND expires_at > $now` (0 rows: expired) / `DELETE`                                                           |
+| Rate limit    | `addToWindow`        | the key's row `FOR UPDATE`, old buckets forgotten, sum, add to this millisecond's bucket if within the limit                          |
+| Rate limit    | `pauseUntil`         | upsert keeping `GREATEST(paused_until, $until)`: a 429 pause or an open breaker, seen by every pod                                    |
+| Mesh request  | `saveIfAbsent`       | `INSERT … ON CONFLICT DO NOTHING` by (tenant, peer, idempotency key); `deleteCreatedBefore` for the sweep                             |
+| Checkpoints   | —                    | LangGraph's `PostgresSaver` on the shared pool                                                                                        |
 
 ## Tests
 
@@ -367,6 +369,10 @@ Each test file works in a schema of its own (`t_<random>`), dropped after it.
     30 s and not a setting, so it waits for B's second recovery sweep: about 30 s.
   - `child-queue.test.ts` (AC2): five `AnyInstance` children, one step slot per instance: A and B
     each hold one at the same time, and every child runs once (a few seconds).
+  - `finished-child.test.ts` (agbossjs/agboss#520 AC1): A's worker asks for the lease of a child B
+    runs; the ask is held in A's lease store, A is frozen (SIGSTOP), B answers the child and finishes
+    its lease, A is thawed (SIGCONT) and its ask goes on: A gets no lease, the child's row stays B's,
+    finished, and the lease log has no takeover of it (a few seconds).
   - `pause-resume.test.ts` (AC3): a pause made on A is answered on B; the tool runs on B, once
     (a few seconds).
   - `shared-budget.test.ts` (#483 AC1): a $5 call on A and one on B spend the tenant's $10 day;
@@ -385,10 +391,14 @@ Each test file works in a schema of its own (`t_<random>`), dropped after it.
     request ever reaches the gateway. About 30 s and 50 s (the lease and the sweep, 30 s each).
 - **Migrations** (`tests/migrations/`) — AC5: a second run changes nothing (a schema dump compared),
   concurrent runs serialize, a changed file fails, too new / too old fail at start; leases written
-  before `0014` keep working (taken, renewed, closed as expired).
-- **Races** (`tests/stores/outbound-call.test.ts`, `fenced-effect.test.ts`) — beyond the contract's
-  two instances: six connections racing on one business key, one intent and one expired lease,
-  fifteen rounds each — and a check-then-write port beside them that the same race catches.
+  before `0014` keep working (taken, renewed, closed as expired), and those before `0017` are not
+  finished (taken, renewed, reclaimed and finished as before).
+- **Races** (`tests/stores/outbound-call.test.ts`, `fenced-effect.test.ts`,
+  `execution-lease-finish.test.ts`) — beyond the contract's two instances: six connections racing on
+  one business key, one intent and one expired lease, and a lease's finish and release against four
+  acquires, fifteen rounds each — and a check-then-write port beside them that the same race
+  catches. `execution-lease-finish-order.test.ts` runs the finish, the release and an acquire in
+  each order, queued behind a row lock the test holds.
 
 `npm run check:types` runs the pinned CLI's `agboss check` on the fixtures' application, which
 writes `.agboss/types.d.ts` (never committed) — the flow types `tsconfig.processes.json` compiles

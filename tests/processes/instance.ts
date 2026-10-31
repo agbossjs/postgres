@@ -14,6 +14,7 @@ import { ApprovalWorkflowStart } from "../fixtures/approval.workflow.js";
 import { BatchWorkflowStart } from "../fixtures/batch.workflow.js";
 import { ChargeWorkflowStart, OrderChargeWorkflowStart } from "../fixtures/charge.workflow.js";
 import { a2aHttpListener } from "@agboss/core/a2a";
+import { holdAcquireOf, letAcquireGo } from "../fixtures/held-lease.repository.js";
 import { ProcessApplication } from "../fixtures/process.application.js";
 import { emit, openGate } from "../fixtures/process-log.js";
 import {
@@ -97,6 +98,12 @@ async function answerOf(app: App, command: Command): Promise<unknown> {
         tenantId: String(command.tenantId),
         rootExecutionId: String(command.rootExecutionId),
       });
+    case "hold-acquire":
+      holdAcquireOf(String(command.key));
+      return "held";
+    case "let-acquire":
+      letAcquireGo(String(command.key));
+      return "let";
     case "open":
       openGate();
       return "open";

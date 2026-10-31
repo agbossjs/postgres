@@ -36,7 +36,7 @@ PostgreSQL (`AGBOSS_POSTGRES_TEST_URL`) · api-extractor (`api/postgres.api.md`)
   locking are stated in each store's doc comment. Time only from the `Clock` (parameters, never
   `now()`).
 - `src/cli.ts` + `bin/agboss-postgres.js` — the command.
-- `tests/processes/` + `tests/fixtures/` — the two-process tests (#482 AC1–AC3, #483 AC1–AC4, the outbound charge):
+- `tests/processes/` + `tests/fixtures/` — the two-process tests (#482 AC1–AC3, #483 AC1–AC4, the outbound charge, agbossjs/agboss#520 AC1):
   each instance a `node` child (`--import tsx`) running `ProcessApplication` on the test's schema,
   driven over stdin/stdout, serving A2A on a port of its own. Typed by `tsconfig.processes.json`
   (the generated flow types stay out of the other tests).

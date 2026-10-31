@@ -46,7 +46,7 @@ describe("PostgresExecutionLeaseRepository", () => {
     });
   });
 
-  it("a lost connection rejects acquire, renew and release: the core's holder hands the tree over", async () => {
+  it("a lost connection rejects acquire, renew, release and finish: the core's holder hands the tree over", async () => {
     const clock = new VirtualClock();
     const down = new PostgresExecutionLeaseRepository(
       connectionTo("postgres://postgres:pw@127.0.0.1:1/postgres"),
@@ -64,6 +64,7 @@ describe("PostgresExecutionLeaseRepository", () => {
     await expect(down.acquire("default", "root-down", seconds(30))).rejects.toThrow();
     await expect(down.renew(lease, seconds(30))).rejects.toThrow();
     await expect(down.release(lease)).rejects.toThrow();
+    await expect(down.finish(lease)).rejects.toThrow();
     await expect(down.ping()).rejects.toThrow();
   });
 });
