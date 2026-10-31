@@ -24,6 +24,9 @@ import * as writes from "./records/record-writes.js";
  * `@Application({ providers })` with `postgresUrl`; subclassed through public tokens only:
  * `deps: [PostgresConnection, Clock, ApplicationContext, IdGenerator]`.
  */
+/** How many minted ids a new thread tries before it gives up (agbossjs/agboss#550). */
+const MINTED_THREAD_TRIES = 100;
+
 @Injectable({ deps: [PostgresConnection, Clock, ApplicationContext, IdGenerator] })
 export class PostgresExecutionRecordRepository extends ExecutionRecordRepository {
   constructor(
@@ -39,9 +42,23 @@ export class PostgresExecutionRecordRepository extends ExecutionRecordRepository
     return this.connection.ping();
   }
 
-  createThread(thread: rows.NewThreadRecord): Promise<string> {
-    const id = thread.threadId ?? this.idGenerator.newThreadId();
-    return writes.createThread(this.connection.pool, thread, id, this.clock.now());
+  /**
+   * A new thread (agbossjs/agboss#550): a caller's own id is kept as it is (the first one keeps it);
+   * a minted one the tenant has already — an `IdGenerator` that repeats its ids — is never handed
+   * out: the next one is minted, at most `MINTED_THREAD_TRIES` times.
+   */
+  async createThread(thread: rows.NewThreadRecord): Promise<string> {
+    if (thread.threadId !== undefined) {
+      await writes.createThread(this.connection.pool, thread, thread.threadId, this.clock.now());
+      return thread.threadId;
+    }
+    for (let tries = 0; tries < MINTED_THREAD_TRIES; tries += 1) {
+      const id = this.idGenerator.newThreadId();
+      if (await writes.createThread(this.connection.pool, thread, id, this.clock.now())) return id;
+    }
+    throw new Error(
+      `no new thread id after ${String(MINTED_THREAD_TRIES)} minted ids: every one is a thread the tenant has — the IdGenerator repeats its ids`,
+    );
   }
   async hasThread(workflow: string, tenantId: string, threadId: string): Promise<boolean> {
     return (await this.threadOwner(workflow, tenantId, threadId)) !== undefined;
