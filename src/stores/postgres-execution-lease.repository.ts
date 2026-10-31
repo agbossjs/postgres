@@ -45,13 +45,14 @@ const ACQUIRE = `WITH previous AS MATERIALIZED (
     (SELECT lease_epoch FROM previous WHERE expired) AS previous_epoch`;
 
 /**
- * Extends the caller's own lease: its holder and epoch, not released, not past its end — renewed at
- * the very moment it ends it is kept; a lease already over is not revived (its holder's local
- * fencing has given it up, #335), so a renewal racing another instance's takeover never wins it.
+ * Extends the caller's own lease: its holder and epoch, not released, still live — `expires_at >
+ * now`, the one boundary of every lease check (agbossjs/agboss#534): at the very moment it ends it
+ * is over for its holder too, so a lease already over is not revived and a renewal racing another
+ * instance's takeover never wins it.
  */
 const RENEW = `UPDATE agboss_execution_leases SET expires_at = $1
   WHERE tenant_id = $2 AND root_execution_id = $3 AND holder_instance_id = $4
-    AND lease_epoch = $5 AND NOT released AND expires_at >= $6`;
+    AND lease_epoch = $5 AND NOT released AND expires_at > $6`;
 
 /**
  * Marks the caller's own lease yielded (agbossjs/agboss#516): its holder waits for children on any
@@ -60,7 +61,7 @@ const RENEW = `UPDATE agboss_execution_leases SET expires_at = $1
  */
 const YIELD = `UPDATE agboss_execution_leases SET yielded = true
   WHERE tenant_id = $1 AND root_execution_id = $2 AND holder_instance_id = $3
-    AND lease_epoch = $4 AND NOT released AND expires_at >= $5`;
+    AND lease_epoch = $4 AND NOT released AND expires_at > $5`;
 
 /**
  * The holder takes its own lease back at the next epoch (agbossjs/agboss#516), held again — matched
@@ -69,7 +70,7 @@ const YIELD = `UPDATE agboss_execution_leases SET yielded = true
 const RECLAIM = `UPDATE agboss_execution_leases
   SET lease_epoch = lease_epoch + 1, expires_at = $1, yielded = false
   WHERE tenant_id = $2 AND root_execution_id = $3 AND holder_instance_id = $4
-    AND lease_epoch = $5 AND NOT released AND expires_at >= $6
+    AND lease_epoch = $5 AND NOT released AND expires_at > $6
   RETURNING lease_epoch`;
 
 /**
