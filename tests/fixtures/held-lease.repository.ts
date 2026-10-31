@@ -1,4 +1,4 @@
-import { ApplicationContext, Clock, Injectable, type ExecutionLease } from "@agboss/core";
+import { ApplicationContext, Injectable, StoreClock, type ExecutionLease } from "@agboss/core";
 import type { Milliseconds } from "@agboss/core/units";
 import { PostgresConnection, PostgresExecutionLeaseRepository } from "../../src/index.js";
 import { emit } from "./process-log.js";
@@ -26,7 +26,7 @@ export function letAcquireGo(key: string): void {
  * what it got (`acquire-result`). The process's own memory, as its gate: nothing is shared but the
  * database.
  */
-@Injectable({ deps: [PostgresConnection, Clock, ApplicationContext] })
+@Injectable({ deps: [PostgresConnection, StoreClock, ApplicationContext] })
 export class HeldPostgresExecutionLeaseRepository extends PostgresExecutionLeaseRepository {
   override async acquire(
     tenantId: string,

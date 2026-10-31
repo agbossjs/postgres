@@ -48,10 +48,10 @@ const fencedEffects = postgresStore(
     return {
       effects: new PostgresFencedEffectRepository(
         connection,
-        seam.clock,
+        seam.storeClock,
         new FencedEffectSettings(),
       ),
-      leases: new PostgresExecutionLeaseRepository(connection, seam.clock, seam.application),
+      leases: new PostgresExecutionLeaseRepository(connection, seam.storeClock, seam.application),
       rows: {
         insert: async (client, row) => {
           await client.query("INSERT INTO contract_rows (row) VALUES ($1)", [row]);
@@ -93,7 +93,7 @@ storeConformance<PoolClient>({
     executionLease: postgresStore(
       database,
       (connection, seam) =>
-        new PostgresExecutionLeaseRepository(connection, seam.clock, seam.application),
+        new PostgresExecutionLeaseRepository(connection, seam.storeClock, seam.application),
     ),
     executionLeaseEvent: postgresStore(
       database,
@@ -119,8 +119,8 @@ storeConformance<PoolClient>({
       (connection) => new PostgresMeshRequestRepository(connection),
     ),
     outboundCall: postgresStore(database, (connection, seam) => ({
-      calls: new PostgresOutboundCallRepository(connection, seam.clock),
-      leases: new PostgresExecutionLeaseRepository(connection, seam.clock, seam.application),
+      calls: new PostgresOutboundCallRepository(connection, seam.storeClock),
+      leases: new PostgresExecutionLeaseRepository(connection, seam.storeClock, seam.application),
     })),
     pausedExecution: postgresStore(
       database,

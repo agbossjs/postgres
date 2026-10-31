@@ -6,6 +6,8 @@
  * carrying the command's `id` (a failure: its error's text and name). Its recovery sweep and child
  * workers run as in any deployed instance; nothing but the database is shared with the others.
  */
+// first: a process whose clock is off (agbossjs/agboss#533), before anything reads the time
+import "../fixtures/skewed-date.js";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { createInterface } from "node:readline";

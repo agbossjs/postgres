@@ -5,7 +5,7 @@ import {
   IdempotencyKeyConflictError,
   InvalidFencedEffectNameError,
 } from "@agboss/core";
-import { VirtualClock } from "@agboss/core/testing";
+import { VirtualClock, TestStoreClock } from "@agboss/core/testing";
 import { hours, seconds } from "@agboss/core/units";
 import { beforeAll, describe, expect, it } from "vitest";
 import {
@@ -26,8 +26,16 @@ beforeAll(async () => {
 
 function storesOn(connection: PostgresConnection, clock = new VirtualClock()) {
   return {
-    effects: new PostgresFencedEffectRepository(connection, clock, new FencedEffectSettings()),
-    leases: new PostgresExecutionLeaseRepository(connection, clock, new TestApplicationContext({})),
+    effects: new PostgresFencedEffectRepository(
+      connection,
+      new TestStoreClock(clock),
+      new FencedEffectSettings(),
+    ),
+    leases: new PostgresExecutionLeaseRepository(
+      connection,
+      new TestStoreClock(clock),
+      new TestApplicationContext({}),
+    ),
   };
 }
 

@@ -73,11 +73,19 @@ function readEvents(child: ChildProcess, into: InstanceEvent[], onEvent: () => v
 /** Starts an instance on `url` and waits until it is ready; `gate: "open"` lets held steps through. */
 export async function launch(
   url: string,
-  options: { readonly gate?: "open" } = {},
+  options: {
+    readonly gate?: "open";
+    /** The process's clock (agbossjs/agboss#533): `offsetMs` ahead (negative: behind), `drift` faster. */
+    readonly clock?: { readonly offsetMs?: number; readonly drift?: number };
+  } = {},
 ): Promise<Instance> {
+  const clock = {
+    AGBOSS_CLOCK_OFFSET_MS: String(options.clock?.offsetMs ?? 0),
+    AGBOSS_CLOCK_DRIFT: String(options.clock?.drift ?? 0),
+  };
   const child = spawn(process.execPath, ["--import", "tsx", SCRIPT], {
     cwd: ROOT,
-    env: { ...processEnvOf(url), AGBOSS_PROCESS_GATE: options.gate ?? "" },
+    env: { ...processEnvOf(url), AGBOSS_PROCESS_GATE: options.gate ?? "", ...clock },
     stdio: ["pipe", "pipe", "pipe"],
   });
   running.add(child);
