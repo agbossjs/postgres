@@ -6,12 +6,14 @@ one PostgreSQL database. A pod that dies mid-run is taken over by another from i
 children queued with `ChildPlacement.AnyInstance` are claimed by any instance, each exactly once; a
 pause made on one instance is resumed on another. Budgets, provider rate limits, the execution
 history and mesh request deduplication are shared too: a tenant's $10 day is $10 across every pod.
+A call that leaves the system (a payment) is recorded before it is sent and reconciled, never sent
+again blindly, when the pod that sent it dies or freezes mid-call.
 Each of these is proven by two real `node` processes on one database (see [Tests](#tests)).
 
-> Status: leases, records, trees, pauses, the child queue, checkpoints, the fenced effect (#500),
-> the lease log (#501), the cost ledger, the execution history, rate limits and mesh requests
-> (#483): an application runs on PostgreSQL alone. Only the outbound-call store (#505), for calls
-> recorded as leaving the system, comes next.
+> Status: leases, records, trees, pauses, the child queue, checkpoints, the fenced effect (#500)
+> and its business keys (#508), the lease log (#501), the cost ledger, the execution history, rate
+> limits, mesh requests (#483) and the calls that leave the system (#505, #508): an application
+> runs on PostgreSQL alone.
 
 ## Install
 
@@ -33,6 +35,7 @@ import { days } from "@agboss/core/units";
 import {
   PostgresCheckpointSaver,
   PostgresChildExecutionQueueRepository,
+  PostgresConnection,
   PostgresCostLedgerRepository,
   PostgresExecutionHistoryRepository,
   PostgresExecutionLeaseEventRepository,
@@ -41,6 +44,7 @@ import {
   PostgresExecutionTreeRepository,
   PostgresFencedEffectRepository,
   PostgresMeshRequestRepository,
+  PostgresOutboundCallRepository,
   PostgresPausedExecutionRepository,
   PostgresRateLimitRepository,
 } from "@agboss/postgres";
@@ -55,6 +59,7 @@ import { AppEnvironment } from "./environments/app.environment.js";
   providers: [
     PostgresCheckpointSaver, // LangGraph's PostgresSaver on the shared pool
     PostgresChildExecutionQueueRepository, // ChildPlacement.AnyInstance children
+    PostgresConnection, // listed once OutboundCalls is used: see "Calls that leave the system"
     PostgresCostLedgerRepository, // budgets: every pod's spend in one counter
     PostgresExecutionHistoryRepository, // agboss records export, from any pod
     PostgresExecutionLeaseEventRepository, // the lease log: app.leaseEventsOf
@@ -63,6 +68,7 @@ import { AppEnvironment } from "./environments/app.environment.js";
     PostgresExecutionTreeRepository, // a tree's keys (saveIfAbsent)
     PostgresFencedEffectRepository, // with PostgresExecutionLeaseRepository: it reads its leases
     PostgresMeshRequestRepository, // a mesh request retried on another pod runs once
+    PostgresOutboundCallRepository, // OutboundCalls: intents, reconciled on any pod
     PostgresPausedExecutionRepository, // pauses, answered on any instance
     PostgresRateLimitRepository, // maxConcurrentCalls, per-minute windows, 429 pauses, breakers
   ],
@@ -78,7 +84,8 @@ export class DeskApplication {}
 | `PostgresPausedExecutionRepository`     | `PausedExecutionRepository`          | `agboss_paused_executions`, `agboss_pauses`                         |
 | `PostgresChildExecutionQueueRepository` | `ChildExecutionQueueRepository`      | `agboss_child_execution_queue`                                      |
 | `PostgresCheckpointSaver`               | LangGraph `BaseCheckpointSaver`      | `checkpoints`, `checkpoint_blobs`, `checkpoint_writes`              |
-| `PostgresFencedEffectRepository`        | `FencedEffectRepository<PoolClient>` | `agboss_fenced_effect_marks`, `agboss_fenced_effect_results`        |
+| `PostgresFencedEffectRepository`        | `FencedEffectRepository<PoolClient>` | `agboss_fenced_effect_marks`, `…_results`, `…_business_results`     |
+| `PostgresOutboundCallRepository`        | `OutboundCallRepository`             | `agboss_outbound_calls` (and the leases' `superseded`, `0014`)      |
 | `PostgresExecutionLeaseEventRepository` | `ExecutionLeaseEventRepository`      | `agboss_execution_lease_events`                                     |
 | `PostgresCostLedgerRepository`          | `CostLedgerRepository`               | `agboss_cost_counters`, `agboss_cost_max_spend`                     |
 | `PostgresExecutionHistoryRepository`    | `ExecutionHistoryRepository`         | `agboss_execution_history`                                          |
@@ -106,6 +113,45 @@ const outcome = await effects.saveResultIfAbsent(
   },
 );
 ```
+
+With a business key (#508) the effect is one per tenant, name and key — whatever execution, visit or
+thread makes it — instead of one per step:
+`fencedEffectKeyOf(executionContext, "charge", { businessKey: "order:42", fingerprint: { amount } })`.
+A second execution's call replays the first one's result (`replayedFrom` names its step); the same
+key with another fingerprint is `IdempotencyKeyConflictError`, nothing run.
+
+### Calls that leave the system
+
+`OutboundCalls.send` (#505) records an intent in `agboss_outbound_calls` before the request goes out
+and settles it after; an intent left pending — the pod died or froze mid-call — is reconciled with
+the other system (`reconcile`) by whichever pod runs the step next, never sent again blindly:
+
+```ts
+const key = fencedEffectKeyOf(executionContext, "charge", { businessKey: `order:${orderId}` });
+const { result } = await outboundCalls.send(key, {
+  target: "payments",
+  operation: "charge",
+  request: { orderId, amount },
+  send: (call) => gateway.charge({ orderId, amount }, call.idempotencyKey, call.signal),
+  reconcile: async (lookup) => {
+    const found = await gateway.find(lookup.idempotencyKey);
+    return found === undefined
+      ? OutboundCallReconciliation.notSent()
+      : OutboundCallReconciliation.completed(found);
+  },
+});
+```
+
+List `PostgresOutboundCallRepository` with `PostgresExecutionLeaseRepository` (it reads its leases)
+**and `PostgresConnection` itself**: `OutboundCalls` is a service each workflow's container creates,
+so the core checks its store's dependencies against the workflows' providers, and an unlisted
+`PostgresConnection` fails assembly with `[workflow.assembly] PostgresOutboundCallRepository:
+"PostgresConnection" is not registered` (the one connection of the instance either way). Under a
+business key, a pending intent found under another execution's lease asks `leaseStateOf`: a live
+lease is a call in flight (`OutboundCallInFlightError`); an expired one is closed by that check, in
+the same transaction — released and marked `superseded`, so its holder can neither renew it nor
+write under it again, and the next take of its tree names it (`takenOverFrom`) — and the call is
+reconciled (`lease-superseded` in the lease log, with the closed lease).
 
 The lease log keeps who took a tree over and from whom — `app.leaseEventsOf({ tenantId,
 rootExecutionId })` reads it on any instance, oldest first:
@@ -171,11 +217,11 @@ npx agboss-postgres migrate --url "$DATABASE_URL"   # or DATABASE_URL alone
 ```text
 applied 0001_execution_leases (public)
 …
-applied 0013_nul_escape (public)
+applied 0016_outbound_calls (public)
 applied 6 LangGraph checkpoint migration(s)
 ```
 
-A second run prints `nothing to apply: public is at migration 13`. Exit codes: `0` done, `1` the
+A second run prints `nothing to apply: public is at migration 16`. Exit codes: `0` done, `1` the
 migration failed (the reason on stderr), `2` a usage error.
 
 In Kubernetes, the command is a Job run before the Deployment rolls out (a Helm `pre-upgrade` hook,
@@ -229,22 +275,25 @@ a pod never waits on another's migration at start (both are safe: they serialize
 - `agboss_schema_migrations (version, name, checksum, applied_at)` records what ran; an applied
   migration whose file changed fails the run (`PostgresMigrationChangedError`).
 
-| Migration                     | Tables                                                                                                                                                  |
-| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `0001_execution_leases`       | `agboss_execution_leases`                                                                                                                               |
-| `0002_execution_records`      | `agboss_threads`, `agboss_execution_records`, `agboss_execution_scores`, `agboss_execution_summaries`, `agboss_config_versions`, `agboss_pause_answers` |
-| `0003_execution_trees`        | `agboss_execution_tree_keys`                                                                                                                            |
-| `0004_paused_executions`      | `agboss_paused_executions`, `agboss_pauses`                                                                                                             |
-| `0005_child_execution_queue`  | `agboss_child_execution_queue`                                                                                                                          |
-| `0006_fenced_effects`         | `agboss_fenced_effect_marks`, `agboss_fenced_effect_results`                                                                                            |
-| `0007_execution_lease_events` | `agboss_execution_lease_events`                                                                                                                         |
-| `0008_execution_lease_yield`  | `agboss_execution_leases.yielded` (agbossjs/agboss#516)                                                                                                 |
-| `0009_cost_ledger`            | `agboss_cost_counters`, `agboss_cost_max_spend`                                                                                                         |
-| `0010_execution_history`      | `agboss_execution_history`                                                                                                                              |
-| `0011_rate_limits`            | `agboss_rate_limit_keys`, `agboss_rate_limit_slots`, `agboss_rate_limit_window_buckets`, `agboss_rate_limit_pauses`                                     |
-| `0012_mesh_requests`          | `agboss_mesh_requests`                                                                                                                                  |
-| `0013_nul_escape`             | none: doubles U+E000 in the columns the stores now escape (agbossjs/agboss#521)                                                                         |
-| LangGraph                     | `checkpoints`, `checkpoint_blobs`, `checkpoint_writes`, `checkpoint_migrations`                                                                         |
+| Migration                          | Tables                                                                                                                                                  |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `0001_execution_leases`            | `agboss_execution_leases`                                                                                                                               |
+| `0002_execution_records`           | `agboss_threads`, `agboss_execution_records`, `agboss_execution_scores`, `agboss_execution_summaries`, `agboss_config_versions`, `agboss_pause_answers` |
+| `0003_execution_trees`             | `agboss_execution_tree_keys`                                                                                                                            |
+| `0004_paused_executions`           | `agboss_paused_executions`, `agboss_pauses`                                                                                                             |
+| `0005_child_execution_queue`       | `agboss_child_execution_queue`                                                                                                                          |
+| `0006_fenced_effects`              | `agboss_fenced_effect_marks`, `agboss_fenced_effect_results`                                                                                            |
+| `0007_execution_lease_events`      | `agboss_execution_lease_events`                                                                                                                         |
+| `0008_execution_lease_yield`       | `agboss_execution_leases.yielded` (agbossjs/agboss#516)                                                                                                 |
+| `0009_cost_ledger`                 | `agboss_cost_counters`, `agboss_cost_max_spend`                                                                                                         |
+| `0010_execution_history`           | `agboss_execution_history`                                                                                                                              |
+| `0011_rate_limits`                 | `agboss_rate_limit_keys`, `agboss_rate_limit_slots`, `agboss_rate_limit_window_buckets`, `agboss_rate_limit_pauses`                                     |
+| `0012_mesh_requests`               | `agboss_mesh_requests`                                                                                                                                  |
+| `0013_nul_escape`                  | none: doubles U+E000 in the columns the stores now escape (agbossjs/agboss#521)                                                                         |
+| `0014_execution_lease_superseded`  | `agboss_execution_leases.superseded`: a lease an outbound call's check closed (agbossjs/agboss#508)                                                     |
+| `0015_fenced_effect_business_keys` | `agboss_fenced_effect_business_results` (agbossjs/agboss#508)                                                                                           |
+| `0016_outbound_calls`              | `agboss_outbound_calls` (agbossjs/agboss#505, #508)                                                                                                     |
+| LangGraph                          | `checkpoints`, `checkpoint_blobs`, `checkpoint_writes`, `checkpoint_migrations`                                                                         |
 
 ## Text with a NUL character
 
@@ -252,7 +301,8 @@ PostgreSQL keeps no NUL character (U+0000): `text` refuses it and `jsonb` refuse
 `\u0000`. A model's or a tool's answer may hold one, and a store gives back what the framework hands
 it (agbossjs/agboss#521, the NUL case of each contract suite). So every framework string kept in
 `jsonb` (records' route and steps, tree values, pauses, lease events, history, mesh answers) or as
-free text (a record's task, answer and stop reason, a summary) is escaped on the way in and back on
+free text (a record's task, answer and stop reason, a summary, an outbound call's record and the
+idempotency key and attempt owner it is matched by) is escaped on the way in and back on
 the way out — U+0000 → U+E000 `0`, U+E000 → U+E000 U+E000 (`src/stores/nul-escape.ts`); nothing else
 changes, so `jsonb`'s operators keep working. Columns that keep JSON as `text` (a paused run, the
 pause log, the child queue, fenced-effect results) hold `\u0000` as an escape already. Checkpoints
@@ -274,6 +324,10 @@ the tree over, so a pod never moves a tree whose lease it could not renew.
 | Child queue   | claim                | `UPDATE … FROM (SELECT … FOR UPDATE SKIP LOCKED LIMIT 1)`                                                       |
 | Paused        | `Pending → …`        | `UPDATE … WHERE status = 'pending' RETURNING` (none → `NotPausedError` from the core)                           |
 | Fenced effect | `saveResultIfAbsent` | one transaction: lease row `FOR UPDATE`, mark upsert, key lookup, `await work(client)`, insert                  |
+| Fenced effect | business key         | the same, the key's identity serialized by `pg_advisory_xact_lock` first (no lease row covers two trees)        |
+| Outbound call | `saveIfAbsent`       | one transaction: lease row `FOR UPDATE`, mark upsert, `INSERT … ON CONFLICT DO NOTHING` (unique by step / key)  |
+| Outbound call | `mark*`              | the same checks, then one `UPDATE … WHERE status AND attempt AND attempt_owner` as read: a compare-and-set      |
+| Outbound call | `leaseStateOf`       | one transaction: lease row `FOR UPDATE`; held → Live, expired at the token → closed (`superseded`), else Ended  |
 | Lease events  | `save`               | append-only `INSERT`; read `ORDER BY occurred_at, id` (one moment: the order saved)                             |
 | Cost ledger   | `saveAll`            | one `INSERT … ON CONFLICT DO UPDATE SET spent_usd = spent_usd + $cost` of every counter, in key order           |
 | Cost ledger   | `findSpentByCounter` | `SELECT` of the counter's row; no other locking (the core accepts a small overrun on a race, nothing reserved)  |
@@ -295,7 +349,7 @@ export AGBOSS_POSTGRES_TEST_URL=postgres://postgres:pw@localhost:5432/postgres
 npm ci
 npm run pack:framework   # @agboss/core and @agboss/cli from the SHA in .agboss-version.json
 npm run install:packed   # installs those tarballs (package.json unchanged)
-npm test                 # every test, the process tests included (~45 s: one waits out a lease)
+npm test                 # every test, the process tests included (~2 min: some wait out a lease)
 npm run check            # format, suppressions, flow types, lint, types, tests + coverage, API report
 ```
 
@@ -323,8 +377,18 @@ Each test file works in a schema of its own (`t_<random>`), dropped after it.
     environment, lists the executions run on A and on B.
   - `mesh-dedup.test.ts` (#483 AC4): a signed A2A request sent to A, then the same one to B, runs
     once; B answers with A's answer.
+  - `outbound-charge.test.ts` (AC1 + #505, #508): the payment gateway is two tables beside the
+    stores. A is frozen (SIGSTOP) mid-charge — charged, the answer not stored; B takes the tree
+    over and reconciles instead of charging. Then the same order's business key in a second tree:
+    B closes A's expired lease (`lease-superseded`), reconciles, and its sweep finishes A's tree from
+    the stored charge, the takeover naming A. Thawed, A's late answer is fenced each time: one
+    request ever reaches the gateway. About 30 s and 50 s (the lease and the sweep, 30 s each).
 - **Migrations** (`tests/migrations/`) — AC5: a second run changes nothing (a schema dump compared),
-  concurrent runs serialize, a changed file fails, too new / too old fail at start.
+  concurrent runs serialize, a changed file fails, too new / too old fail at start; leases written
+  before `0014` keep working (taken, renewed, closed as expired).
+- **Races** (`tests/stores/outbound-call.test.ts`, `fenced-effect.test.ts`) — beyond the contract's
+  two instances: six connections racing on one business key, one intent and one expired lease,
+  fifteen rounds each — and a check-then-write port beside them that the same race catches.
 
 `npm run check:types` runs the pinned CLI's `agboss check` on the fixtures' application, which
 writes `.agboss/types.d.ts` (never committed) — the flow types `tsconfig.processes.json` compiles

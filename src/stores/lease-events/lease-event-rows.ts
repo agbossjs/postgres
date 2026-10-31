@@ -13,7 +13,8 @@ import { unescapedJson } from "../nul-escape.js";
 
 /**
  * A row of `agboss_execution_lease_events` read back: its `record` column is the record `save`
- * wrote, checked against the four kinds of the lease log (#501; outbound calls, agbossjs/agboss#505) —
+ * wrote, checked against the four kinds of the lease log (#501; outbound calls, agbossjs/agboss#505; business keys and
+ * superseded calls and leases, #508) —
  * rows are never trusted.
  */
 
@@ -21,6 +22,13 @@ const Step = z.strictObject({
   nodeId: z.string(),
   visitNumber: z.number().int(),
   idempotencyKey: z.string(),
+});
+
+/** A business key's replay of another step's write (agbossjs/agboss#508): that step. */
+const Origin = z.strictObject({
+  executionId: z.string(),
+  nodeId: z.string(),
+  visitNumber: z.number().int(),
 });
 
 /** What every row carries. */
@@ -59,6 +67,7 @@ const FencedEffect = z.strictObject({
   outcome: z.enum(FencedEffectEventOutcome),
   step: Step,
   writtenToken: z.number().int().optional(),
+  replayedFrom: Origin.optional(),
   observedToken: z.number().int().optional(),
 });
 
@@ -72,6 +81,15 @@ const OutboundCall = z.strictObject({
   attempt: z.number().int(),
   outcome: z.enum(OutboundCallEventOutcome),
   step: Step,
+  replayedFrom: Origin.optional(),
+  supersededBy: z.number().int().optional(),
+  supersededLease: z
+    .strictObject({
+      rootExecutionId: z.string(),
+      leaseExecutionId: z.string(),
+      token: z.number().int(),
+    })
+    .optional(),
 });
 
 const Record = z.discriminatedUnion("kind", [Takeover, HandedOver, FencedEffect, OutboundCall]);

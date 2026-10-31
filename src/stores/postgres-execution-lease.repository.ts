@@ -17,26 +17,30 @@ import { changesOf, firstRowOf } from "../connection/query.js";
  * gives a row only when this call took the lease, with the row it replaced: `previous` is read and
  * locked first (`MATERIALIZED`, joined into the insert's source so it is evaluated before the
  * upsert changes the row; `FOR UPDATE`, so a concurrent take is waited for and its result read),
- * and an expired — not released — one is the lease's `takenOverFrom` (agbossjs/agboss#501).
+ * and an expired — not released — one is the lease's `takenOverFrom` (agbossjs/agboss#501), and so
+ * is one an outbound call's check closed as expired (`superseded`, agbossjs/agboss#508).
  */
 const ACQUIRE = `WITH previous AS MATERIALIZED (
-    SELECT holder_instance_id, lease_epoch, released FROM agboss_execution_leases
+    SELECT holder_instance_id, lease_epoch, NOT released OR superseded AS expired
+    FROM agboss_execution_leases
     WHERE tenant_id = $1 AND root_execution_id = $2 FOR UPDATE
   )
   INSERT INTO agboss_execution_leases AS lease
-    (tenant_id, root_execution_id, holder_instance_id, lease_epoch, expires_at, released, yielded)
-  SELECT $1::text, $2::text, $3::text, 1, $4::timestamptz, false, false
+    (tenant_id, root_execution_id, holder_instance_id, lease_epoch, expires_at, released, yielded,
+      superseded)
+  SELECT $1::text, $2::text, $3::text, 1, $4::timestamptz, false, false, false
     FROM (SELECT 1) AS one LEFT JOIN previous ON true
   ON CONFLICT (tenant_id, root_execution_id) DO UPDATE SET
     holder_instance_id = EXCLUDED.holder_instance_id,
     lease_epoch = lease.lease_epoch + 1,
     expires_at = EXCLUDED.expires_at,
     released = false,
-    yielded = false
+    yielded = false,
+    superseded = false
   WHERE lease.released OR lease.expires_at <= $5
   RETURNING lease.lease_epoch,
-    (SELECT holder_instance_id FROM previous WHERE NOT released) AS previous_holder,
-    (SELECT lease_epoch FROM previous WHERE NOT released) AS previous_epoch`;
+    (SELECT holder_instance_id FROM previous WHERE expired) AS previous_holder,
+    (SELECT lease_epoch FROM previous WHERE expired) AS previous_epoch`;
 
 /**
  * Extends the caller's own lease: its holder and epoch, not released, not past its end — renewed at
@@ -66,7 +70,10 @@ const RECLAIM = `UPDATE agboss_execution_leases
     AND lease_epoch = $5 AND NOT released AND expires_at >= $6
   RETURNING lease_epoch`;
 
-/** Gives the caller's own lease up; another holder's row is not matched. */
+/**
+ * Gives the caller's own lease up; another holder's row is not matched. A lease an outbound call's
+ * check closed stays `superseded`: its holder releasing it late does not make it a hand-over.
+ */
 const RELEASE = `UPDATE agboss_execution_leases SET released = true
   WHERE tenant_id = $1 AND root_execution_id = $2 AND holder_instance_id = $3
     AND lease_epoch = $4`;

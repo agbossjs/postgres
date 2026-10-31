@@ -47,6 +47,15 @@ import type { NewTern } from '@agboss/core';
 import type { NewThread } from '@agboss/core';
 import { OnDestroy } from '@agboss/core';
 import { OnInit } from '@agboss/core';
+import { OutboundCallClaim } from '@agboss/core';
+import { OutboundCallFailure } from '@agboss/core';
+import { OutboundCallIntent } from '@agboss/core';
+import { OutboundCallLease } from '@agboss/core';
+import { OutboundCallLeaseState } from '@agboss/core';
+import { OutboundCallRecord } from '@agboss/core';
+import { OutboundCallRepository } from '@agboss/core';
+import { OutboundCallState } from '@agboss/core';
+import { OutboundCallStatus } from '@agboss/core';
 import { PauseAnswer as PauseAnswer_2 } from '@agboss/core';
 import type { PauseAnswerRecord } from '@agboss/core';
 import { PauseCancellation } from '@agboss/core';
@@ -337,6 +346,33 @@ export class PostgresMigrationChangedError extends AGBossError {
 }
 
 // @public
+export class PostgresOutboundCallRepository extends OutboundCallRepository {
+    constructor(connection: PostgresConnection, clock: Clock);
+    // (undocumented)
+    deleteByEndedAtBefore(cutoff: Date): Promise<void>;
+    // (undocumented)
+    findAllByTenantIdAndRootExecutionId(tenantId: string, rootExecutionId: string): Promise<readonly OutboundCallRecord[]>;
+    // (undocumented)
+    findAllByTenantIdAndStatus(tenantId: string, status: OutboundCallStatus): Promise<readonly OutboundCallRecord[]>;
+    // (undocumented)
+    findByKey(key: FencedEffectKey): Promise<OutboundCallRecord | undefined>;
+    // (undocumented)
+    static readonly leaseRepository: Class | undefined;
+    // (undocumented)
+    leaseStateOf(lease: OutboundCallLease): Promise<OutboundCallLeaseState>;
+    // (undocumented)
+    markCompleted(key: FencedEffectKey, attemptOwner: string, result: string): Promise<boolean>;
+    // (undocumented)
+    markFailed(key: FencedEffectKey, attemptOwner: string, failure: OutboundCallFailure): Promise<boolean>;
+    // (undocumented)
+    markPending(key: FencedEffectKey, expected: OutboundCallState, claim: OutboundCallClaim): Promise<boolean>;
+    // (undocumented)
+    ping(): Promise<void>;
+    // (undocumented)
+    saveIfAbsent(key: FencedEffectKey, intent: OutboundCallIntent): Promise<boolean>;
+}
+
+// @public
 export class PostgresPausedExecutionRepository extends PausedExecutionRepository {
     constructor(connection: PostgresConnection, clock: Clock);
     // (undocumented)
@@ -476,12 +512,12 @@ export interface SchemaVersions {
 // src/stores/postgres-execution-lease-event.repository.ts:30:9 - (ae-undocumented) Missing documentation for "save".
 // src/stores/postgres-execution-lease-event.repository.ts:39:9 - (ae-undocumented) Missing documentation for "findAllByTenantIdAndRootExecutionIdOrderByOccurredAt".
 // src/stores/postgres-execution-lease-event.repository.ts:52:9 - (ae-undocumented) Missing documentation for "deleteByOccurredAtBefore".
-// src/stores/postgres-execution-lease.repository.ts:110:3 - (ae-undocumented) Missing documentation for "ping".
-// src/stores/postgres-execution-lease.repository.ts:114:9 - (ae-undocumented) Missing documentation for "acquire".
-// src/stores/postgres-execution-lease.repository.ts:146:9 - (ae-undocumented) Missing documentation for "renew".
-// src/stores/postgres-execution-lease.repository.ts:160:9 - (ae-undocumented) Missing documentation for "release".
-// src/stores/postgres-execution-lease.repository.ts:164:9 - (ae-undocumented) Missing documentation for "yield".
-// src/stores/postgres-execution-lease.repository.ts:170:9 - (ae-undocumented) Missing documentation for "reclaim".
+// src/stores/postgres-execution-lease.repository.ts:117:3 - (ae-undocumented) Missing documentation for "ping".
+// src/stores/postgres-execution-lease.repository.ts:121:9 - (ae-undocumented) Missing documentation for "acquire".
+// src/stores/postgres-execution-lease.repository.ts:153:9 - (ae-undocumented) Missing documentation for "renew".
+// src/stores/postgres-execution-lease.repository.ts:167:9 - (ae-undocumented) Missing documentation for "release".
+// src/stores/postgres-execution-lease.repository.ts:171:9 - (ae-undocumented) Missing documentation for "yield".
+// src/stores/postgres-execution-lease.repository.ts:177:9 - (ae-undocumented) Missing documentation for "reclaim".
 // src/stores/postgres-execution-record.repository.ts:38:3 - (ae-undocumented) Missing documentation for "ping".
 // src/stores/postgres-execution-record.repository.ts:42:3 - (ae-undocumented) Missing documentation for "createThread".
 // src/stores/postgres-execution-record.repository.ts:46:9 - (ae-undocumented) Missing documentation for "hasThread".
@@ -512,16 +548,27 @@ export interface SchemaVersions {
 // src/stores/postgres-execution-tree.repository.ts:42:9 - (ae-undocumented) Missing documentation for "saveIfAbsentInTree".
 // src/stores/postgres-execution-tree.repository.ts:56:9 - (ae-undocumented) Missing documentation for "findByIdInTree".
 // src/stores/postgres-execution-tree.repository.ts:68:9 - (ae-undocumented) Missing documentation for "deleteAllInTree".
-// src/stores/postgres-fenced-effect.repository.ts:49:3 - (ae-undocumented) Missing documentation for "leaseRepository".
-// src/stores/postgres-fenced-effect.repository.ts:59:3 - (ae-undocumented) Missing documentation for "ping".
-// src/stores/postgres-fenced-effect.repository.ts:63:3 - (ae-undocumented) Missing documentation for "runInTransaction".
-// src/stores/postgres-fenced-effect.repository.ts:70:9 - (ae-undocumented) Missing documentation for "deleteByStoredAtBefore".
+// src/stores/postgres-fenced-effect.repository.ts:122:3 - (ae-undocumented) Missing documentation for "leaseRepository".
+// src/stores/postgres-fenced-effect.repository.ts:132:3 - (ae-undocumented) Missing documentation for "ping".
+// src/stores/postgres-fenced-effect.repository.ts:133:3 - (ae-undocumented) Missing documentation for "runInTransaction".
+// src/stores/postgres-fenced-effect.repository.ts:144:9 - (ae-undocumented) Missing documentation for "deleteByStoredAtBefore".
 // src/stores/postgres-mesh-request.repository.ts:49:3 - (ae-undocumented) Missing documentation for "ping".
 // src/stores/postgres-mesh-request.repository.ts:53:9 - (ae-undocumented) Missing documentation for "saveIfAbsent".
 // src/stores/postgres-mesh-request.repository.ts:63:9 - (ae-undocumented) Missing documentation for "findByKey".
 // src/stores/postgres-mesh-request.repository.ts:82:9 - (ae-undocumented) Missing documentation for "saveResponse".
 // src/stores/postgres-mesh-request.repository.ts:90:9 - (ae-undocumented) Missing documentation for "deleteByKey".
 // src/stores/postgres-mesh-request.repository.ts:98:9 - (ae-undocumented) Missing documentation for "deleteCreatedBefore".
+// src/stores/postgres-outbound-call.repository.ts:71:3 - (ae-undocumented) Missing documentation for "leaseRepository".
+// src/stores/postgres-outbound-call.repository.ts:80:3 - (ae-undocumented) Missing documentation for "ping".
+// src/stores/postgres-outbound-call.repository.ts:84:3 - (ae-undocumented) Missing documentation for "findByKey".
+// src/stores/postgres-outbound-call.repository.ts:96:3 - (ae-undocumented) Missing documentation for "saveIfAbsent".
+// src/stores/postgres-outbound-call.repository.ts:115:3 - (ae-undocumented) Missing documentation for "markPending".
+// src/stores/postgres-outbound-call.repository.ts:124:3 - (ae-undocumented) Missing documentation for "markCompleted".
+// src/stores/postgres-outbound-call.repository.ts:134:3 - (ae-undocumented) Missing documentation for "markFailed".
+// src/stores/postgres-outbound-call.repository.ts:149:9 - (ae-undocumented) Missing documentation for "findAllByTenantIdAndRootExecutionId".
+// src/stores/postgres-outbound-call.repository.ts:161:9 - (ae-undocumented) Missing documentation for "findAllByTenantIdAndStatus".
+// src/stores/postgres-outbound-call.repository.ts:173:9 - (ae-undocumented) Missing documentation for "deleteByEndedAtBefore".
+// src/stores/postgres-outbound-call.repository.ts:181:3 - (ae-undocumented) Missing documentation for "leaseStateOf".
 // src/stores/postgres-paused-execution.repository.ts:45:3 - (ae-undocumented) Missing documentation for "ping".
 // src/stores/postgres-paused-execution.repository.ts:49:9 - (ae-undocumented) Missing documentation for "findByTenantIdAndThreadId".
 // src/stores/postgres-paused-execution.repository.ts:68:9 - (ae-undocumented) Missing documentation for "save".

@@ -4,7 +4,10 @@ import {
   HandOverReason,
   HandOverSite,
   LeaseTakeoverReason,
+  OutboundCallEventOutcome,
+  OutboundCallStatus,
   type FencedEffectRecord,
+  type OutboundCallEventRecord,
   type LeaseTakeoverRecord,
   type StepHandedOverRecord,
 } from "@agboss/core";
@@ -141,5 +144,50 @@ describe("PostgresExecutionLeaseEventRepository", () => {
       down.findAllByTenantIdAndRootExecutionIdOrderByOccurredAt("acme", "root-down"),
     ).rejects.toThrow();
     await expect(down.deleteByOccurredAtBefore(new Date())).rejects.toThrow();
+  });
+
+  it("#508: the business key's and the superseded rows round-trip — replayedFrom, supersededBy, supersededLease, the new outcomes", async () => {
+    const events = eventsOn();
+    const origin = { executionId: "root-other", nodeId: "charge-action", visitNumber: 3 };
+    const call = (outcome: OutboundCallEventOutcome, at: string): OutboundCallEventRecord => ({
+      kind: ExecutionLeaseEventKind.OutboundCall,
+      occurredAt: at,
+      tenantId: "acme",
+      rootExecutionId: "root-508",
+      executionId: "root-508",
+      scopeKey: "acme:root-508",
+      token: 2,
+      holderInstanceId: "instance-2",
+      name: "charge",
+      target: "payments",
+      operation: "charge",
+      status: OutboundCallStatus.Completed,
+      attempt: 1,
+      outcome,
+      step,
+    });
+    const rows = [
+      { ...fenced("root-508"), occurredAt: "2026-01-05T09:00:00.100Z", replayedFrom: origin },
+      {
+        ...call(OutboundCallEventOutcome.LeaseSuperseded, "2026-01-05T09:00:00.200Z"),
+        supersededLease: { rootExecutionId: "root-a", leaseExecutionId: "root-a", token: 1 },
+      },
+      {
+        ...call(OutboundCallEventOutcome.Superseded, "2026-01-05T09:00:00.300Z"),
+        supersededBy: 2,
+      },
+      {
+        ...call(OutboundCallEventOutcome.Replayed, "2026-01-05T09:00:00.400Z"),
+        replayedFrom: origin,
+      },
+    ];
+    for (const row of rows) await events.save(row);
+
+    const found = await events.findAllByTenantIdAndRootExecutionIdOrderByOccurredAt(
+      "acme",
+      "root-508",
+    );
+
+    expect(found).toEqual(rows);
   });
 });
