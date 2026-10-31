@@ -1,8 +1,10 @@
 import {
+  checkedEffectName,
   Clock,
   Injectable,
   OutboundCallRepository,
   OutboundCallStatus,
+  pendingOutboundCallOf,
   type Class,
   type FencedEffectKey,
   type OutboundCallClaim,
@@ -17,15 +19,10 @@ import type { PoolClient } from "pg";
 import { PostgresConnection } from "../connection/postgres-connection.js";
 import { changesOf, firstRowOf, rowsOf } from "../connection/query.js";
 import { inPoolTransaction } from "../connection/transaction.js";
-import { checkedName, checkFence } from "./fence.js";
+import { checkFence } from "./fence.js";
 import { escapedText } from "./nul-escape.js";
 import { leaseStateIn } from "./outbound-calls/lease-state.js";
-import {
-  callRecordOf,
-  newRecordOf,
-  storedJsonOf,
-  whereOf,
-} from "./outbound-calls/outbound-call-rows.js";
+import { callRecordOf, storedJsonOf, whereOf } from "./outbound-calls/outbound-call-rows.js";
 import { PostgresExecutionLeaseRepository } from "./postgres-execution-lease.repository.js";
 
 const SAVE = `INSERT INTO agboss_outbound_calls (scope_key, idempotency_key, name, tenant_id,
@@ -68,6 +65,8 @@ interface AsRead {
  */
 @Injectable({ deps: [PostgresConnection, Clock] })
 export class PostgresOutboundCallRepository extends OutboundCallRepository {
+  /** One transactional backend with the other PostgreSQL stores (agbossjs/agboss#526). */
+  static override readonly backend: string | undefined = "postgres";
   static override readonly leaseRepository: Class | undefined = PostgresExecutionLeaseRepository;
 
   constructor(
@@ -95,7 +94,7 @@ export class PostgresOutboundCallRepository extends OutboundCallRepository {
 
   saveIfAbsent(key: FencedEffectKey, intent: OutboundCallIntent): Promise<boolean> {
     return this.#fenced(key, async (client) => {
-      const record = newRecordOf(key, intent, this.clock.now());
+      const record = pendingOutboundCallOf(key, intent, this.clock.now());
       const saved = await changesOf(client, SAVE, [
         key.scopeKey,
         escapedText(key.idempotencyKey),
@@ -220,7 +219,7 @@ export class PostgresOutboundCallRepository extends OutboundCallRepository {
     key: FencedEffectKey,
     work: (client: PoolClient) => Promise<TValue>,
   ): Promise<TValue> {
-    checkedName(key);
+    checkedEffectName(key.name);
     return inPoolTransaction(this.connection.pool, async (client) => {
       await checkFence(client, key, this.clock.now());
       return work(client);

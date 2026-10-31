@@ -35,7 +35,6 @@ import { days } from "@agboss/core/units";
 import {
   PostgresCheckpointSaver,
   PostgresChildExecutionQueueRepository,
-  PostgresConnection,
   PostgresCostLedgerRepository,
   PostgresExecutionHistoryRepository,
   PostgresExecutionLeaseEventRepository,
@@ -59,7 +58,6 @@ import { AppEnvironment } from "./environments/app.environment.js";
   providers: [
     PostgresCheckpointSaver, // LangGraph's PostgresSaver on the shared pool
     PostgresChildExecutionQueueRepository, // ChildPlacement.AnyInstance children
-    PostgresConnection, // listed once OutboundCalls is used: see "Calls that leave the system"
     PostgresCostLedgerRepository, // budgets: every pod's spend in one counter
     PostgresExecutionHistoryRepository, // agboss records export, from any pod
     PostgresExecutionLeaseEventRepository, // the lease log: app.leaseEventsOf
@@ -102,6 +100,18 @@ from the application's `Clock`, never from the database. A project subclasses a 
 tokens only: `@Injectable({ deps: [PostgresConnection, Clock, ApplicationContext] })`, the store's
 own `deps`.
 
+**One backend.** `PostgresExecutionLeaseRepository`, `PostgresFencedEffectRepository` and
+`PostgresOutboundCallRepository` declare `static backend = "postgres"` (agbossjs/agboss#526): a
+fenced effect or an outbound call checks its lease in its own transaction, so assembly requires its
+store and the application's lease store to declare the same backend. List the three together; a
+mixed layout — PostgreSQL leases with in-memory or SQLite fenced effects or outbound calls, or
+PostgreSQL fencing stores with any other lease store — fails with
+`[application.store-backend-mismatch]`, naming both stores and both backends. A subclass inherits
+`"postgres"`; one on another database declares `"postgres:<database>"` on all three. Rate limits,
+the child queue, the lease log and the other stores are not constrained. To write a store of your
+own, on another database, see the Wiki's
+[Your own store](https://github.com/agbossjs/agboss/wiki/Your-own-store).
+
 A fenced effect's work gets the transaction's `PoolClient` and may `await` its statements:
 
 ```ts
@@ -142,13 +152,11 @@ const { result } = await outboundCalls.send(key, {
 });
 ```
 
-List `PostgresOutboundCallRepository` with `PostgresExecutionLeaseRepository` (it reads its leases)
-**and `PostgresConnection` itself**: `OutboundCalls` is a service each workflow's container creates,
-so the core checks its store's dependencies against the workflows' providers, and an unlisted
-`PostgresConnection` fails assembly with `[workflow.assembly] PostgresOutboundCallRepository:
-"PostgresConnection" is not registered` (the one connection of the instance either way). Under a
-business key, a pending intent found under another execution's lease asks `leaseStateOf`: a live
-lease is a call in flight (`OutboundCallInFlightError`); an expired one is closed by that check, in
+List `PostgresOutboundCallRepository` with `PostgresExecutionLeaseRepository`: it reads its leases.
+`PostgresConnection` need not be listed — the container creates it for the stores that use it
+(agbossjs/agboss#526); list it only when a component of yours injects it. Under a business key, a
+pending intent found under another execution's lease asks `leaseStateOf`: a live lease is a call in
+flight (`OutboundCallInFlightError`); an expired one is closed by that check, in
 the same transaction — released and marked `superseded`, so its holder can neither renew it nor
 write under it again, and the next take of its tree names it (`takenOverFrom`) — and the call is
 reconciled (`lease-superseded` in the lease log, with the closed lease).
@@ -357,8 +365,12 @@ npm run check            # format, suppressions, flow types, lint, types, tests 
 
 Each test file works in a schema of its own (`t_<random>`), dropped after it.
 
-- **Contract suites** (`tests/contracts/`) — every store runs the core's published suite
-  (`@agboss/core/testing/contracts`) against the real database, two instances with two pools.
+- **Contract suites** (`tests/contracts/store-conformance.test.ts`) — one `storeConformance` of
+  `@agboss/core/testing/contracts` (agbossjs/agboss#526) runs every store's published suite
+  against the real database, two instances with two pools, and the store set's cases (the three
+  fencing stores declare one backend). Nothing is left out.
+- **Backends at assembly** (`tests/processes/store-backends.test.ts`) — mixed layouts fail with
+  `[application.store-backend-mismatch]`; the all-PostgreSQL layout assembles.
 - **Two real processes** (`tests/processes/`) — each instance is a separate `node` process with its
   own pool, running the application of `tests/fixtures/` on the test's schema, driven by JSON lines
   on stdin and stdout. The processes share nothing but the database; a step that must stay busy

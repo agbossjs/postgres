@@ -119,6 +119,8 @@ const TakenRow = z.object({
  */
 @Injectable({ deps: [PostgresConnection, Clock, ApplicationContext] })
 export class PostgresExecutionLeaseRepository extends ExecutionLeaseRepository {
+  /** One transactional backend with the other PostgreSQL stores (agbossjs/agboss#526). */
+  static override readonly backend: string | undefined = "postgres";
   constructor(
     private readonly connection: PostgresConnection,
     private readonly clock: Clock,

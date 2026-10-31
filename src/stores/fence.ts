@@ -1,29 +1,15 @@
-import {
-  ExecutionFencedError,
-  InvalidFencedEffectNameError,
-  type FencedEffectKey,
-} from "@agboss/core";
+import { ExecutionFencedError, type FencedEffectKey } from "@agboss/core";
 import type { PoolClient } from "pg";
 import { z } from "zod";
 import { firstRowOf } from "../connection/query.js";
 
 /**
  * The fencing checks of the fenced stores (#500, agbossjs/agboss#505, #508) — the fenced effect and
- * the outbound call — inside the caller's transaction, in the order of #500: the key's name, its
- * lease row locked and held (its epoch, not released, not expired), then the scope's mark raised
+ * the outbound call — inside the caller's transaction, in the order of #500, after the key's name
+ * (each store checks it first with the core's `checkedEffectName`, agbossjs/agboss#526): its lease
+ * row locked and held (its epoch, not released, not expired), then the scope's mark raised
  * to the token (a higher one refuses the key before any of its rows is read).
  */
-
-/** An effect's or a call's name (#508): 1–100 of `[A-Za-z0-9._-]`, a letter or a digit first. */
-const EFFECT_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/u;
-
-/**
- * Refuses a key built by hand with a name that is not one (#508) — `InvalidFencedEffectNameError`,
- * before any statement, as the core's stores check it at their entry.
- */
-export function checkedName(key: FencedEffectKey): void {
-  if (!EFFECT_NAME.test(key.name)) throw new InvalidFencedEffectNameError(key.name.length);
-}
 
 /** The key's lease row, locked for the transaction: a renewal, a close or a takeover of it waits. */
 const LOCK_LEASE = `SELECT lease_epoch, expires_at, released FROM agboss_execution_leases
