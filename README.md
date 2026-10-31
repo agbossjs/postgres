@@ -231,10 +231,11 @@ npx agboss-postgres migrate --url "$DATABASE_URL"   # or DATABASE_URL alone
 applied 0001_execution_leases (public)
 …
 applied 0017_execution_lease_finished (public)
+applied 0018_execution_ids (public)
 applied 6 LangGraph checkpoint migration(s)
 ```
 
-A second run prints `nothing to apply: public is at migration 17`. Exit codes: `0` done, `1` the
+A second run prints `nothing to apply: public is at migration 18`. Exit codes: `0` done, `1` the
 migration failed (the reason on stderr), `2` a usage error.
 
 In Kubernetes, the command is a Job run before the Deployment rolls out (a Helm `pre-upgrade` hook,

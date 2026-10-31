@@ -36,7 +36,12 @@ describe("migration 0017 keeps the leases written before it", () => {
     const url = await freshSchema();
     await migrateWith(
       { url },
-      migrationsIn(migrationsFolder({ "0017_execution_lease_finished.sql": null })),
+      migrationsIn(
+        migrationsFolder({
+          "0017_execution_lease_finished.sql": null,
+          "0018_execution_ids.sql": null,
+        }),
+      ),
     );
     const clock = new VirtualClock();
     const at = (length: number) => new Date(clock.now().getTime() + length);
@@ -56,7 +61,7 @@ describe("migration 0017 keeps the leases written before it", () => {
     const report = await migratePostgres({ url });
     await clock.advance(seconds(31));
 
-    expect(report.applied.map((migration) => migration.version)).toEqual([17]);
+    expect(report.applied.map((migration) => migration.version)).toEqual([17, 18]);
     const { rows } = await onSchema(
       url,
       "SELECT root_execution_id, finished FROM agboss_execution_leases ORDER BY root_execution_id",

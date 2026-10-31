@@ -3,6 +3,7 @@ import {
   ExecutionLeaseRepository,
   Injectable,
   StoreClock,
+  type ExecutionIdentity,
   type ExecutionLease,
 } from "@agboss/core";
 import type { Milliseconds } from "@agboss/core/units";
@@ -126,6 +127,14 @@ const ReclaimedRow = z.object({
 
 const RenewedRow = z.object({ remaining: z.number() });
 
+/**
+ * Keeps a new execution's id (agbossjs/agboss#591): one insert-if-absent on the id's primary key —
+ * of concurrent inserts of one id, on any connection, exactly one makes the row (the others wait for
+ * it and do nothing); a row is never removed.
+ */
+const SAVE_EXECUTION_ID = `INSERT INTO agboss_execution_ids (execution_id, tenant_id)
+  VALUES ($1, $2) ON CONFLICT (execution_id) DO NOTHING`;
+
 /** A lease's time left as the store answered it (never below 0). */
 const remainingOf = (value: number): Milliseconds => Math.max(0, value) as Milliseconds;
 
@@ -145,7 +154,8 @@ const TakenRow = z.object({
  * `UPDATE` matching the holder and the epoch (0 rows: the lease was lost; a renewal also needs
  * the lease not over yet), and so are `yield` and `reclaim` (agbossjs/agboss#516: `yielded`, the
  * next epoch), and `finish` (agbossjs/agboss#520: `released` and `finished`, refused by every later
- * `acquire`). Times are the database's (agbossjs/agboss#533: `clock_timestamp()` inside each
+ * `acquire`); `saveExecutionIdIfAbsent` (agbossjs/agboss#591) one insert into
+ * `agboss_execution_ids`. Times are the database's (agbossjs/agboss#533: `clock_timestamp()` inside each
  * statement, `StoreClock`; a test's clock when one is injected), and every take and renewal answers
  * the time the lease has left. Listed in `@Application({ providers })` with `PostgresConnection`'s
  * `postgresUrl`; a lost connection rejects the call, and the core's holder hands the tree over.
@@ -164,6 +174,12 @@ export class PostgresExecutionLeaseRepository extends ExecutionLeaseRepository {
 
   ping(): Promise<void> {
     return this.connection.ping();
+  }
+
+  async saveExecutionIdIfAbsent({ executionId, tenantId }: ExecutionIdentity): Promise<boolean> {
+    return (
+      (await changesOf(this.connection.pool, SAVE_EXECUTION_ID, [executionId, tenantId])) === 1
+    );
   }
 
   async acquire(

@@ -26,7 +26,7 @@ describe("the agboss-postgres bin (a Kubernetes Job)", () => {
     );
 
     expect(first.stdout).toContain("applied 0013_nul_escape");
-    expect(second.stdout).toMatch(/nothing to apply: t_\w+ is at migration 17/);
+    expect(second.stdout).toMatch(/nothing to apply: t_\w+ is at migration 18/);
     expect(usage).toMatchObject({
       code: 2,
       stderr: expect.stringContaining("usage: agboss-postgres"),
