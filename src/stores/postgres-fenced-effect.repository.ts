@@ -1,6 +1,5 @@
 import {
   Clock,
-  ExecutionFencedError,
   FencedEffectRepository,
   FencedEffectSettings,
   FencedEffectStatus,
@@ -11,37 +10,111 @@ import {
   type FencedEffectWork,
 } from "@agboss/core";
 import type { PoolClient } from "pg";
-import { z } from "zod";
-import { PostgresConnection } from "../connection/postgres-connection.js";
 import { changesOf, firstRowOf } from "../connection/query.js";
 import { inPoolTransaction } from "../connection/transaction.js";
+import { PostgresConnection } from "../connection/postgres-connection.js";
+import { replayedFromOf, StoredFacts } from "./business-keys.js";
+import { checkedName, checkFence } from "./fence.js";
+import { escapedJsonOf, unescapedJson } from "./nul-escape.js";
 import { PostgresExecutionLeaseRepository } from "./postgres-execution-lease.repository.js";
+import { z } from "zod";
 
-/** The key's lease row, locked for the transaction: a renewal or a takeover of it waits. */
-const LOCK_LEASE = `SELECT lease_epoch, expires_at, released FROM agboss_execution_leases
-  WHERE tenant_id = $1 AND root_execution_id = $2 FOR UPDATE`;
-
-/** Raises the scope's mark to the token (never lowers it); the mark as it is now. */
-const RAISE_MARK = `INSERT INTO agboss_fenced_effect_marks AS mark (scope_key, highest_token, stored_at)
-  VALUES ($1, $2, $3)
-  ON CONFLICT (scope_key) DO UPDATE SET
-    highest_token = GREATEST(mark.highest_token, EXCLUDED.highest_token),
-    stored_at = EXCLUDED.stored_at
-  RETURNING highest_token`;
-
-const LeaseRow = z.object({ lease_epoch: z.number(), expires_at: z.date(), released: z.boolean() });
-const MarkRow = z.object({ highest_token: z.number() });
 const ResultRow = z.object({ token: z.number(), result: z.string() });
 
 /**
+ * A business key's row (agbossjs/agboss#508), locked for the transaction first: its key is one for
+ * every scope of the tenant, so no lease row serializes its writers — this transaction-scoped
+ * advisory lock on the key's identity does (a hash collision only serializes two keys more).
+ */
+const LOCK_BUSINESS_KEY = "SELECT pg_advisory_xact_lock(hashtextextended($1, 508))";
+
+/** The row of `key`: by its step, or by its tenant, name and business key. */
+async function storedRowOf(client: PoolClient, key: FencedEffectKey): Promise<unknown> {
+  if (key.businessKey === undefined)
+    return firstRowOf(
+      client,
+      `SELECT token, result FROM agboss_fenced_effect_results
+       WHERE scope_key = $1 AND idempotency_key = $2 AND name = $3`,
+      [key.scopeKey, key.idempotencyKey, key.name],
+    );
+  await firstRowOf(client, LOCK_BUSINESS_KEY, [
+    JSON.stringify([key.tenantId, key.name, key.businessKey]),
+  ]);
+  return firstRowOf(
+    client,
+    `SELECT token, result, fingerprint, origin FROM agboss_fenced_effect_business_results
+     WHERE tenant_id = $1 AND name = $2 AND business_key = $3`,
+    [key.tenantId, key.name, key.businessKey],
+  );
+}
+
+/** Writes `key`'s result `text` under its token at `now`, in the table of its kind. */
+async function insertRowOf(
+  client: PoolClient,
+  key: FencedEffectKey,
+  now: Date,
+  text: string,
+): Promise<void> {
+  if (key.businessKey === undefined) {
+    await changesOf(
+      client,
+      `INSERT INTO agboss_fenced_effect_results
+         (scope_key, idempotency_key, name, token, stored_at, result) VALUES ($1, $2, $3, $4, $5, $6)`,
+      [key.scopeKey, key.idempotencyKey, key.name, key.token, now, text],
+    );
+    return;
+  }
+  const origin = key.origin === undefined ? null : escapedJsonOf(key.origin);
+  await changesOf(
+    client,
+    `INSERT INTO agboss_fenced_effect_business_results
+       (tenant_id, name, business_key, token, stored_at, result, fingerprint, origin)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb)`,
+    [
+      key.tenantId,
+      key.name,
+      key.businessKey,
+      key.token,
+      now,
+      text,
+      key.fingerprint ?? null,
+      origin,
+    ],
+  );
+}
+
+/** The replay of a stored row: its result, its token, the step it names (a business key's). */
+function replayOf<TResult>(key: FencedEffectKey, row: unknown): FencedEffectOutcome<TResult> {
+  const { token, result } = ResultRow.parse(row);
+  const facts = key.businessKey === undefined ? undefined : StoredFacts.parse(row);
+  const replayedFrom =
+    facts === undefined
+      ? undefined
+      : replayedFromOf(key, {
+          fingerprint: facts.fingerprint,
+          origin: facts.origin === null ? null : unescapedJson(facts.origin),
+        });
+  return {
+    status: FencedEffectStatus.Replayed,
+    // written by this store as the JSON of the work's result
+    result: JSON.parse(result) as TResult,
+    token,
+    ...(replayedFrom === undefined ? {} : { replayedFrom }),
+  };
+}
+
+/**
  * `FencedEffectRepository<PoolClient>` on PostgreSQL (#500, #482): each scope's mark and each
- * effect's result in two tables beside `agboss_execution_leases`. One transaction at `READ
- * COMMITTED` per call, in the order of #500: the key's lease row `SELECT … FOR UPDATE` (held by
- * its epoch, not released, not expired — else `ExecutionFencedError`), the mark raised to the
- * token (a higher one refuses it before any key is read), the key (found → `Replayed`), then the
- * awaited `work(client)` and its result. The row lock serializes two instances on one tree's
- * effects (one `Ran`, the other `Replayed`); the work runs on the transaction's own connection,
- * so it may `await` its statements and a pool of one never deadlocks. Listed with
+ * effect's result beside `agboss_execution_leases`. One transaction at `READ COMMITTED` per call,
+ * in the order of #500: the key's name, its lease row `SELECT … FOR UPDATE` (held by its epoch, not
+ * released, not expired — else `ExecutionFencedError`), the mark raised to the token (a higher one
+ * refuses it before any key is read), the key (found → `Replayed`), then the awaited `work(client)`
+ * and its result. The row lock serializes two instances on one tree's effects (one `Ran`, the other
+ * `Replayed`). A business key's effect (agbossjs/agboss#508) is one row per tenant, name and key in
+ * `agboss_fenced_effect_business_results`, its writers serialized by an advisory transaction lock
+ * on that identity — another fingerprint is `IdempotencyKeyConflictError`, a replay from another
+ * step names it (`replayedFrom`). The work runs on the transaction's own connection, so it may
+ * `await` its statements and a pool of one never deadlocks. Listed with
  * `PostgresExecutionLeaseRepository`, whose leases it reads.
  */
 @Injectable({ deps: [PostgresConnection, Clock, FencedEffectSettings] })
@@ -60,21 +133,22 @@ export class PostgresFencedEffectRepository extends FencedEffectRepository<PoolC
     return this.connection.ping();
   }
 
-  protected runInTransaction<TResult>(
+  protected async runInTransaction<TResult>(
     key: FencedEffectKey,
     work: FencedEffectWork<PoolClient, TResult>,
   ): Promise<FencedEffectOutcome<TResult>> {
+    checkedName(key);
     return inPoolTransaction(this.connection.pool, (client) => this.#effect(client, key, work));
   }
 
   async deleteByStoredAtBefore(cutoff: Date): Promise<void> {
     await inPoolTransaction(this.connection.pool, async (client) => {
-      await changesOf(client, "DELETE FROM agboss_fenced_effect_results WHERE stored_at < $1", [
-        cutoff,
-      ]);
-      await changesOf(client, "DELETE FROM agboss_fenced_effect_marks WHERE stored_at < $1", [
-        cutoff,
-      ]);
+      for (const table of [
+        "agboss_fenced_effect_results",
+        "agboss_fenced_effect_business_results",
+        "agboss_fenced_effect_marks",
+      ])
+        await changesOf(client, `DELETE FROM ${table} WHERE stored_at < $1`, [cutoff]);
     });
   }
 
@@ -84,45 +158,16 @@ export class PostgresFencedEffectRepository extends FencedEffectRepository<PoolC
     work: FencedEffectWork<PoolClient, TResult>,
   ): Promise<FencedEffectOutcome<TResult>> {
     const now = this.clock.now();
-    await this.#checkFence(client, key, now);
-    const stored = await firstRowOf(
-      client,
-      `SELECT token, result FROM agboss_fenced_effect_results
-       WHERE scope_key = $1 AND idempotency_key = $2 AND name = $3`,
-      [key.scopeKey, key.idempotencyKey, key.name],
-    );
-    if (stored !== undefined) {
-      const { token, result } = ResultRow.parse(stored);
-      return { status: FencedEffectStatus.Replayed, result: JSON.parse(result) as TResult, token };
-    }
+    await checkFence(client, key, now);
+    const stored = await storedRowOf(client, key);
+    if (stored !== undefined) return replayOf(key, stored);
     const text = this.storedResultOf(key, await work(client));
-    await changesOf(
-      client,
-      `INSERT INTO agboss_fenced_effect_results
-         (scope_key, idempotency_key, name, token, stored_at, result) VALUES ($1, $2, $3, $4, $5, $6)`,
-      [key.scopeKey, key.idempotencyKey, key.name, key.token, now, text],
-    );
+    await insertRowOf(client, key, now, text);
     return {
       status: FencedEffectStatus.Ran,
+      // the result as a replay gives it: its JSON parsed
       result: JSON.parse(text) as TResult,
       token: key.token,
     };
-  }
-
-  /** The key's lease is held (its epoch, not released, not expired) and no newer token wrote the scope. */
-  async #checkFence(client: PoolClient, key: FencedEffectKey, now: Date): Promise<void> {
-    const { scopeKey, token } = key;
-    const row = await firstRowOf(client, LOCK_LEASE, [key.tenantId, key.leaseExecutionId]);
-    const lease = row === undefined ? undefined : LeaseRow.parse(row);
-    const isHeld =
-      lease !== undefined &&
-      !lease.released &&
-      lease.lease_epoch === token &&
-      lease.expires_at.getTime() > now.getTime();
-    if (!isHeld)
-      throw new ExecutionFencedError({ scopeKey, token, observedToken: lease?.lease_epoch });
-    const mark = MarkRow.parse(await firstRowOf(client, RAISE_MARK, [scopeKey, token, now]));
-    if (mark.highest_token > token)
-      throw new ExecutionFencedError({ scopeKey, token, observedToken: mark.highest_token });
   }
 }

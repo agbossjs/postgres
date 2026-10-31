@@ -42,6 +42,10 @@ export interface Instance {
   ) => Promise<InstanceEvent>;
   /** Sends a command; resolves with its reply's result, rejects with its error. */
   readonly send: (op: string, fields?: Readonly<Record<string, unknown>>) => Promise<unknown>;
+  /** SIGSTOP: frozen where it is — no timer, no renewal, no write — until `thaw`. */
+  readonly freeze: () => void;
+  /** SIGCONT: a frozen instance runs on from where it was, its timers late. */
+  readonly thaw: () => void;
   /** SIGKILL: no shutdown hook runs, its lease is never released. Resolves with the exit signal. */
   readonly kill: () => Promise<NodeJS.Signals | null>;
 }
@@ -132,6 +136,12 @@ export async function launch(
     running.delete(child);
     return exited;
   };
+  const freeze = (): void => {
+    child.kill("SIGSTOP");
+  };
+  const thaw = (): void => {
+    child.kill("SIGCONT");
+  };
   const ready = await next((event) => event.event === "ready", 30_000);
   return {
     instanceId: String(ready.instanceId),
@@ -139,6 +149,8 @@ export async function launch(
     events: () => events,
     next,
     send,
+    freeze,
+    thaw,
     kill,
   };
 }

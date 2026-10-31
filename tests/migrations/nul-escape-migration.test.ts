@@ -17,7 +17,17 @@ const TREE = { tenantId: "default", rootExecutionId: "root-1" };
 describe("AC4: migration 0013 keeps the rows written before it", () => {
   it("AC4: a record's task and a tree value with U+E000, written before 0013, read back unchanged", async () => {
     const url = await freshSchema();
-    await migrateWith({ url }, migrationsIn(migrationsFolder({ "0013_nul_escape.sql": null })));
+    await migrateWith(
+      { url },
+      migrationsIn(
+        migrationsFolder({
+          "0013_nul_escape.sql": null,
+          "0014_execution_lease_superseded.sql": null,
+          "0015_fenced_effect_business_keys.sql": null,
+          "0016_outbound_calls.sql": null,
+        }),
+      ),
+    );
     const records = recordsOn(url);
     const threadId = await records.createThread({ workflow: "desk-workflow", tenantId: "default" });
     const { id } = await records.append(recordOf(threadId, ExecutionRecordStatus.Answered));

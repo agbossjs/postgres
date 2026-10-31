@@ -12,6 +12,7 @@ import { createInterface } from "node:readline";
 import { ApplicationContext, createApp, type App, type ExecutionOutput } from "@agboss/core";
 import { ApprovalWorkflowStart } from "../fixtures/approval.workflow.js";
 import { BatchWorkflowStart } from "../fixtures/batch.workflow.js";
+import { ChargeWorkflowStart, OrderChargeWorkflowStart } from "../fixtures/charge.workflow.js";
 import { a2aHttpListener } from "@agboss/core/a2a";
 import { ProcessApplication } from "../fixtures/process.application.js";
 import { emit, openGate } from "../fixtures/process-log.js";
@@ -59,6 +60,9 @@ const STARTS: Readonly<
   approval: (app, input, options) => app.execute(ApprovalWorkflowStart, Job.parse(input), options),
   spend: (app, input, options) => app.execute(SpendWorkflowStart, Job.parse(input), options),
   limited: (app, input, options) => app.execute(LimitedWorkflowStart, Job.parse(input), options),
+  charge: (app, input, options) => app.execute(ChargeWorkflowStart, Job.parse(input), options),
+  "order-charge": (app, input, options) =>
+    app.execute(OrderChargeWorkflowStart, Job.parse(input), options),
   batch: (app, input, options) =>
     app.execute(BatchWorkflowStart, z.array(Job).parse(input), options),
 };
