@@ -22,18 +22,40 @@ import { connectionTo } from "../support/stores.js";
 
 /**
  * agbossjs/agboss#538 AC2 on a real PostgreSQL (fast-check): every business key the core accepts —
- * any code points it lets through (the private-use U+E000 this package escapes for `jsonb`
- * included), graphemes of every script, look-alikes of one key — comes back byte for byte on
+ * any code points it lets through, graphemes of every script, look-alikes of one key — comes back byte for byte on
  * another connection, and two distinct accepted keys never meet in one row: an outbound call's
  * intent, a fenced effect's result. A key the core refuses is refused by every entry, naming the
- * rule, never the key.
+ * rule, never the key — agbossjs/agboss#556's classes among them (a key with a variation selector,
+ * a Hangul filler, a private-use or unassigned code point is no key: never a second row beside the
+ * one without it).
  */
 const database = testDatabase();
 
 const RUNS = 40;
 
-/** What the rules refuse, to be mixed in. */
-const HAZARDS = ["\u0085", "­", "​", "‍", "‮", "﻿", "\ud800", "é"];
+/** What the rules refuse, to be mixed in (agbossjs/agboss#556: what renders as nothing, private use, noncharacters, unassigned code points, the braille blank). */
+const HAZARDS = [
+  "\u0085",
+  "­",
+  "​",
+  "‍",
+  "‮",
+  "﻿",
+  "\ud800",
+  "é",
+  "\u034f",
+  "\ufe0f",
+  "\u3164",
+  "\u115f",
+  "\u{e0100}",
+  "\ue000",
+  "\u{f0000}",
+  "\ufdd0",
+  "\uffff",
+  "\u{10ffff}",
+  "\u0378",
+  "\u2800",
+];
 
 const anyText = fc.oneof(
   fc
@@ -193,6 +215,41 @@ describe("agbossjs/agboss#538 AC2: business keys on PostgreSQL", () => {
           expect(error).toMatchObject({ rule: keyTextRuleOf(text) });
           expect((error as Error).message).not.toContain(text);
         }
+      }),
+      { numRuns: RUNS },
+    );
+  });
+
+  it("agbossjs/agboss#556: an accepted key with one invisible, private or unassigned character put in is refused at every entry; the key itself keeps its one row", async () => {
+    const clock = new VirtualClock();
+    const [first, second] = [instanceOn(clock, 1), instanceOn(clock, 2)];
+    const invisible = fc.constantFrom(...HAZARDS.slice(8));
+    let round = 0;
+
+    await fc.assert(
+      fc.asyncProperty(acceptedKey, invisible, fc.nat(), async (key, char, at) => {
+        round += 1;
+        const keyed = await roundOf(first, "invisible", round);
+        const cut = Array.from(key);
+        const index = at % (cut.length + 1);
+        const variant = [...cut.slice(0, index), char, ...cut.slice(index)].join("");
+        expect(keyTextRuleOf(variant)).not.toBeUndefined();
+        expect(await first.calls.saveIfAbsent(keyed(key), intentOf(keyed(key), 0))).toBe(true);
+        for (const call of [
+          second.calls.findByKey(keyed(variant)),
+          second.calls.saveIfAbsent(keyed(variant), intentOf(keyed(variant), 1)),
+          second.effects.saveResultIfAbsent(keyed(variant), () => ({ receipt: "r" })),
+        ]) {
+          const error = await call.then(
+            () => undefined,
+            (thrown: unknown) => thrown,
+          );
+          expect(error).toBeInstanceOf(InvalidBusinessKeyError);
+          expect(error).toMatchObject({ rule: keyTextRuleOf(variant) });
+        }
+        expect(bytesOf((await second.calls.findByKey(keyed(key)))?.businessKey ?? "")).toEqual(
+          bytesOf(key),
+        );
       }),
       { numRuns: RUNS },
     );
