@@ -1,4 +1,5 @@
 import {
+  checkedBusinessKey,
   checkedEffectName,
   Clock,
   Injectable,
@@ -220,6 +221,8 @@ export class PostgresOutboundCallRepository extends OutboundCallRepository {
     work: (client: PoolClient) => Promise<TValue>,
   ): Promise<TValue> {
     checkedEffectName(key.name);
+    // a business key's text (agbossjs/agboss#538): refused by its rule before any statement
+    checkedBusinessKey(key);
     return inPoolTransaction(this.connection.pool, async (client) => {
       await checkFence(client, key, this.clock.now());
       return work(client);

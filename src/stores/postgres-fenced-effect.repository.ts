@@ -1,4 +1,5 @@
 import {
+  checkedBusinessKey,
   checkedEffectName,
   Clock,
   FencedEffectRepository,
@@ -144,6 +145,8 @@ export class PostgresFencedEffectRepository extends FencedEffectRepository<PoolC
     work: FencedEffectWork<PoolClient, TResult>,
   ): Promise<FencedEffectOutcome<TResult>> {
     checkedEffectName(key.name);
+    // a business key's text (agbossjs/agboss#538): refused by its rule before any statement
+    checkedBusinessKey(key);
     return inPoolTransaction(this.connection.pool, (client) => this.#effect(client, key, work));
   }
 
