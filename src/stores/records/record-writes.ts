@@ -17,20 +17,23 @@ import {
 const OwnerRow = z.object({ owner: z.string().nullable() });
 const PauseAnswerRow = z.object({ record: z.string() });
 
-/** A caller's own thread id may be created twice at once: the first insert keeps it (and its owner). */
+/**
+ * A new thread: `true` when this insert made it, `false` when the tenant has the id already. A
+ * caller's own thread id may be created twice at once: the first insert keeps it (and its owner).
+ */
 export async function createThread(
   database: Queryable,
   thread: NewThreadRecord,
   id: string,
   now: Date,
-): Promise<string> {
-  await changesOf(
+): Promise<boolean> {
+  const changes = await changesOf(
     database,
     `INSERT INTO agboss_threads (tenant_id, id, workflow, owner, created_at)
      VALUES ($1, $2, $3, $4, $5) ON CONFLICT (tenant_id, id) DO NOTHING`,
     [thread.tenantId, id, thread.workflow, thread.ownerId ?? null, now],
   );
-  return id;
+  return changes === 1;
 }
 
 /** The thread's owner (`owner: undefined`: created without one); `undefined` when there is no such thread. */

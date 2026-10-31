@@ -135,7 +135,10 @@ const intentOf = (key: FencedEffectKey, index: number): OutboundCallIntent => ({
 async function roundOf(stores: ReturnType<typeof instanceOn>, test: string, round: number) {
   const lease = await stores.leases.acquire("default", `${test}-${String(round)}`, hours(1));
   if (lease === undefined) throw new Error("the round's lease is held");
-  return (businessKey: string) => keyOf(lease, `charge-${String(round)}`, businessKey);
+  // the effect's name is the test's and the round's own: a business key is one row per tenant, name
+  // and key whatever the step (agbossjs/agboss#508), so a short key two tests both draw ("__")
+  // under one name would be the earlier test's row
+  return (businessKey: string) => keyOf(lease, `charge-${test}-${String(round)}`, businessKey);
 }
 
 describe("agbossjs/agboss#538 AC2: business keys on PostgreSQL", () => {
