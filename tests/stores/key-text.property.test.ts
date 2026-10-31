@@ -2,6 +2,7 @@ import {
   FencedEffectSettings,
   FencedEffectStatus,
   InvalidBusinessKeyError,
+  KeyTextRule,
   keyTextRuleOf,
   type ExecutionLease,
   type FencedEffectKey,
@@ -195,10 +196,13 @@ describe("agbossjs/agboss#538 AC2: business keys on PostgreSQL", () => {
     const stores = instanceOn(clock, 1);
     let round = 0;
     const refused = anyText.filter((text) => keyTextRuleOf(text) !== undefined);
+    // the message of each entry and rule, first seen: it names no text, so it is every text's
+    const messages = new Map<string, string>();
 
     await fc.assert(
       fc.asyncProperty(refused, async (text) => {
         round += 1;
+        const rule = keyTextRuleOf(text);
         const key = (await roundOf(stores, "refused", round))(text);
         const calls = [
           stores.calls.findByKey(key),
@@ -206,14 +210,21 @@ describe("agbossjs/agboss#538 AC2: business keys on PostgreSQL", () => {
           stores.calls.markCompleted(key, "owner-1", '"done"'),
           stores.effects.saveResultIfAbsent(key, () => ({ receipt: "r" })),
         ];
-        for (const call of calls) {
+        for (const [entry, call] of calls.entries()) {
           const error = await call.then(
             () => undefined,
             (thrown: unknown) => thrown,
           );
           expect(error).toBeInstanceOf(InvalidBusinessKeyError);
-          expect(error).toMatchObject({ rule: keyTextRuleOf(text) });
-          expect((error as Error).message).not.toContain(text);
+          expect(error).toMatchObject({ rule });
+          const { message } = error as Error;
+          // the effect's name is the round's own; everything else is the same for every text
+          const shown = message.replaceAll(key.name, "<name>");
+          const seen = `${String(entry)}:${String(rule)}`;
+          expect(shown).toBe(messages.get(seen) ?? shown);
+          messages.set(seen, shown);
+          // a spacing text is plain ASCII spaces and letters (" ", " is"), in any English message
+          if (rule !== KeyTextRule.Spacing) expect(message).not.toContain(text);
         }
       }),
       { numRuns: RUNS },
