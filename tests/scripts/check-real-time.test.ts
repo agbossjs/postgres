@@ -128,3 +128,37 @@ describe("AC2: the command", () => {
     expect(ran.stderr).toContain("check:real-time: 1 real-time threshold assertion(s)");
   });
 });
+
+describe("AC2 acceptance: a threshold one step removed is found too", () => {
+  it("AC2: a name assigned from a name that read the real time", () => {
+    const [finding] = found(
+      "const end = performance.now();",
+      "const elapsed = end - start;",
+      assertion("elapsed", "toBeLessThan", "500"),
+    );
+
+    expect(finding).toContain("a.test.ts:3: expect(elapsed)");
+    expect(finding).toContain("reads elapsed, a real time read");
+  });
+
+  it("AC2: a threshold named by a constant", () => {
+    const [finding] = found(
+      "const LIMIT = 300;",
+      "const t = Date.now();",
+      assertion("Date.now() - t", "toBeLessThan", "LIMIT"),
+    );
+
+    expect(finding).toContain("a.test.ts:3:");
+  });
+
+  it("AC2: a name bound to a VirtualClock's time is not a real time read", () => {
+    expect(
+      found(
+        "const before = clock.now().getTime();",
+        "const elapsed = clock.now().getTime() - before;",
+        assertion("elapsed", "toBe", "50"),
+        assertion("elapsed", "toBeGreaterThan", "LIMIT"),
+      ),
+    ).toEqual([]);
+  });
+});

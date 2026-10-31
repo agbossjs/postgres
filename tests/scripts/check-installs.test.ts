@@ -135,3 +135,53 @@ describe("AC1: the command", () => {
     expect(ran.stderr).toContain("check:installs: 3 unreviewed install(s)");
   });
 });
+
+describe("AC1 acceptance: the forms a guard must not miss", () => {
+  it.each([
+    ["npm install-test", "install-test"],
+    ["npm it", "it"],
+    ["npm install --beforehand", "install"],
+  ])("AC1: %s fails", (command, sub) => {
+    expect(inWorkflow(command)).toEqual([
+      `ci.yml:1: npm ${sub} resolves ranges: use npm ci (or --before, the minimum release age)`,
+    ]);
+  });
+
+  it("AC1: an install continued on the next line with \\ fails, naming its first line", () => {
+    const text = `${step("|")}        npm \\\n          install left-pad\n`;
+
+    expect(workflowProblems(text, "ci.yml")).toEqual([
+      "ci.yml:2: npm install resolves ranges: use npm ci (or --before, the minimum release age)",
+    ]);
+  });
+
+  it("AC1: --before given before the subcommand passes; every --package= of an npx is checked", () => {
+    expect(inWorkflow("npm --before=2026-10-28T00:00:00Z install")).toEqual([]);
+    expect(inWorkflow("npx --package=tsx@4.20.3 --package=evil tsx")).toEqual([
+      "ci.yml:1: evil is not pinned to an exact version (name@x.y.z)",
+    ]);
+  });
+
+  it.each([
+    ['execSync("npm install left-pad");', "an npm install's arguments"],
+    ['spawnSync("npm", ["i", "left-pad"]);', "an npm install's arguments"],
+    ['spawnSync("npm", ["add", "zod"]);', "an npm install's arguments"],
+    ["execSync(`npx vitest run`);", "not npx"],
+  ])("AC1: a script's %s fails", (line, why) => {
+    const [problem] = scriptProblems(`${line}\n`, "s.mjs");
+
+    expect(problem).toContain("s.mjs:1:");
+    expect(problem).toContain(why);
+  });
+
+  it("AC1: a comment naming npx or npm install runs nothing; npm ci and npm run pass", () => {
+    const text = [
+      "// run `npx agboss check` or `npm install` by hand",
+      " * `npx tsx` in a doc comment",
+      'spawnSync("npm", ["ci", "--no-audit"]);',
+      'spawnSync("npm", ["run", "install:packed"]);',
+    ].join("\n");
+
+    expect(scriptProblems(text, "s.mjs")).toEqual([]);
+  });
+});
