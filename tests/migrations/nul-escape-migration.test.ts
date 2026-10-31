@@ -26,6 +26,7 @@ describe("AC4: migration 0013 keeps the rows written before it", () => {
           "0015_fenced_effect_business_keys.sql": null,
           "0016_outbound_calls.sql": null,
           "0017_execution_lease_finished.sql": null,
+          "0018_execution_ids.sql": null,
         }),
       ),
     );

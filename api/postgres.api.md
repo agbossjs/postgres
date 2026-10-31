@@ -23,6 +23,7 @@ import { CostLedgerRepository } from '@agboss/core';
 import { ExecutionHistoryPage } from '@agboss/core';
 import { ExecutionHistoryRecord } from '@agboss/core';
 import { ExecutionHistoryRepository } from '@agboss/core';
+import { ExecutionIdentity } from '@agboss/core';
 import { ExecutionLease } from '@agboss/core';
 import { ExecutionLeaseEventRecord } from '@agboss/core';
 import { ExecutionLeaseEventRepository } from '@agboss/core';
@@ -226,6 +227,8 @@ export class PostgresExecutionLeaseRepository extends ExecutionLeaseRepository {
     release(executionLease: ExecutionLease): Promise<void>;
     // (undocumented)
     renew(held: ExecutionLease, lease: Milliseconds): Promise<Milliseconds | undefined>;
+    // (undocumented)
+    saveExecutionIdIfAbsent(input: ExecutionIdentity): Promise<boolean>;
     // (undocumented)
     yield(executionLease: ExecutionLease): Promise<boolean>;
 }
@@ -516,13 +519,14 @@ export interface SchemaVersions {
 // src/stores/postgres-execution-lease-event.repository.ts:30:9 - (ae-undocumented) Missing documentation for "save".
 // src/stores/postgres-execution-lease-event.repository.ts:39:9 - (ae-undocumented) Missing documentation for "findAllByTenantIdAndRootExecutionIdOrderByOccurredAt".
 // src/stores/postgres-execution-lease-event.repository.ts:52:9 - (ae-undocumented) Missing documentation for "deleteByOccurredAtBefore".
-// src/stores/postgres-execution-lease.repository.ts:165:3 - (ae-undocumented) Missing documentation for "ping".
-// src/stores/postgres-execution-lease.repository.ts:169:9 - (ae-undocumented) Missing documentation for "acquire".
-// src/stores/postgres-execution-lease.repository.ts:193:9 - (ae-undocumented) Missing documentation for "renew".
-// src/stores/postgres-execution-lease.repository.ts:201:9 - (ae-undocumented) Missing documentation for "release".
-// src/stores/postgres-execution-lease.repository.ts:205:9 - (ae-undocumented) Missing documentation for "finish".
-// src/stores/postgres-execution-lease.repository.ts:209:9 - (ae-undocumented) Missing documentation for "yield".
-// src/stores/postgres-execution-lease.repository.ts:218:9 - (ae-undocumented) Missing documentation for "reclaim".
+// src/stores/postgres-execution-lease.repository.ts:175:3 - (ae-undocumented) Missing documentation for "ping".
+// src/stores/postgres-execution-lease.repository.ts:179:9 - (ae-undocumented) Missing documentation for "saveExecutionIdIfAbsent".
+// src/stores/postgres-execution-lease.repository.ts:185:9 - (ae-undocumented) Missing documentation for "acquire".
+// src/stores/postgres-execution-lease.repository.ts:209:9 - (ae-undocumented) Missing documentation for "renew".
+// src/stores/postgres-execution-lease.repository.ts:217:9 - (ae-undocumented) Missing documentation for "release".
+// src/stores/postgres-execution-lease.repository.ts:221:9 - (ae-undocumented) Missing documentation for "finish".
+// src/stores/postgres-execution-lease.repository.ts:225:9 - (ae-undocumented) Missing documentation for "yield".
+// src/stores/postgres-execution-lease.repository.ts:234:9 - (ae-undocumented) Missing documentation for "reclaim".
 // src/stores/postgres-execution-record.repository.ts:41:3 - (ae-undocumented) Missing documentation for "ping".
 // src/stores/postgres-execution-record.repository.ts:63:9 - (ae-undocumented) Missing documentation for "hasThread".
 // src/stores/postgres-execution-record.repository.ts:66:3 - (ae-undocumented) Missing documentation for "threadOwner".

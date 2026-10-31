@@ -24,6 +24,7 @@ const BEFORE = {
   "0015_fenced_effect_business_keys.sql": null,
   "0016_outbound_calls.sql": null,
   "0017_execution_lease_finished.sql": null,
+  "0018_execution_ids.sql": null,
 };
 
 const leasesOn = (url: string, clock: VirtualClock, instanceId: string) =>
@@ -64,7 +65,7 @@ describe("migrations 0014–0016 keep the leases written before them", () => {
     const report = await migratePostgres({ url });
     await clock.advance(seconds(31));
 
-    expect(report.applied.map((migration) => migration.version)).toEqual([14, 15, 16, 17]);
+    expect(report.applied.map((migration) => migration.version)).toEqual([14, 15, 16, 17, 18]);
     const { rows } = await onSchema(
       url,
       "SELECT root_execution_id, superseded FROM agboss_execution_leases ORDER BY root_execution_id",
