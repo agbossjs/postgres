@@ -32,6 +32,9 @@ export function postgresFaultTarget(): Omit<FaultSuiteOptions, "scenarios"> {
     name: "PostgreSQL",
     stores: POSTGRES_FAULT_STORES,
     timeScale: timeScale(),
+    // agbossjs/agboss#533: PostgreSQL decides a lease's time by its own clock (`clock_timestamp()`),
+    // at the real rate whatever the pods' scale — the linearizability checker reads it so
+    storeTimeScale: 1,
     database: {
       get url() {
         return url;
