@@ -24,7 +24,8 @@ import { postgresStore } from "./postgres-store.js";
  * Every PostgreSQL store through the core's `storeConformance` (agbossjs/agboss#526): the 13
  * published contract suites, each as `<contract> (PostgreSQL)`, and `store set (PostgreSQL)` —
  * the three fencing stores declare one backend. One schema for the file, emptied before each case.
- * Nothing is left out (`without`): this package has a store of every contract.
+ * Nothing is left out (`without`): this package has a store of every contract. The interleaving
+ * explorer (agbossjs/agboss#533) runs on the fencing stores too: `interleavings (PostgreSQL)`.
  */
 const database = testDatabase();
 
@@ -69,6 +70,9 @@ const fencedEffects = postgresStore(
 
 storeConformance<PoolClient>({
   name: "PostgreSQL",
+  // agbossjs/agboss#533, #590: the interleaving explorer — every schedule of two instances 4 steps
+  // deep, 50 seeded walks of three; a search out of its time limit fails with what it explored
+  interleavings: { depth: 4, walks: 50, timeLimit: 900_000 },
   reset: async () => {
     await truncateAll(database.url());
   },
