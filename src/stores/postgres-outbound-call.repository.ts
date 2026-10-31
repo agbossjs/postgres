@@ -1,7 +1,7 @@
 import {
+  StoreClock,
   checkedBusinessKey,
   checkedEffectName,
-  Clock,
   Injectable,
   OutboundCallRepository,
   OutboundCallStatus,
@@ -21,6 +21,7 @@ import { PostgresConnection } from "../connection/postgres-connection.js";
 import { changesOf, firstRowOf, rowsOf } from "../connection/query.js";
 import { inPoolTransaction } from "../connection/transaction.js";
 import { checkFence } from "./fence.js";
+import { storeNowOf } from "./store-time.js";
 import { escapedText } from "./nul-escape.js";
 import { leaseStateIn } from "./outbound-calls/lease-state.js";
 import { callRecordOf, storedJsonOf, whereOf } from "./outbound-calls/outbound-call-rows.js";
@@ -64,7 +65,7 @@ interface AsRead {
  * lease row and closes an expired one in the same transaction. Listed with
  * `PostgresExecutionLeaseRepository`, whose leases it reads.
  */
-@Injectable({ deps: [PostgresConnection, Clock] })
+@Injectable({ deps: [PostgresConnection, StoreClock] })
 export class PostgresOutboundCallRepository extends OutboundCallRepository {
   /** One transactional backend with the other PostgreSQL stores (agbossjs/agboss#526). */
   static override readonly backend: string | undefined = "postgres";
@@ -72,7 +73,7 @@ export class PostgresOutboundCallRepository extends OutboundCallRepository {
 
   constructor(
     private readonly connection: PostgresConnection,
-    private readonly clock: Clock,
+    private readonly clock: StoreClock,
   ) {
     super();
   }
@@ -180,7 +181,7 @@ export class PostgresOutboundCallRepository extends OutboundCallRepository {
 
   leaseStateOf(lease: OutboundCallLease): Promise<OutboundCallLeaseState> {
     return inPoolTransaction(this.connection.pool, (client) =>
-      leaseStateIn(client, lease, this.clock.now()),
+      leaseStateIn(client, lease, storeNowOf(this.clock)),
     );
   }
 
@@ -224,7 +225,7 @@ export class PostgresOutboundCallRepository extends OutboundCallRepository {
     // a business key's text (agbossjs/agboss#538): refused by its rule before any statement
     checkedBusinessKey(key);
     return inPoolTransaction(this.connection.pool, async (client) => {
-      await checkFence(client, key, this.clock.now());
+      await checkFence(client, key, storeNowOf(this.clock));
       return work(client);
     });
   }

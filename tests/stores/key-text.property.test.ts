@@ -6,6 +6,7 @@ import {
   type ExecutionLease,
   type FencedEffectKey,
   type OutboundCallIntent,
+  TestStoreClock,
 } from "@agboss/core";
 import { VirtualClock } from "@agboss/core/testing";
 import { hours } from "@agboss/core/units";
@@ -71,9 +72,17 @@ function instanceOn(clock: VirtualClock, index: number) {
   const connection = connectionTo(database.url(), 2);
   const application = new TestApplicationContext({}, `instance-${String(index)}`);
   return {
-    calls: new PostgresOutboundCallRepository(connection, clock),
-    effects: new PostgresFencedEffectRepository(connection, clock, new FencedEffectSettings()),
-    leases: new PostgresExecutionLeaseRepository(connection, clock, application),
+    calls: new PostgresOutboundCallRepository(connection, new TestStoreClock(clock)),
+    effects: new PostgresFencedEffectRepository(
+      connection,
+      new TestStoreClock(clock),
+      new FencedEffectSettings(),
+    ),
+    leases: new PostgresExecutionLeaseRepository(
+      connection,
+      new TestStoreClock(clock),
+      application,
+    ),
   };
 }
 

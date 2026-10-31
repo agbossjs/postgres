@@ -95,10 +95,15 @@ provider's limits hold across pods, `agboss records export` on any pod lists eve
 executions, and a mesh request retried against another pod is answered from the first run.
 
 Every store injects `PostgresConnection` — one `pg.Pool` per application instance, ended when the
-instance stops — and answers `ping()` with `SELECT 1` (`app.checkReadiness()`). Time always comes
-from the application's `Clock`, never from the database. A project subclasses a store through public
-tokens only: `@Injectable({ deps: [PostgresConnection, Clock, ApplicationContext] })`, the store's
-own `deps`.
+instance stops — and answers `ping()` with `SELECT 1` (`app.checkReadiness()`). **The database's
+clock decides when a lease ends** (agbossjs/agboss#533): every statement that takes, renews, yields,
+reclaims, fences a write under or closes a lease reads `clock_timestamp()` inside itself, so pods
+whose wall clocks disagree — by seconds or by minutes — agree on the instant of expiry; each take and
+renewal answers the time the lease has left, which the holder counts down on its monotonic clock
+less a 1 s margin. Under `testWith` and the contract suites the test's clock is injected instead
+(`StoreClock`), so time can be moved. Other times (records, retention) are the application's
+`Clock`'s. A project subclasses a store through public tokens only: `@Injectable({ deps:
+[PostgresConnection, StoreClock, ApplicationContext] })`, the store's own `deps`.
 
 **One backend.** `PostgresExecutionLeaseRepository`, `PostgresFencedEffectRepository` and
 `PostgresOutboundCallRepository` declare `static backend = "postgres"` (agbossjs/agboss#526): a

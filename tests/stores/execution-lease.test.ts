@@ -1,3 +1,4 @@
+import { TestStoreClock } from "@agboss/core";
 import { VirtualClock } from "@agboss/core/testing";
 import { seconds } from "@agboss/core/units";
 import { describe, expect, it } from "vitest";
@@ -12,7 +13,7 @@ const database = testDatabase();
 const leasesOn = (clock: VirtualClock, instanceId = "instance-1") =>
   new PostgresExecutionLeaseRepository(
     connectionTo(database.url()),
-    clock,
+    new TestStoreClock(clock),
     new TestApplicationContext({}, instanceId),
   );
 
@@ -24,7 +25,7 @@ describe("PostgresExecutionLeaseRepository", () => {
 
     await clock.advance(seconds(31));
 
-    expect(held && (await leases.renew(held, seconds(30)))).toBe(false);
+    expect(held && (await leases.renew(held, seconds(30)))).toBeUndefined();
     expect(
       await leasesOn(clock, "instance-2").acquire("default", "root-over", seconds(30)),
     ).toMatchObject({
@@ -44,9 +45,9 @@ describe("PostgresExecutionLeaseRepository", () => {
 
     await clock.advance(seconds(30));
 
-    expect(await leases.renew(held, seconds(30))).toBe(false);
+    expect(await leases.renew(held, seconds(30))).toBeUndefined();
     expect(await leases.yield(held)).toBe(false);
-    expect(await leases.renew(yielded, seconds(30))).toBe(false);
+    expect(await leases.renew(yielded, seconds(30))).toBeUndefined();
     expect(await leases.reclaim(yielded, seconds(30))).toBeUndefined();
     expect(await leases.acquire("default", "root-instant", seconds(30))).toMatchObject({
       leaseEpoch: 2,
@@ -71,7 +72,7 @@ describe("PostgresExecutionLeaseRepository", () => {
     const clock = new VirtualClock();
     const down = new PostgresExecutionLeaseRepository(
       connectionTo("postgres://postgres:pw@127.0.0.1:1/postgres"),
-      clock,
+      new TestStoreClock(clock),
       new TestApplicationContext({}),
     );
     const lease = {
@@ -80,6 +81,7 @@ describe("PostgresExecutionLeaseRepository", () => {
       holderInstanceId: "instance-1",
       leaseEpoch: 1,
       expiresAt: clock.now(),
+      remaining: seconds(30),
     };
 
     await expect(down.acquire("default", "root-down", seconds(30))).rejects.toThrow();

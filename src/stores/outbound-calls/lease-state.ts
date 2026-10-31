@@ -2,6 +2,7 @@ import { OutboundCallLeaseState, type OutboundCallLease } from "@agboss/core";
 import type { PoolClient } from "pg";
 import { z } from "zod";
 import { changesOf, firstRowOf } from "../../connection/query.js";
+import { storeNow } from "../store-time.js";
 
 /**
  * `PostgresOutboundCallRepository.leaseStateOf` (agbossjs/agboss#508), in the caller's transaction:
@@ -12,26 +13,33 @@ import { changesOf, firstRowOf } from "../../connection/query.js";
  * win: whichever locks the row first decides what the other finds.
  */
 
-const LOCK_LEASE = `SELECT lease_epoch, expires_at, released FROM agboss_execution_leases
+const LOCK_LEASE = `SELECT lease_epoch, released FROM agboss_execution_leases
   WHERE tenant_id = $1 AND root_execution_id = $2 FOR UPDATE`;
 
+/**
+ * Closes the lease at its token once it expired by the store's time (agbossjs/agboss#533: the
+ * database's, `$4` null), read in this statement — the row already locked by this transaction.
+ */
 const CLOSE = `UPDATE agboss_execution_leases SET released = true, superseded = true
-  WHERE tenant_id = $1 AND root_execution_id = $2 AND lease_epoch = $3`;
+  WHERE tenant_id = $1 AND root_execution_id = $2 AND lease_epoch = $3
+    AND expires_at <= ${storeNow(4)}`;
 
-const LeaseRow = z.object({ lease_epoch: z.number(), expires_at: z.date(), released: z.boolean() });
+const LeaseRow = z.object({ lease_epoch: z.number(), released: z.boolean() });
 
-/** The lease's state at its token as of `now`; an expired one is closed now. */
+/**
+ * The lease's state at its token as of the store's time (`now`: the database's when `null`); an
+ * expired one is closed now.
+ */
 export async function leaseStateIn(
   client: PoolClient,
   lease: OutboundCallLease,
-  now: Date,
+  now: Date | null,
 ): Promise<OutboundCallLeaseState> {
   const { tenantId, leaseExecutionId, token } = lease;
   const row = await firstRowOf(client, LOCK_LEASE, [tenantId, leaseExecutionId]);
   const found = row === undefined ? undefined : LeaseRow.parse(row);
   if (found === undefined || found.released || found.lease_epoch !== token)
     return OutboundCallLeaseState.Ended;
-  if (found.expires_at.getTime() > now.getTime()) return OutboundCallLeaseState.Live;
-  await changesOf(client, CLOSE, [tenantId, leaseExecutionId, token]);
-  return OutboundCallLeaseState.Superseded;
+  const closed = await changesOf(client, CLOSE, [tenantId, leaseExecutionId, token, now]);
+  return closed === 1 ? OutboundCallLeaseState.Superseded : OutboundCallLeaseState.Live;
 }

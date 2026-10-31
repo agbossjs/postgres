@@ -33,8 +33,12 @@ PostgreSQL (`AGBOSS_POSTGRES_TEST_URL`) · api-extractor (`api/postgres.api.md`)
   `PostgresSchemaTooNewError`). A schema change is always a new file; an applied file never changes.
 - `src/stores/` — one store per contract, `deps` as the core's SQLite store of that contract. Every
   atomic operation is one statement or one transaction at `READ COMMITTED`; the isolation and the
-  locking are stated in each store's doc comment. Time only from the `Clock` (parameters, never
-  `now()`).
+  locking are stated in each store's doc comment. A lease's expiry is decided by the database's
+  time (agbossjs/agboss#533): `clock_timestamp()` inside each statement that takes, renews, yields,
+  reclaims, fences or closes a lease (`src/stores/store-time.ts`: `COALESCE($n::timestamptz,
+clock_timestamp())`, the parameter the test's clock only when `StoreClock.isDatabaseTime` is
+  false); every take and renewal answers `remaining`. Other times (records, retention) come from the
+  application's clock, as parameters.
 - `src/cli.ts` + `bin/agboss-postgres.js` — the command.
 - `tests/processes/` + `tests/fixtures/` — the two-process tests (#482 AC1–AC3, #483 AC1–AC4, the outbound charge, agbossjs/agboss#520 AC1):
   each instance a `node` child (`--import tsx`) running `ProcessApplication` on the test's schema,

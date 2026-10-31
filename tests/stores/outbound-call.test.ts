@@ -5,6 +5,7 @@ import {
   type ExecutionLease,
   type FencedEffectKey,
   type OutboundCallIntent,
+  TestStoreClock,
 } from "@agboss/core";
 import { VirtualClock } from "@agboss/core/testing";
 import { hours, seconds } from "@agboss/core/units";
@@ -33,8 +34,12 @@ function instanceOn(clock: VirtualClock, index: number, poolSize = 2) {
   const connection = connectionTo(database.url(), poolSize);
   const application = new TestApplicationContext({}, `instance-${String(index)}`);
   return {
-    calls: new PostgresOutboundCallRepository(connection, clock),
-    leases: new PostgresExecutionLeaseRepository(connection, clock, application),
+    calls: new PostgresOutboundCallRepository(connection, new TestStoreClock(clock)),
+    leases: new PostgresExecutionLeaseRepository(
+      connection,
+      new TestStoreClock(clock),
+      application,
+    ),
   };
 }
 
@@ -89,6 +94,7 @@ const NO_LEASE: ExecutionLease = {
   holderInstanceId: "none",
   leaseEpoch: 1,
   expiresAt: new Date(0),
+  remaining: seconds(30),
 };
 
 const PENDING = { status: OutboundCallStatus.Pending, attempt: 1, attemptOwner: "owner-1" };
@@ -287,6 +293,7 @@ describe("PostgresOutboundCallRepository: edges", () => {
       holderInstanceId: "instance-0",
       leaseEpoch: 1,
       expiresAt: new Date(),
+      remaining: seconds(30),
     });
 
     const refused = await stores.calls
@@ -299,13 +306,17 @@ describe("PostgresOutboundCallRepository: edges", () => {
 
   it("an unreachable database rejects every method", async () => {
     const connection = connectionTo("postgres://postgres:pw@127.0.0.1:1/postgres");
-    const calls = new PostgresOutboundCallRepository(connection, new VirtualClock());
+    const calls = new PostgresOutboundCallRepository(
+      connection,
+      new TestStoreClock(new VirtualClock()),
+    );
     const key = keyOf({
       tenantId: "default",
       rootExecutionId: "x",
       holderInstanceId: "i",
       leaseEpoch: 1,
       expiresAt: new Date(),
+      remaining: seconds(30),
     });
 
     await expect(calls.ping()).rejects.toThrow();

@@ -1,6 +1,6 @@
 {
   "repository": "agbossjs/agboss",
-  "branch": "main",
-  "frameworkSha": "b94a1191d5ac45e25634259fef6761aa1a7d1a0e",
+  "branch": "feat/533-clock-authority",
+  "frameworkSha": "e03c17578df9526ed30c3e9ce4423f9fb387f448",
   "version": "0.1.0"
 }

@@ -1,4 +1,4 @@
-import { OutboundCallLeaseState } from "@agboss/core";
+import { OutboundCallLeaseState, TestStoreClock } from "@agboss/core";
 import { VirtualClock } from "@agboss/core/testing";
 import { seconds } from "@agboss/core/units";
 import { describe, expect, it } from "vitest";
@@ -29,7 +29,7 @@ const BEFORE = {
 const leasesOn = (url: string, clock: VirtualClock, instanceId: string) =>
   new PostgresExecutionLeaseRepository(
     connectionTo(url),
-    clock,
+    new TestStoreClock(clock),
     new TestApplicationContext({}, instanceId),
   );
 
@@ -58,6 +58,7 @@ describe("migrations 0014–0016 keep the leases written before them", () => {
       holderInstanceId: "instance-1",
       leaseEpoch: 1,
       expiresAt: at(seconds(90)),
+      remaining: seconds(30),
     };
 
     const report = await migratePostgres({ url });
@@ -81,8 +82,8 @@ describe("migrations 0014–0016 keep the leases written before them", () => {
     expect(await after.acquire("default", "root-released", seconds(30))).not.toHaveProperty(
       "takenOverFrom",
     );
-    expect(await before.renew(held, seconds(30))).toBe(true);
-    const calls = new PostgresOutboundCallRepository(connectionTo(url), clock);
+    expect(await before.renew(held, seconds(30))).toBe(seconds(30));
+    const calls = new PostgresOutboundCallRepository(connectionTo(url), new TestStoreClock(clock));
     const state = { tenantId: "default", leaseExecutionId: "root-held", token: 1 };
     expect(await calls.leaseStateOf(state)).toBe(OutboundCallLeaseState.Live);
     await clock.advance(seconds(31));

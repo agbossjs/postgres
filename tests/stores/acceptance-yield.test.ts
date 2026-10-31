@@ -1,3 +1,4 @@
+import { TestStoreClock } from "@agboss/core";
 import type { ExecutionLease } from "@agboss/core";
 import { VirtualClock } from "@agboss/core/testing";
 import { seconds, type Milliseconds } from "@agboss/core/units";
@@ -28,7 +29,12 @@ const leasesOn = (
   clock: VirtualClock,
   instanceId: string,
   Store = PostgresExecutionLeaseRepository,
-) => new Store(connectionTo(database.url()), clock, new TestApplicationContext({}, instanceId));
+) =>
+  new Store(
+    connectionTo(database.url()),
+    new TestStoreClock(clock),
+    new TestApplicationContext({}, instanceId),
+  );
 
 const rowOf = async (root: string): Promise<unknown> =>
   (
@@ -49,7 +55,7 @@ describe("#516 acceptance: a yielded lease on PostgreSQL", () => {
     const before = await rowOf("root-m2");
 
     await clock.advance(seconds(10));
-    expect(held && (await first.renew(held, LEASE))).toBe(true);
+    expect(held && (await first.renew(held, LEASE))).toBe(LEASE);
 
     expect(before).toMatchObject({
       holder_instance_id: "instance-1",

@@ -1,3 +1,4 @@
+import { TestStoreClock } from "@agboss/core";
 import { VirtualClock } from "@agboss/core/testing";
 import { seconds } from "@agboss/core/units";
 import { describe, expect, it } from "vitest";
@@ -17,7 +18,7 @@ import { connectionTo } from "../support/stores.js";
 const leasesOn = (url: string, clock: VirtualClock, instanceId: string) =>
   new PostgresExecutionLeaseRepository(
     connectionTo(url),
-    clock,
+    new TestStoreClock(clock),
     new TestApplicationContext({}, instanceId),
   );
 
@@ -28,6 +29,7 @@ const leaseOf = (root: string, expiresAt: Date) => ({
   holderInstanceId: "instance-1",
   leaseEpoch: 1,
   expiresAt,
+  remaining: seconds(30),
 });
 
 describe("migration 0017 keeps the leases written before it", () => {
@@ -76,7 +78,9 @@ describe("migration 0017 keeps the leases written before it", () => {
       leaseEpoch: 2,
     });
     expect(await after.acquire("default", "root-held", seconds(30))).toBeUndefined();
-    expect(await before.renew(leaseOf("root-held", at(seconds(59))), seconds(30))).toBe(true);
+    expect(await before.renew(leaseOf("root-held", at(seconds(59))), seconds(30))).toBe(
+      seconds(30),
+    );
     expect(await before.reclaim(leaseOf("root-yielded", at(seconds(59))), seconds(30))).toEqual(
       expect.objectContaining({ leaseEpoch: 2 }),
     );

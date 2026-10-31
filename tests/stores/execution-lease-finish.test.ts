@@ -1,3 +1,4 @@
+import { TestStoreClock } from "@agboss/core";
 import type { ExecutionLease } from "@agboss/core";
 import { VirtualClock } from "@agboss/core/testing";
 import { seconds } from "@agboss/core/units";
@@ -25,7 +26,7 @@ const LEASE = seconds(30);
 const leasesOn = (clock: VirtualClock, instanceId: string) =>
   new PostgresExecutionLeaseRepository(
     connectionTo(database.url(), 1),
-    clock,
+    new TestStoreClock(clock),
     new TestApplicationContext({}, instanceId),
   );
 
@@ -107,7 +108,7 @@ async function raceRound(
   const store = acquirers[winner.at];
   expect(winner.take.leaseEpoch).toBe(2);
   expect(await rowOf(root)).toEqual({ lease_epoch: 2, finished: false });
-  expect(await store?.renew(winner.take, LEASE)).toBe(true);
+  expect(await store?.renew(winner.take, LEASE)).toBe(LEASE);
   await store?.release(winner.take);
   expect(await holder.acquire("default", root, LEASE)).toMatchObject({ leaseEpoch: 3 });
   return "taken";
@@ -140,7 +141,7 @@ describe("PostgresExecutionLeaseRepository.finish (agbossjs/agboss#520)", () => 
 
     expect(reclaimed).toMatchObject({ leaseEpoch: 2 });
     expect(await rowOf("root-stale")).toEqual({ lease_epoch: 2, finished: false });
-    expect(reclaimed && (await holder.renew(reclaimed, LEASE))).toBe(true);
+    expect(reclaimed && (await holder.renew(reclaimed, LEASE))).toBe(LEASE);
   });
 
   it("an expired lease nobody took is finished by its holder: refused for good", async () => {

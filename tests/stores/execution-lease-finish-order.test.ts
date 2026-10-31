@@ -1,3 +1,4 @@
+import { TestStoreClock } from "@agboss/core";
 import type { ExecutionLease } from "@agboss/core";
 import { VirtualClock } from "@agboss/core/testing";
 import { seconds } from "@agboss/core/units";
@@ -23,7 +24,7 @@ type Call = "finish" | "release" | "acquire";
 const leasesOn = (clock: VirtualClock, instanceId: string) =>
   new PostgresExecutionLeaseRepository(
     connectionTo(database.url(), 1),
-    clock,
+    new TestStoreClock(clock),
     new TestApplicationContext({}, instanceId),
   );
 

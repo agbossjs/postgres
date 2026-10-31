@@ -1,7 +1,7 @@
 import {
+  StoreClock,
   checkedBusinessKey,
   checkedEffectName,
-  Clock,
   FencedEffectRepository,
   FencedEffectSettings,
   FencedEffectStatus,
@@ -18,6 +18,7 @@ import { changesOf, firstRowOf } from "../connection/query.js";
 import { inPoolTransaction } from "../connection/transaction.js";
 import { PostgresConnection } from "../connection/postgres-connection.js";
 import { checkFence } from "./fence.js";
+import { storeNowOf } from "./store-time.js";
 import { escapedJsonOf, unescapedJson } from "./nul-escape.js";
 import { PostgresExecutionLeaseRepository } from "./postgres-execution-lease.repository.js";
 import { z } from "zod";
@@ -122,7 +123,7 @@ function replayOf<TResult>(key: FencedEffectKey, row: unknown): FencedEffectOutc
  * `await` its statements and a pool of one never deadlocks. Listed with
  * `PostgresExecutionLeaseRepository`, whose leases it reads.
  */
-@Injectable({ deps: [PostgresConnection, Clock, FencedEffectSettings] })
+@Injectable({ deps: [PostgresConnection, StoreClock, FencedEffectSettings] })
 export class PostgresFencedEffectRepository extends FencedEffectRepository<PoolClient> {
   /** One transactional backend with the other PostgreSQL stores (agbossjs/agboss#526). */
   static override readonly backend: string | undefined = "postgres";
@@ -130,7 +131,7 @@ export class PostgresFencedEffectRepository extends FencedEffectRepository<PoolC
 
   constructor(
     private readonly connection: PostgresConnection,
-    private readonly clock: Clock,
+    private readonly clock: StoreClock,
     settings: FencedEffectSettings,
   ) {
     super(settings);
@@ -167,7 +168,7 @@ export class PostgresFencedEffectRepository extends FencedEffectRepository<PoolC
     work: FencedEffectWork<PoolClient, TResult>,
   ): Promise<FencedEffectOutcome<TResult>> {
     const now = this.clock.now();
-    await checkFence(client, key, now);
+    await checkFence(client, key, storeNowOf(this.clock));
     const stored = await storedRowOf(client, key);
     if (stored !== undefined) return replayOf(key, stored);
     const text = this.storedResultOf(key, await work(client));
