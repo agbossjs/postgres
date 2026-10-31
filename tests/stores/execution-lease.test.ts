@@ -33,6 +33,27 @@ describe("PostgresExecutionLeaseRepository", () => {
     });
   });
 
+  it("agbossjs/agboss#534: at the very moment the lease ends its holder's renew, yield and reclaim are refused, taken or not", async () => {
+    const clock = new VirtualClock();
+    const leases = leasesOn(clock);
+    const held = await leases.acquire("default", "root-instant", seconds(30));
+    const yielded = await leases.acquire("default", "root-instant-yielded", seconds(30));
+    if (held === undefined || yielded === undefined)
+      throw new Error("the first takes must succeed");
+    expect(await leases.yield(yielded)).toBe(true);
+
+    await clock.advance(seconds(30));
+
+    expect(await leases.renew(held, seconds(30))).toBe(false);
+    expect(await leases.yield(held)).toBe(false);
+    expect(await leases.renew(yielded, seconds(30))).toBe(false);
+    expect(await leases.reclaim(yielded, seconds(30))).toBeUndefined();
+    expect(await leases.acquire("default", "root-instant", seconds(30))).toMatchObject({
+      leaseEpoch: 2,
+      takenOverFrom: { holderInstanceId: "instance-1", leaseEpoch: 1 },
+    });
+  });
+
   it("a takeover at the very moment the lease ends is allowed: valid while expires_at > now", async () => {
     const clock = new VirtualClock();
     await leasesOn(clock).acquire("default", "root-edge", seconds(30));

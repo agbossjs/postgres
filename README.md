@@ -327,8 +327,8 @@ the tree over, so a pod never moves a tree whose lease it could not renew.
 | ------------- | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
 | Lease         | `acquire`            | `INSERT … ON CONFLICT DO UPDATE … WHERE NOT finished AND (released OR expires_at <= $now)` → epoch + 1, `takenOverFrom` if expired    |
 | Lease         | `finish`             | `UPDATE … SET released, finished WHERE holder AND lease_epoch`: refused by every later `acquire`; a later `release` keeps it finished |
-| Lease         | `renew` / `release`  | `UPDATE … WHERE holder AND lease_epoch` (a renewal also `expires_at >= $now`); 0 rows: lost                                           |
-| Lease         | `yield` / `reclaim`  | `UPDATE … WHERE holder AND lease_epoch AND expires_at >= $now`: `yielded = true` / epoch + 1; 0 rows: lost                            |
+| Lease         | `renew` / `release`  | `UPDATE … WHERE holder AND lease_epoch` (a renewal also `expires_at > $now`, #534); 0 rows: lost                                      |
+| Lease         | `yield` / `reclaim`  | `UPDATE … WHERE holder AND lease_epoch AND expires_at > $now`: `yielded = true` / epoch + 1; 0 rows: lost                             |
 | Record        | `completeIfStatus`   | `UPDATE … WHERE status = $expected`                                                                                                   |
 | Tree          | `saveIfAbsent`       | `INSERT … ON CONFLICT DO NOTHING RETURNING`                                                                                           |
 | Child queue   | claim                | `UPDATE … FROM (SELECT … FOR UPDATE SKIP LOCKED LIMIT 1)`                                                                             |
