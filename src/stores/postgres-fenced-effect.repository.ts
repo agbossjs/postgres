@@ -1,9 +1,12 @@
 import {
+  checkedEffectName,
   Clock,
   FencedEffectRepository,
   FencedEffectSettings,
   FencedEffectStatus,
   Injectable,
+  replayedFromOf,
+  storedKeyFactsOf,
   type Class,
   type FencedEffectKey,
   type FencedEffectOutcome,
@@ -13,13 +16,14 @@ import type { PoolClient } from "pg";
 import { changesOf, firstRowOf } from "../connection/query.js";
 import { inPoolTransaction } from "../connection/transaction.js";
 import { PostgresConnection } from "../connection/postgres-connection.js";
-import { replayedFromOf, StoredFacts } from "./business-keys.js";
-import { checkedName, checkFence } from "./fence.js";
+import { checkFence } from "./fence.js";
 import { escapedJsonOf, unescapedJson } from "./nul-escape.js";
 import { PostgresExecutionLeaseRepository } from "./postgres-execution-lease.repository.js";
 import { z } from "zod";
 
 const ResultRow = z.object({ token: z.number(), result: z.string() });
+/** What a business key's row keeps of the key that wrote it, for the core's `replayedFromOf`. */
+const FactsRow = z.object({ fingerprint: z.string().nullable(), origin: z.unknown() });
 
 /**
  * A business key's row (agbossjs/agboss#508), locked for the transaction first: its key is one for
@@ -64,7 +68,7 @@ async function insertRowOf(
     );
     return;
   }
-  const origin = key.origin === undefined ? null : escapedJsonOf(key.origin);
+  const { fingerprint, origin } = storedKeyFactsOf(key);
   await changesOf(
     client,
     `INSERT INTO agboss_fenced_effect_business_results
@@ -77,8 +81,8 @@ async function insertRowOf(
       key.token,
       now,
       text,
-      key.fingerprint ?? null,
-      origin,
+      fingerprint ?? null,
+      origin === undefined ? null : escapedJsonOf(origin),
     ],
   );
 }
@@ -86,7 +90,7 @@ async function insertRowOf(
 /** The replay of a stored row: its result, its token, the step it names (a business key's). */
 function replayOf<TResult>(key: FencedEffectKey, row: unknown): FencedEffectOutcome<TResult> {
   const { token, result } = ResultRow.parse(row);
-  const facts = key.businessKey === undefined ? undefined : StoredFacts.parse(row);
+  const facts = key.businessKey === undefined ? undefined : FactsRow.parse(row);
   const replayedFrom =
     facts === undefined
       ? undefined
@@ -119,6 +123,8 @@ function replayOf<TResult>(key: FencedEffectKey, row: unknown): FencedEffectOutc
  */
 @Injectable({ deps: [PostgresConnection, Clock, FencedEffectSettings] })
 export class PostgresFencedEffectRepository extends FencedEffectRepository<PoolClient> {
+  /** One transactional backend with the other PostgreSQL stores (agbossjs/agboss#526). */
+  static override readonly backend: string | undefined = "postgres";
   static override readonly leaseRepository: Class | undefined = PostgresExecutionLeaseRepository;
 
   constructor(
@@ -137,7 +143,7 @@ export class PostgresFencedEffectRepository extends FencedEffectRepository<PoolC
     key: FencedEffectKey,
     work: FencedEffectWork<PoolClient, TResult>,
   ): Promise<FencedEffectOutcome<TResult>> {
-    checkedName(key);
+    checkedEffectName(key.name);
     return inPoolTransaction(this.connection.pool, (client) => this.#effect(client, key, work));
   }
 

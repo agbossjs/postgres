@@ -1,9 +1,4 @@
-import {
-  OutboundCallStatus,
-  type FencedEffectKey,
-  type OutboundCallIntent,
-  type OutboundCallRecord,
-} from "@agboss/core";
+import { OutboundCallStatus, type FencedEffectKey, type OutboundCallRecord } from "@agboss/core";
 import { z } from "zod";
 import { escapedJsonOf, escapedText, unescapedJson } from "../nul-escape.js";
 
@@ -49,24 +44,6 @@ export const callRecordOf = (row: unknown): OutboundCallRecord =>
 
 /** A record (or a part of one) as the `jsonb` parameter that keeps it. */
 export const storedJsonOf = (record: Partial<OutboundCallRecord>): string => escapedJsonOf(record);
-
-/** The record `key`'s intent is saved as: `Pending`, under the key's lease and token, `now`. */
-export const newRecordOf = (
-  key: FencedEffectKey,
-  intent: OutboundCallIntent,
-  now: Date,
-): OutboundCallRecord => ({
-  ...intent,
-  tenantId: key.tenantId,
-  name: key.name,
-  status: OutboundCallStatus.Pending,
-  token: key.token,
-  leaseExecutionId: key.leaseExecutionId,
-  ...(key.businessKey === undefined ? {} : { businessKey: key.businessKey }),
-  ...(key.fingerprint === undefined ? {} : { fingerprint: key.fingerprint }),
-  ...(key.businessKeyHash === undefined ? {} : { businessKeyHash: key.businessKeyHash }),
-  recordedAt: now.toISOString(),
-});
 
 /**
  * Where `key`'s row is, from parameter `$<from>` on: the condition and its parameters — by its

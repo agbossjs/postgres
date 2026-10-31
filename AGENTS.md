@@ -47,7 +47,8 @@ PostgreSQL (`AGBOSS_POSTGRES_TEST_URL`) · api-extractor (`api/postgres.api.md`)
 - The core's limits: 200 lines per file, 50 per function, complexity 10; no `eslint-disable`,
   `@ts-ignore`, `as any`, `as unknown as`. Components keep no state (`agboss/no-component-state`),
   time from the `Clock` (`agboss/no-direct-time`).
-- Every store runs its published contract suite (`tests/contracts/*.contract.test.ts`) against the
-  real database; every migration path and every error has a test. Tests fail without a database,
-  never skip.
+- Every store runs its published contract suite through one `storeConformance`
+  (`tests/contracts/store-conformance.test.ts`, agbossjs/agboss#526) against the real database,
+  nothing left out (`without`); every migration path and every error has a test. Tests fail
+  without a database, never skip.
 - Conveyor, labels, branches and PRs as agbossjs/agboss (see CONTRIBUTING.md).
