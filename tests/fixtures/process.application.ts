@@ -33,7 +33,7 @@ import {
 } from "./approval.workflow.js";
 import { BatchWorkflow, ItemWorkflow } from "./batch.workflow.js";
 import { ChargeWorkflow, OrderChargeWorkflow } from "./charge.workflow.js";
-import { HeldPostgresExecutionLeaseRepository } from "./held-lease.repository.js";
+import { HeldPostgresExecutionLeaseRepository } from "./held-stores.js";
 import { ProcessEnvironment } from "./environments/app.environment.js";
 import { emit } from "./process-log.js";
 import {

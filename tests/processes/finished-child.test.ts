@@ -62,7 +62,10 @@ describe("AC1 (agbossjs/agboss#520): a frozen instance takes no lease of a child
     await a.next(
       (event) => event.event === "end" && event.executionId === String(first.executionId),
     );
-    await a.next((event) => event.event === "acquire-held" && event.key === child, 30_000);
+    await a.next(
+      (event) => event.event === "held" && event.point === "lease.acquire" && event.key === child,
+      30_000,
+    );
     a.freeze();
     await b.send("open");
     await untilGivenUp(child);

@@ -16,7 +16,7 @@ import { ApprovalWorkflowStart } from "../fixtures/approval.workflow.js";
 import { BatchWorkflowStart } from "../fixtures/batch.workflow.js";
 import { ChargeWorkflowStart, OrderChargeWorkflowStart } from "../fixtures/charge.workflow.js";
 import { a2aHttpListener } from "@agboss/core/a2a";
-import { holdAcquireOf, letAcquireGo } from "../fixtures/held-lease.repository.js";
+import { holdAcquireOf, letAcquireGo, reportHolds } from "../fixtures/held-stores.js";
 import { ProcessApplication } from "../fixtures/process.application.js";
 import { emit, openGate } from "../fixtures/process-log.js";
 import {
@@ -134,6 +134,7 @@ const server = createServer(
 await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
 const { port } = server.address() as AddressInfo;
 const { instanceId } = app.resolve(ApplicationContext);
+reportHolds(instanceId);
 emit("ready", { instanceId, pid: process.pid, port });
 createInterface({ input: process.stdin }).on("line", (line) => {
   void answer(app, JSON.parse(line) as Command);
