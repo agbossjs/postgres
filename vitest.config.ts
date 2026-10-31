@@ -3,6 +3,8 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   test: {
     include: ["tests/**/*.test.ts"],
+    // the fault suite (agbossjs/agboss#484) runs on its own: vitest.faults.config.ts
+    exclude: ["tests/faults/**", "node_modules/**"],
     // a test that asserts nothing proves nothing (the core's #180)
     expect: { requireAssertions: true },
     // every test file needs AGBOSS_POSTGRES_TEST_URL: it fails without it, never skips

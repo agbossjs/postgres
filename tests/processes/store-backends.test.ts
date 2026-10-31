@@ -28,7 +28,7 @@ import {
   PostgresOutboundCallRepository,
 } from "../../src/index.js";
 import { testDatabase } from "../support/database.js";
-import { HeldPostgresExecutionLeaseRepository } from "../fixtures/held-lease.repository.js";
+import { HeldPostgresExecutionLeaseRepository } from "../fixtures/held-stores.js";
 import { storeLayoutOf } from "../fixtures/store-layout.application.js";
 
 type Provider = Class;

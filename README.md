@@ -366,6 +366,7 @@ npm run pack:framework   # @agboss/core and @agboss/cli from the SHA in .agboss-
 npm run install:packed   # installs those tarballs (package.json unchanged)
 npm test                 # every test, the process tests included (~2 min: some wait out a lease)
 npm run check            # format, suppressions, flow types, lint, types, tests + coverage, API report
+npm run test:faults      # the fault suite (below): ~20 min on the real clock; AGBOSS_FAULT_TIME_SCALE=5 for ~5
 ```
 
 Each test file works in a schema of its own (`t_<random>`), dropped after it.
@@ -387,7 +388,8 @@ Each test file works in a schema of its own (`t_<random>`), dropped after it.
   - `child-queue.test.ts` (AC2): five `AnyInstance` children, one step slot per instance: A and B
     each hold one at the same time, and every child runs once (a few seconds).
   - `finished-child.test.ts` (agbossjs/agboss#520 AC1): A's worker asks for the lease of a child B
-    runs; the ask is held in A's lease store, A is frozen (SIGSTOP), B answers the child and finishes
+    runs; the ask is held in A's lease store by the core's published store hold points
+    (`withHoldPoints(PostgresExecutionLeaseRepository)`, `@agboss/core/testing/faults`), A is frozen (SIGSTOP), B answers the child and finishes
     its lease, A is thawed (SIGCONT) and its ask goes on: A gets no lease, the child's row stays B's,
     finished, and the lease log has no takeover of it (a few seconds).
   - `pause-resume.test.ts` (AC3): a pause made on A is answered on B; the tool runs on B, once
@@ -406,6 +408,15 @@ Each test file works in a schema of its own (`t_<random>`), dropped after it.
     B closes A's expired lease (`lease-superseded`), reconciles, and its sweep finishes A's tree from
     the stored charge, the takeover naming A. Thawed, A's late answer is fenced each time: one
     request ever reaches the gateway. About 30 s and 50 s (the lease and the sweep, 30 s each).
+- **The fault suite** (`tests/faults/`, `npm run test:faults`, CI's `faults` job) — the core's
+  `faultSuite` (agbossjs/agboss#484) on PostgreSQL: its fixture application in real `node` pods
+  on one database, each pod through a TCP proxy of its own. Its scenarios kill (SIGKILL), stop
+  (SIGTERM), freeze (SIGSTOP / SIGCONT) and cut pods off the database, and check after each that
+  every tree had one owner at a time, every child and every charge happened once, no hand-over
+  undid anything and every tree finished. `tests/faults/postgres.fault-stores.ts` is the store set
+  every pod lists. Pull requests run every pod's clock 5 times faster; pushes to main and the
+  nightly run use the real clock. What it proves:
+  [Guarantees across processes](https://github.com/agbossjs/agboss/wiki/Guarantees-across-processes).
 - **Migrations** (`tests/migrations/`) — AC5: a second run changes nothing (a schema dump compared),
   concurrent runs serialize, a changed file fails, too new / too old fail at start; leases written
   before `0014` keep working (taken, renewed, closed as expired), and those before `0017` are not
