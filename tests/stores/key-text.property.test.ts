@@ -6,9 +6,8 @@ import {
   type ExecutionLease,
   type FencedEffectKey,
   type OutboundCallIntent,
-  TestStoreClock,
 } from "@agboss/core";
-import { VirtualClock } from "@agboss/core/testing";
+import { VirtualClock, TestStoreClock } from "@agboss/core/testing";
 import { hours } from "@agboss/core/units";
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";

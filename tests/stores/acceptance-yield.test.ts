@@ -1,6 +1,5 @@
-import { TestStoreClock } from "@agboss/core";
 import type { ExecutionLease } from "@agboss/core";
-import { VirtualClock } from "@agboss/core/testing";
+import { VirtualClock, TestStoreClock } from "@agboss/core/testing";
 import { seconds, type Milliseconds } from "@agboss/core/units";
 import { describe, expect, it } from "vitest";
 import { PostgresExecutionLeaseRepository } from "../../src/index.js";

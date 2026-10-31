@@ -9,14 +9,8 @@
  * caller's `now`) gives a live lease to the instance ahead and keeps an expired one from the
  * instance behind.
  */
-import {
-  Clock,
-  DatabaseStoreClock,
-  TestStoreClock,
-  type ExecutionLease,
-  type StoreClock,
-} from "@agboss/core";
-import { ClockSkew, SkewedClock } from "@agboss/core/testing";
+import { Clock, DatabaseStoreClock, type ExecutionLease, type StoreClock } from "@agboss/core";
+import { ClockSkew, SkewedClock, TestStoreClock } from "@agboss/core/testing";
 import type { Milliseconds } from "@agboss/core/units";
 import { describe, expect, it } from "vitest";
 import { PostgresExecutionLeaseRepository } from "../../src/index.js";

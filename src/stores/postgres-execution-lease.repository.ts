@@ -8,7 +8,8 @@ import {
 import type { Milliseconds } from "@agboss/core/units";
 import { z } from "zod";
 import { PostgresConnection } from "../connection/postgres-connection.js";
-import { changesOf, firstRowOf } from "../connection/query.js";
+import { changesOf, firstRowOf, type Parameters } from "../connection/query.js";
+import { inPoolTransaction } from "../connection/transaction.js";
 import { remainingSql, storeNow, storeNowOf } from "./store-time.js";
 
 /**
@@ -108,6 +109,15 @@ const heldBy = (lease: ExecutionLease): readonly [string, string, string, number
   lease.leaseEpoch,
 ];
 
+/**
+ * The lease's row, locked first (agbossjs/agboss#533 review M1): an UPDATE computes its `WHERE`
+ * and `SET` before it waits for a row another transaction locked `FOR UPDATE` (a fenced write, a
+ * `leaseStateOf`) and does not compute them again after — so a renewal, a yield or a reclaim locks
+ * the row, then reads the database's time in its own statement, after the wait.
+ */
+const LOCK_ROW = `SELECT 1 FROM agboss_execution_leases
+  WHERE tenant_id = $1 AND root_execution_id = $2 FOR UPDATE`;
+
 const ReclaimedRow = z.object({
   lease_epoch: z.number(),
   expires_at: z.date(),
@@ -181,7 +191,7 @@ export class PostgresExecutionLeaseRepository extends ExecutionLeaseRepository {
   }
 
   async renew(held: ExecutionLease, lease: Milliseconds): Promise<Milliseconds | undefined> {
-    const renewed = await firstRowOf(this.connection.pool, RENEW, [
+    const renewed = await this.#locked(held, RENEW, [
       ...[lease, held.tenantId, held.rootExecutionId, held.holderInstanceId, held.leaseEpoch],
       storeNowOf(this.clock),
     ]);
@@ -198,15 +208,18 @@ export class PostgresExecutionLeaseRepository extends ExecutionLeaseRepository {
 
   async yield(executionLease: ExecutionLease): Promise<boolean> {
     const now = storeNowOf(this.clock);
-    const yielded = await changesOf(this.connection.pool, YIELD, [...heldBy(executionLease), now]);
-    return yielded === 1;
+    const yielded = await this.#locked(executionLease, `${YIELD} RETURNING 1`, [
+      ...heldBy(executionLease),
+      now,
+    ]);
+    return yielded !== undefined;
   }
 
   async reclaim(
     executionLease: ExecutionLease,
     lease: Milliseconds,
   ): Promise<ExecutionLease | undefined> {
-    const reclaimed = await firstRowOf(this.connection.pool, RECLAIM, [
+    const reclaimed = await this.#locked(executionLease, RECLAIM, [
       ...[lease, ...heldBy(executionLease)],
       storeNowOf(this.clock),
     ]);
@@ -217,5 +230,13 @@ export class PostgresExecutionLeaseRepository extends ExecutionLeaseRepository {
       ...{ tenantId, rootExecutionId, holderInstanceId, leaseEpoch: row.lease_epoch },
       ...{ expiresAt: row.expires_at, remaining: remainingOf(row.remaining) },
     };
+  }
+
+  /** `sql`'s first row, run after `lease`'s row is locked, in one transaction (review M1). */
+  #locked(lease: ExecutionLease, sql: string, parameters: Parameters): Promise<unknown> {
+    return inPoolTransaction(this.connection.pool, async (client) => {
+      await client.query(LOCK_ROW, [lease.tenantId, lease.rootExecutionId]);
+      return firstRowOf(client, sql, parameters);
+    });
   }
 }
