@@ -16,7 +16,15 @@ import { connectionTo } from "../support/stores.js";
 describe("migration 0018 keeps the ids of the trees already there", () => {
   it("#591: every lease's root id is kept once, whatever its tenant; a repeat is refused, a new id kept", async () => {
     const url = await freshSchema();
-    await migrateWith({ url }, migrationsIn(migrationsFolder({ "0018_execution_ids.sql": null })));
+    await migrateWith(
+      { url },
+      migrationsIn(
+        migrationsFolder({
+          "0018_execution_ids.sql": null,
+          "0019_execution_ids_from_outbound_calls.sql": null,
+        }),
+      ),
+    );
     for (const [tenantId, root] of [
       ["default", "root-a"],
       ["acme", "root-a"],
@@ -36,7 +44,7 @@ describe("migration 0018 keeps the ids of the trees already there", () => {
       new TestApplicationContext({}, "instance-1"),
     );
 
-    expect(report.applied.map((migration) => migration.version)).toEqual([18]);
+    expect(report.applied.map((migration) => migration.version)).toEqual([18, 19]);
     const { rows } = await onSchema(
       url,
       "SELECT execution_id FROM agboss_execution_ids ORDER BY execution_id",
