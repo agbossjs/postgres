@@ -44,6 +44,7 @@ import {
   SpendExecutionBudget,
   SpendWorkflow,
 } from "./shared.workflow.js";
+import { PaidHoldWorkflow } from "./paid-hold.workflow.js";
 import { TakeoverWorkflow } from "./takeover.workflow.js";
 
 /**
@@ -107,6 +108,7 @@ export class ProcessObserver implements OnExecutionEnd, OnExecutionLeaseTakeover
     LimitedWorkflow,
     ChargeWorkflow,
     OrderChargeWorkflow,
+    PaidHoldWorkflow,
   ],
   observers: [ProcessObserver],
   budgets: [
@@ -150,6 +152,7 @@ export {
   OrderChargeWorkflow,
   ItemWorkflow,
   LimitedWorkflow,
+  PaidHoldWorkflow,
   SpendWorkflow,
   TakeoverWorkflow,
 };

@@ -25,6 +25,7 @@ import {
   ProcessA2AExpose,
   SpendWorkflowStart,
 } from "../fixtures/shared.workflow.js";
+import { PaidHoldWorkflowStart } from "../fixtures/paid-hold.workflow.js";
 import { TakeoverWorkflowStart } from "../fixtures/takeover.workflow.js";
 import { z } from "zod";
 
@@ -62,6 +63,8 @@ const STARTS: Readonly<
   takeover: (app, input, options) => app.execute(TakeoverWorkflowStart, Job.parse(input), options),
   approval: (app, input, options) => app.execute(ApprovalWorkflowStart, Job.parse(input), options),
   spend: (app, input, options) => app.execute(SpendWorkflowStart, Job.parse(input), options),
+  "paid-hold": (app, input, options) =>
+    app.execute(PaidHoldWorkflowStart, Job.parse(input), options),
   limited: (app, input, options) => app.execute(LimitedWorkflowStart, Job.parse(input), options),
   charge: (app, input, options) => app.execute(ChargeWorkflowStart, Job.parse(input), options),
   "order-charge": (app, input, options) =>

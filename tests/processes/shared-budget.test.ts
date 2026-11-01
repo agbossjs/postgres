@@ -43,4 +43,50 @@ describe("AC1: a tenant's daily budget across two processes", () => {
       tenantId: "globex",
     });
   }, 120_000);
+
+  // agbossjs/agboss#634: the budgets hold back every step that can spend, an action too — each
+  // test on a tenant of its own (the file's schema keeps the day's spend)
+  it("a job held on A while B spends the day: A's paid action is refused before it runs", async () => {
+    const a = await launch(database.url());
+    const b = await launch(database.url());
+    const held = a.send("execute", {
+      workflow: "paid-hold",
+      input: { name: "job-h" },
+      tenantId: "initech",
+    });
+    held.catch(() => undefined);
+    await a.next((event) => event.event === "waiting");
+
+    await b.send("execute", spend("job-b1", "initech"));
+    await b.send("execute", spend("job-b2", "initech"));
+    await a.send("open");
+
+    await expect(held).rejects.toMatchObject({
+      name: "BudgetExceededError",
+      message: expect.stringMatching(
+        /tenant initech spent \$10 today; process-tenant-budget allows \$10/,
+      ),
+    });
+    expect(eventsOf(a, "paid")).toHaveLength(0);
+  }, 120_000);
+
+  it("a job held on A while B spends half the day: A's paid action runs", async () => {
+    const a = await launch(database.url());
+    const b = await launch(database.url());
+    const held = a.send("execute", {
+      workflow: "paid-hold",
+      input: { name: "job-h" },
+      tenantId: "umbrella",
+    });
+    await a.next((event) => event.event === "waiting");
+
+    await b.send("execute", spend("job-b1", "umbrella"));
+    await a.send("open");
+
+    expect(await held).toMatchObject({
+      status: "finished",
+      output: { name: "job-h", by: a.instanceId },
+    });
+    expect(eventsOf(a, "paid")).toHaveLength(1);
+  }, 120_000);
 });
