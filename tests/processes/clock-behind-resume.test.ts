@@ -49,4 +49,28 @@ describe("agbossjs/agboss#682: a resume on an instance whose clock is behind", (
         instance.send("resume", { pauseId, decision: { approved: true } }),
       ).rejects.toThrow();
   }, 120_000);
+
+  it("two pauses: the first made on A, an hour ahead, both answered on B — each tool run once", async () => {
+    const a = await launch(database.url(), { clock: { offsetMs: HOUR } });
+    const b = await launch(database.url());
+
+    const first = (await a.send("execute", {
+      workflow: "two-approvals",
+      input: { name: "order-682b" },
+    })) as Output;
+    expect(first.status).toBe("paused");
+    const second = (await b.send("resume", {
+      pauseId: first.pending[0]?.pauseId,
+      decision: { approved: true },
+    })) as Output;
+    expect(second.status).toBe("paused");
+    // B's checkpoints sort before A's: the second resume continues from B's, not A's paused one
+    const done = (await b.send("resume", {
+      pauseId: second.pending[0]?.pauseId,
+      decision: { approved: true },
+    })) as Output;
+
+    expect(done).toMatchObject({ status: "finished", output: { name: "order-682b" }, pending: [] });
+    expect([...eventsOf(a, "shipped"), ...eventsOf(b, "shipped")]).toHaveLength(2);
+  }, 120_000);
 });

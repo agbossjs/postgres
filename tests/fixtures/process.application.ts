@@ -30,6 +30,7 @@ import {
   ApprovalWorkflow,
   OfflineClerkModelProvider,
   QueuedShipApprovalChannel,
+  TwoApprovalsWorkflow,
 } from "./approval.workflow.js";
 import { BatchWorkflow, ItemWorkflow } from "./batch.workflow.js";
 import { ChargeWorkflow, OrderChargeWorkflow } from "./charge.workflow.js";
@@ -104,6 +105,7 @@ export class ProcessObserver implements OnExecutionEnd, OnExecutionLeaseTakeover
     BatchWorkflow,
     ItemWorkflow,
     ApprovalWorkflow,
+    TwoApprovalsWorkflow,
     SpendWorkflow,
     LimitedWorkflow,
     ChargeWorkflow,
@@ -147,6 +149,7 @@ export class ProcessApplication {}
 // `agboss check` types the workflows the application module exports (.agboss/types.d.ts)
 export {
   ApprovalWorkflow,
+  TwoApprovalsWorkflow,
   BatchWorkflow,
   ChargeWorkflow,
   OrderChargeWorkflow,
