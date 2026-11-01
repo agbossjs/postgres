@@ -1,9 +1,11 @@
 import {
   ApplicationContext,
   Clock,
+  DuplicateThreadIdError,
   ExecutionRecordRepository,
   ExecutionRecordStatus,
   IdGenerator,
+  idGeneratorNameOf,
   Injectable,
 } from "@agboss/core";
 import { PostgresConnection } from "../connection/postgres-connection.js";
@@ -45,7 +47,8 @@ export class PostgresExecutionRecordRepository extends ExecutionRecordRepository
   /**
    * A new thread (agbossjs/agboss#550): a caller's own id is kept as it is (the first one keeps it);
    * a minted one the tenant has already — an `IdGenerator` that repeats its ids — is never handed
-   * out: the next one is minted, at most `MINTED_THREAD_TRIES` times.
+   * out: the next one is minted, at most `MINTED_THREAD_TRIES` times, then `DuplicateThreadIdError`
+   * (agbossjs/agboss#613).
    */
   async createThread(thread: rows.NewThreadRecord): Promise<string> {
     if (thread.threadId !== undefined) {
@@ -56,9 +59,8 @@ export class PostgresExecutionRecordRepository extends ExecutionRecordRepository
       const id = this.idGenerator.newThreadId();
       if (await writes.createThread(this.connection.pool, thread, id, this.clock.now())) return id;
     }
-    throw new Error(
-      `no new thread id after ${String(MINTED_THREAD_TRIES)} minted ids: every one is a thread the tenant has — the IdGenerator repeats its ids`,
-    );
+    // agbossjs/agboss#613: the core's typed refusal, naming the project's generator class
+    throw new DuplicateThreadIdError(idGeneratorNameOf(this.idGenerator), MINTED_THREAD_TRIES);
   }
   async hasThread(workflow: string, tenantId: string, threadId: string): Promise<boolean> {
     return (await this.threadOwner(workflow, tenantId, threadId)) !== undefined;
