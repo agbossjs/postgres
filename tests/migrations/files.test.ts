@@ -30,8 +30,9 @@ describe("the package's migration files", () => {
       "16:outbound_calls",
       "17:execution_lease_finished",
       "18:execution_ids",
+      "19:execution_ids_from_outbound_calls",
     ]);
-    expect(newestVersionOf(files)).toBe(18);
+    expect(newestVersionOf(files)).toBe(19);
     expect(files.every((file) => file.checksum === checksumOf(file.sql))).toBe(true);
   });
 
@@ -71,8 +72,8 @@ describe("the package's migration files", () => {
       .map(({ version, name, checksum }) => ({ version, name, checksum }));
 
     expect(pendingMigrations(files, applied).map((file) => file.version)).toEqual([
-      5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18,
+      5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19,
     ]);
-    expect(pendingMigrations(files, [])).toHaveLength(18);
+    expect(pendingMigrations(files, [])).toHaveLength(19);
   });
 });
