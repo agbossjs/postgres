@@ -21,6 +21,8 @@ PostgreSQL (`AGBOSS_POSTGRES_TEST_URL`) · api-extractor (`api/postgres.api.md`)
   `agboss check` on `tests/fixtures/`, writes the uncommitted `.agboss/types.d.ts`), lint, types,
   tests with coverage, API report.
 - `npx agboss-postgres migrate --url <url>` — the migrations (after `npm run build`).
+- `FC_SEED=<seed>[,<seed>…] npm run test:key-text-seeds` — the key-text properties at those seeds
+  (agbossjs/agboss#624; CI runs main's failing seed and 20 drawn ones after `check`).
 
 ## Architecture
 
