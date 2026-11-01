@@ -1,4 +1,4 @@
-import { IdGenerator } from "@agboss/core";
+import { DuplicateThreadIdError, IdGenerator } from "@agboss/core";
 import { SequentialIdGenerator, VirtualClock } from "@agboss/core/testing";
 import { beforeEach, describe, expect, it } from "vitest";
 import { onSchema, testDatabase } from "../support/database.js";
@@ -26,6 +26,23 @@ class StuckIdGenerator extends IdGenerator {
   newExecutionId(): string {
     return "execution-1";
   }
+}
+
+/** What a new minted thread of `desk-workflow` rejects with. */
+const exhausted = (records: ReturnType<typeof recordsOn>) =>
+  records
+    .createThread({ workflow: "desk-workflow", tenantId: "default" })
+    .catch((error: unknown) => error);
+
+/** The typed refusal of #613: the project's generator and the tries, never an id. */
+function expectExhausted(refused: unknown): void {
+  expect(refused).toBeInstanceOf(DuplicateThreadIdError);
+  expect(refused).toMatchObject({
+    code: "run.duplicate-thread-id",
+    generator: "StuckIdGenerator",
+    tries: 100,
+  });
+  expect(String(refused)).not.toContain("thread-1");
 }
 
 const sequentialRecords = () =>
@@ -107,14 +124,12 @@ describe("agbossjs/agboss#550: a minted thread id is a new thread", () => {
     });
   });
 
-  it("a generator that only repeats a taken id fails after 100 tries, naming the IdGenerator", async () => {
+  it("agbossjs/agboss#613: a generator that only repeats a taken id fails after 100 tries with DuplicateThreadIdError", async () => {
     const records = recordsOn(database.url(), new VirtualClock(), new StuckIdGenerator());
     await records.createThread({ workflow: "desk-workflow", tenantId: "default" });
 
-    await expect(
-      records.createThread({ workflow: "desk-workflow", tenantId: "default" }),
-    ).rejects.toThrow(
-      "no new thread id after 100 minted ids: every one is a thread the tenant has — the IdGenerator repeats its ids",
-    );
+    const refused = await exhausted(records);
+
+    expectExhausted(refused);
   });
 });
