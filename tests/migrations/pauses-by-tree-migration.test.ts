@@ -100,10 +100,7 @@ describe("migration 0020 keeps the ids of every execution that paused, and finds
   it("#663: an id the kept ids miss, in another tree: a pending pause of its own — the old approval is never found", async () => {
     const url = await schemaWithAnApprovedChildPause();
     await migratePostgres({ url });
-    const pauses = new PostgresPausedExecutionRepository(
-      connectionTo(url),
-      new TestStoreClock(new VirtualClock()),
-    );
+    const pauses = new PostgresPausedExecutionRepository(connectionTo(url), new VirtualClock());
 
     const made = await pauses.findOrCreateByStepKey(pauseOf("new-pause", "new-root"));
     const again = await pauses.findOrCreateByStepKey(pauseOf("third-pause", "new-root"));
