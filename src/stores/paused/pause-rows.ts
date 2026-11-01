@@ -12,7 +12,7 @@ import { escapedJsonOf, unescapedJson } from "../nul-escape.js";
 
 /**
  * The pauses of `PostgresPausedExecutionRepository` (#267 S35): one row per pause, unique per step
- * key of a tenant, the record as `jsonb`. A transition of a pending pause is one statement — the
+ * key of a tree (agbossjs/agboss#663: a step key names no tree, migration 0020), the record as `jsonb`. A transition of a pending pause is one statement — the
  * status column compared and set, the record patched with it — so of two instances exactly one
  * changes it, and the record is never out of step with its status.
  */
@@ -39,13 +39,13 @@ export class PauseRows {
     return pauseRecordOf(unescapedJson(RecordRow.parse(row).record));
   }
 
-  /** The tenant's pause of the step when one exists, else `pause` saved — one insert, then a read. */
+  /** The pause of the step in its tenant's tree when one exists, else `pause` saved — one insert, then a read. */
   async findOrCreate(pause: PauseRecord): Promise<PauseRecord> {
     const inserted = await firstRowOf(
       this.pool,
       `INSERT INTO agboss_pauses (tenant_id, pause_id, step_key, root_execution_id, status, record)
        VALUES ($1, $2, $3, $4, $5, $6::jsonb)
-       ON CONFLICT (tenant_id, step_key) DO NOTHING RETURNING record`,
+       ON CONFLICT (tenant_id, root_execution_id, step_key) DO NOTHING RETURNING record`,
       [
         pause.tenantId,
         pause.pauseId,
@@ -58,8 +58,9 @@ export class PauseRows {
     if (inserted !== undefined) return this.recordOfRow(inserted);
     const found = await firstRowOf(
       this.pool,
-      "SELECT record FROM agboss_pauses WHERE tenant_id = $1 AND step_key = $2",
-      [pause.tenantId, pause.stepKey],
+      `SELECT record FROM agboss_pauses
+       WHERE tenant_id = $1 AND root_execution_id = $2 AND step_key = $3`,
+      [pause.tenantId, pause.rootExecutionId, pause.stepKey],
     );
     return this.recordOfRow(found);
   }

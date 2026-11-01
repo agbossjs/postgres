@@ -232,10 +232,11 @@ applied 0001_execution_leases (public)
 …
 applied 0018_execution_ids (public)
 applied 0019_execution_ids_from_outbound_calls (public)
+applied 0020_pauses_by_tree (public)
 applied 6 LangGraph checkpoint migration(s)
 ```
 
-A second run prints `nothing to apply: public is at migration 19`. Exit codes: `0` done, `1` the
+A second run prints `nothing to apply: public is at migration 20`. Exit codes: `0` done, `1` the
 migration failed (the reason on stderr), `2` a usage error.
 
 In Kubernetes, the command is a Job run before the Deployment rolls out (a Helm `pre-upgrade` hook,
@@ -289,26 +290,29 @@ a pod never waits on another's migration at start (both are safe: they serialize
 - `agboss_schema_migrations (version, name, checksum, applied_at)` records what ran; an applied
   migration whose file changed fails the run (`PostgresMigrationChangedError`).
 
-| Migration                          | Tables                                                                                                                                                  |
-| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `0001_execution_leases`            | `agboss_execution_leases`                                                                                                                               |
-| `0002_execution_records`           | `agboss_threads`, `agboss_execution_records`, `agboss_execution_scores`, `agboss_execution_summaries`, `agboss_config_versions`, `agboss_pause_answers` |
-| `0003_execution_trees`             | `agboss_execution_tree_keys`                                                                                                                            |
-| `0004_paused_executions`           | `agboss_paused_executions`, `agboss_pauses`                                                                                                             |
-| `0005_child_execution_queue`       | `agboss_child_execution_queue`                                                                                                                          |
-| `0006_fenced_effects`              | `agboss_fenced_effect_marks`, `agboss_fenced_effect_results`                                                                                            |
-| `0007_execution_lease_events`      | `agboss_execution_lease_events`                                                                                                                         |
-| `0008_execution_lease_yield`       | `agboss_execution_leases.yielded` (agbossjs/agboss#516)                                                                                                 |
-| `0009_cost_ledger`                 | `agboss_cost_counters`, `agboss_cost_max_spend`                                                                                                         |
-| `0010_execution_history`           | `agboss_execution_history`                                                                                                                              |
-| `0011_rate_limits`                 | `agboss_rate_limit_keys`, `agboss_rate_limit_slots`, `agboss_rate_limit_window_buckets`, `agboss_rate_limit_pauses`                                     |
-| `0012_mesh_requests`               | `agboss_mesh_requests`                                                                                                                                  |
-| `0013_nul_escape`                  | none: doubles U+E000 in the columns the stores now escape (agbossjs/agboss#521)                                                                         |
-| `0014_execution_lease_superseded`  | `agboss_execution_leases.superseded`: a lease an outbound call's check closed (agbossjs/agboss#508)                                                     |
-| `0015_fenced_effect_business_keys` | `agboss_fenced_effect_business_results` (agbossjs/agboss#508)                                                                                           |
-| `0016_outbound_calls`              | `agboss_outbound_calls` (agbossjs/agboss#505, #508)                                                                                                     |
-| `0017_execution_lease_finished`    | `agboss_execution_leases.finished`: a lease its holder finished, never taken again (agbossjs/agboss#520)                                                |
-| LangGraph                          | `checkpoints`, `checkpoint_blobs`, `checkpoint_writes`, `checkpoint_migrations`                                                                         |
+| Migration                                | Tables                                                                                                                                                  |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `0001_execution_leases`                  | `agboss_execution_leases`                                                                                                                               |
+| `0002_execution_records`                 | `agboss_threads`, `agboss_execution_records`, `agboss_execution_scores`, `agboss_execution_summaries`, `agboss_config_versions`, `agboss_pause_answers` |
+| `0003_execution_trees`                   | `agboss_execution_tree_keys`                                                                                                                            |
+| `0004_paused_executions`                 | `agboss_paused_executions`, `agboss_pauses`                                                                                                             |
+| `0005_child_execution_queue`             | `agboss_child_execution_queue`                                                                                                                          |
+| `0006_fenced_effects`                    | `agboss_fenced_effect_marks`, `agboss_fenced_effect_results`                                                                                            |
+| `0007_execution_lease_events`            | `agboss_execution_lease_events`                                                                                                                         |
+| `0008_execution_lease_yield`             | `agboss_execution_leases.yielded` (agbossjs/agboss#516)                                                                                                 |
+| `0009_cost_ledger`                       | `agboss_cost_counters`, `agboss_cost_max_spend`                                                                                                         |
+| `0010_execution_history`                 | `agboss_execution_history`                                                                                                                              |
+| `0011_rate_limits`                       | `agboss_rate_limit_keys`, `agboss_rate_limit_slots`, `agboss_rate_limit_window_buckets`, `agboss_rate_limit_pauses`                                     |
+| `0012_mesh_requests`                     | `agboss_mesh_requests`                                                                                                                                  |
+| `0013_nul_escape`                        | none: doubles U+E000 in the columns the stores now escape (agbossjs/agboss#521)                                                                         |
+| `0014_execution_lease_superseded`        | `agboss_execution_leases.superseded`: a lease an outbound call's check closed (agbossjs/agboss#508)                                                     |
+| `0015_fenced_effect_business_keys`       | `agboss_fenced_effect_business_results` (agbossjs/agboss#508)                                                                                           |
+| `0016_outbound_calls`                    | `agboss_outbound_calls` (agbossjs/agboss#505, #508)                                                                                                     |
+| `0017_execution_lease_finished`          | `agboss_execution_leases.finished`: a lease its holder finished, never taken again (agbossjs/agboss#520)                                                |
+| `0018_execution_ids`                     | `agboss_execution_ids`: every execution id handed out, the leases' of before (agbossjs/agboss#591)                                                      |
+| `0019_execution_ids_from_outbound_calls` | none: the ids of before of every execution that made an outbound call (agbossjs/agboss#638)                                                             |
+| `0020_pauses_by_tree`                    | `agboss_pauses` unique per tree and step key; the ids of before of every execution that paused, and its tree (agbossjs/agboss#663)                      |
+| LangGraph                                | `checkpoints`, `checkpoint_blobs`, `checkpoint_writes`, `checkpoint_migrations`                                                                         |
 
 ## Text with a NUL character
 
