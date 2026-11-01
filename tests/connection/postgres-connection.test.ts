@@ -115,10 +115,7 @@ describe("PostgresConnection.onInit: the schema check at start", () => {
 
   it("an older schema fails too, with the versions", async () => {
     const url = await freshSchema();
-    await migrateWith(
-      { url },
-      migrationsIn(migrationsFolder({ "0020_pauses_by_tree.sql": null })),
-    );
+    await migrateWith({ url }, migrationsIn(migrationsFolder({ "0020_pauses_by_tree.sql": null })));
 
     const error = await withConnection(new PostgresConnection({ url }), (connection) =>
       rejectionOf(connection.onInit()),

@@ -15,6 +15,14 @@ INSERT INTO agboss_execution_ids (execution_id, tenant_id)
   SELECT root_execution_id, tenant_id FROM agboss_pauses
   ON CONFLICT (execution_id) DO NOTHING;
 
+-- 0019 kept an outbound call's record.executionId as the record keeps it, escaped: an id of before
+-- holding U+E000 (only ids minted before agbossjs/agboss#556 can) is kept again as it was minted.
+INSERT INTO agboss_execution_ids (execution_id, tenant_id)
+  SELECT replace(record->>'executionId', U&'\E000\E000', U&'\E000'), tenant_id
+  FROM agboss_outbound_calls
+  WHERE record->>'executionId' IS NOT NULL
+  ON CONFLICT (execution_id) DO NOTHING;
+
 ALTER TABLE agboss_pauses
   DROP CONSTRAINT agboss_pauses_tenant_id_step_key_key,
   ADD CONSTRAINT agboss_pauses_tenant_id_root_execution_id_step_key_key

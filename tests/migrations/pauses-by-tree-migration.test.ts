@@ -121,7 +121,7 @@ describe("migration 0020 keeps the ids of every execution that paused, and finds
       { pause_id: "new-pause", root_execution_id: "new-root", status: "pending" },
     ]);
   });
-  it("#663: an id of before holding U+E000 is kept as written, not as the record escaped it (0013)", async () => {
+  it("#663: an id of before holding U+E000 is kept as minted, not as the record escaped it (0013) — a pause's, and an outbound call's that 0019 kept escaped", async () => {
     const url = await freshSchema();
     await migrateWith({ url }, migrationsIn(migrationsFolder({ "0020_pauses_by_tree.sql": null })));
     const childId = "old\uE000child";
@@ -133,6 +133,16 @@ describe("migration 0020 keeps the ids of every execution that paused, and finds
       [`${childId}:child-refund-agent:1:call-1`, JSON.stringify(record)],
     );
 
+    // and (0019 kept it escaped) an outbound call's child holding one
+    await onSchema(
+      url,
+      `INSERT INTO agboss_outbound_calls (scope_key, idempotency_key, name, tenant_id,
+         root_execution_id, status, attempt, attempt_owner, record)
+       VALUES ('acme:old-root', 'k', 'pay', 'acme', 'old-root', 'completed', 1, 'owner-1',
+         jsonb_build_object('executionId', $1::text))`,
+      ["old\uE000\uE000payer"],
+    );
+
     await migratePostgres({ url });
     const leases = new PostgresExecutionLeaseRepository(
       connectionTo(url),
@@ -140,8 +150,7 @@ describe("migration 0020 keeps the ids of every execution that paused, and finds
       new TestApplicationContext({}, "instance-1"),
     );
 
-    expect(await leases.saveExecutionIdIfAbsent({ executionId: childId, tenantId: "acme" })).toBe(
-      false,
-    );
+    for (const executionId of [childId, "old\uE000payer"])
+      expect(await leases.saveExecutionIdIfAbsent({ executionId, tenantId: "acme" })).toBe(false);
   });
 });
