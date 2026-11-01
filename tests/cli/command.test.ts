@@ -23,7 +23,7 @@ describe("agboss-postgres migrate", () => {
     expect(await runCommand(["migrate", "--url", url], first)).toBe(ExitCode.Ok);
     expect(await runCommand(["migrate", "--url", url], second)).toBe(ExitCode.Ok);
 
-    expect(first.lines.slice(0, 19)).toEqual([
+    expect(first.lines.slice(0, 20)).toEqual([
       expect.stringMatching(/^applied 0001_execution_leases \(t_/),
       expect.stringMatching(/^applied 0002_execution_records/),
       expect.stringMatching(/^applied 0003_execution_trees/),
@@ -43,10 +43,11 @@ describe("agboss-postgres migrate", () => {
       expect.stringMatching(/^applied 0017_execution_lease_finished/),
       expect.stringMatching(/^applied 0018_execution_ids/),
       expect.stringMatching(/^applied 0019_execution_ids_from_outbound_calls/),
+      expect.stringMatching(/^applied 0020_pauses_by_tree/),
     ]);
-    expect(first.lines[19]).toMatch(/^applied \d+ LangGraph checkpoint migration\(s\)$/);
+    expect(first.lines[20]).toMatch(/^applied \d+ LangGraph checkpoint migration\(s\)$/);
     expect(second.lines).toEqual([
-      expect.stringMatching(/^nothing to apply: t_\w+ is at migration 19$/),
+      expect.stringMatching(/^nothing to apply: t_\w+ is at migration 20$/),
     ]);
     expect([...first.errors, ...second.errors]).toEqual([]);
   });
@@ -56,7 +57,7 @@ describe("agboss-postgres migrate", () => {
     const io = ioOf({ DATABASE_URL: url });
 
     expect(await runCommand(["migrate"], io)).toBe(ExitCode.Ok);
-    expect(io.lines).toHaveLength(20);
+    expect(io.lines).toHaveLength(21);
   });
 
   it("neither --url nor DATABASE_URL: a usage error, exit code 2", async () => {
@@ -100,13 +101,13 @@ describe("agboss-postgres migrate", () => {
     const url = await freshSchema();
     await migrateWith(
       { url },
-      migrationsIn(migrationsFolder({ "0020_later.sql": "CREATE TABLE later (id integer);" })),
+      migrationsIn(migrationsFolder({ "0021_later.sql": "CREATE TABLE later (id integer);" })),
     );
     const io = ioOf();
 
     expect(await runCommand(["migrate", "--url", url], io)).toBe(ExitCode.Failed);
     expect(io.errors[0]).toMatch(
-      /^agboss-postgres: the migration failed — the PostgreSQL schema is at migration 20/,
+      /^agboss-postgres: the migration failed — the PostgreSQL schema is at migration 21/,
     );
   });
 
