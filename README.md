@@ -367,7 +367,7 @@ npm run pack:framework   # @agboss/core and @agboss/cli from the SHA in .agboss-
 npm run install:packed   # installs those tarballs (package.json unchanged)
 npm test                 # every test, the process tests included (~2 min: some wait out a lease)
 npm run check            # format, suppressions, flow types, lint, types, tests + coverage, API report
-npm run test:faults      # the fault suite (below): ~20 min on the real clock; AGBOSS_FAULT_TIME_SCALE=5 for ~5
+npm run test:faults      # the fault suite (below): ~20 min on the real clock; AGBOSS_FAULT_SHARD=1/3 for a third
 ```
 
 Each test file works in a schema of its own (`t_<random>`), dropped after it.
@@ -415,8 +415,10 @@ Each test file works in a schema of its own (`t_<random>`), dropped after it.
   (SIGTERM), freeze (SIGSTOP / SIGCONT) and cut pods off the database, and check after each that
   every tree had one owner at a time, every child and every charge happened once, no hand-over
   undid anything and every tree finished. `tests/faults/postgres.fault-stores.ts` is the store set
-  every pod lists. Pull requests run every pod's clock 5 times faster; pushes to main and the
-  nightly run use the real clock. What it proves:
+  every pod lists. Every run is on the real clock (agbossjs/agboss#607): PostgreSQL decides a
+  lease's expiry by `clock_timestamp()`, so a faster pod clock would test another lease than the
+  core's (`tests/faults/postgres-target.ts` says why); CI splits the scenarios over three parallel
+  jobs instead (`AGBOSS_FAULT_SHARD=k/3`). What it proves:
   [Guarantees across processes](https://github.com/agbossjs/agboss/wiki/Guarantees-across-processes).
 - **Migrations** (`tests/migrations/`) — AC5: a second run changes nothing (a schema dump compared),
   concurrent runs serialize, a changed file fails, too new / too old fail at start; leases written
