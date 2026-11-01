@@ -78,12 +78,17 @@ jobs:
           fi
 
   # agbossjs/agboss#484 AC2: the core's fault suite on PostgreSQL — real pods on one database, killed,
-  # stopped, frozen and cut off it. Pull requests run every pod's clock 5 times faster; pushes to
-  # main and the nightly run use the real clock (the lease the core uses, 30 s).
+  # stopped, frozen and cut off it. Always on the real clock (agbossjs/agboss#607: PostgreSQL decides
+  # a lease's expiry by its own clock_timestamp(), so the pods run at its rate, the core's 30 s
+  # lease), its scenarios split over three jobs to fit.
   faults:
-    name: faults (the fault suite on PostgreSQL 16)
+    name: faults ${{ matrix.shard }}/3 (the fault suite on PostgreSQL 16)
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
     services:
       postgres:
         image: postgres:16
@@ -98,7 +103,7 @@ jobs:
           --health-retries 30
     env:
       AGBOSS_POSTGRES_TEST_URL: postgres://postgres:pw@localhost:5432/postgres
-      AGBOSS_FAULT_TIME_SCALE: ${{ github.event_name == 'pull_request' && '5' || '1' }}
+      AGBOSS_FAULT_SHARD: ${{ matrix.shard }}/3
       AGBOSS_FAULT_DUMP_DIR: ${{ github.workspace }}/fault-dumps
     steps:
       - uses: actions/checkout@v4
@@ -136,6 +141,6 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: fault-dumps
+          name: fault-dumps-${{ matrix.shard }}
           path: fault-dumps
           if-no-files-found: ignore
