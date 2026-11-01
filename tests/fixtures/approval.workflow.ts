@@ -89,7 +89,7 @@ export class OfflineClerkModelProvider {
       shipped === undefined
         ? {
             id: "call-ship",
-            name: "ship-tool",
+            name: request.tools.find((tool) => !tool.name.startsWith("answer-"))?.name ?? "",
             arguments: { name: fieldOf(asked?.text ?? "", "name") },
           }
         : {
@@ -132,6 +132,25 @@ export class ApprovalWorkflowFinish {}
 })
 export class ApprovalWorkflow {}
 
+/** The same shipping, a second time: its own tool, so its call asks its own approval. */
+@Tool({
+  name: "reship-tool",
+  description: "Ships the job once more, once an operator approved it",
+  input: JobDto,
+  output: DoneDto,
+  channel: ShipApprovalChannel,
+  deps: [ApplicationContext],
+})
+export class ReshipTool implements ToolHandler<JobDto, DoneDto> {
+  constructor(private readonly applicationContext: ApplicationContext) {}
+
+  run({ name }: JobDto): Promise<DoneDto> {
+    const { instanceId } = this.applicationContext;
+    emit("shipped", { name, instanceId });
+    return Promise.resolve({ name, by: instanceId });
+  }
+}
+
 /**
  * agbossjs/agboss#682 — a second approval on the same tree: the clerk's job shipped again by a
  * recheck clerk, whose call waits for its own answer. Two pauses, two resumes: the second resume
@@ -144,7 +163,7 @@ export class ApprovalWorkflow {}
   model: "offline/clerk",
   input: { done: DoneDto },
   output: DoneDto,
-  tools: [ShipTool],
+  tools: [ReshipTool],
   maxToolCalls: 2,
 })
 export class RecheckClerkAgent {}
