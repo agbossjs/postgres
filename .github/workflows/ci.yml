@@ -62,6 +62,14 @@ jobs:
       - name: Check (format, suppressions, lint, types, tests with coverage, API report)
         run: npm run check
 
+      # agbossjs/agboss#624 AC2: the key-text properties at main's failing seed and 20 more, drawn
+      # here and printed — a failure names its seed, `FC_SEED=<seed> npm run test:key-text-seeds`
+      - name: The key-text properties at the #624 seed and 20 drawn seeds
+        run: |
+          seeds="-1186302779$(for _ in $(seq 20); do printf ',%d' $(( (RANDOM << 16 | RANDOM) - 1073741824 )); done)"
+          echo "FC_SEED=$seeds"
+          FC_SEED="$seeds" npm run test:key-text-seeds
+
       - name: Coverage summary
         if: always()
         run: |

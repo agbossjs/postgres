@@ -66,7 +66,8 @@
     "check:suppressions": "node scripts/check-suppressions.mjs",
     "check:installs": "node scripts/check-installs.mjs",
     "check:real-time": "node scripts/check-real-time.mjs",
-    "test:faults": "vitest run --config vitest.faults.config.ts"
+    "test:faults": "vitest run --config vitest.faults.config.ts",
+    "test:key-text-seeds": "vitest run tests/stores/key-text.property.test.ts"
   },
   "peerDependencies": {
     "@agboss/core": "^0.1.1",
