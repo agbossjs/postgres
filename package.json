@@ -56,7 +56,7 @@
     "pretest": "npm run build",
     "test": "vitest run",
     "precoverage": "npm run build",
-    "coverage": "vitest run --coverage",
+    "coverage": "node scripts/check-test-run.mjs --expect test-run.json -- vitest run --coverage",
     "check:api": "npm run build && node scripts/api-report.mjs",
     "api:update": "npm run build && node scripts/api-report.mjs --write",
     "check": "npm run format:check && npm run check:suppressions && npm run check:installs && npm run check:real-time && npm run check:types && npm run lint && npm run typecheck && npm run coverage && npm run check:api",
@@ -66,7 +66,7 @@
     "check:suppressions": "node scripts/check-suppressions.mjs",
     "check:installs": "node scripts/check-installs.mjs",
     "check:real-time": "node scripts/check-real-time.mjs",
-    "test:faults": "vitest run --config vitest.faults.config.ts",
+    "test:faults": "node scripts/check-test-run.mjs --expect test-run.faults.json -- vitest run --config vitest.faults.config.ts",
     "test:key-text-seeds": "vitest run tests/stores/key-text.property.test.ts"
   },
   "peerDependencies": {
