@@ -437,8 +437,10 @@ Each test file works in a schema of its own (`t_<random>`), dropped after it.
 
 `npm run check:types` runs the pinned CLI's `agboss check` on the fixtures' application, which
 writes `.agboss/types.d.ts` (never committed) — the flow types `tsconfig.processes.json` compiles
-the fixtures against. Once `@agboss/core` 0.1.1 is published, `npm run install:published` installs
-it (and the CLI) from the registry instead. See [CONTRIBUTING.md](CONTRIBUTING.md).
+the fixtures against. A release pins the published core instead (`.agboss-version.json`
+`source: "registry"`: `npm run pack:framework` downloads the registry's tarballs), and
+`npm run install:published` installs a published one from the registry. See
+[CONTRIBUTING.md](CONTRIBUTING.md) → Releasing.
 
 ## License
 
