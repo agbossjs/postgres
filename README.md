@@ -233,10 +233,11 @@ applied 0001_execution_leases (public)
 applied 0018_execution_ids (public)
 applied 0019_execution_ids_from_outbound_calls (public)
 applied 0020_pauses_by_tree (public)
+applied 0021_pause_answers_by_tree (public)
 applied 6 LangGraph checkpoint migration(s)
 ```
 
-A second run prints `nothing to apply: public is at migration 20`. Exit codes: `0` done, `1` the
+A second run prints `nothing to apply: public is at migration 21`. Exit codes: `0` done, `1` the
 migration failed (the reason on stderr), `2` a usage error.
 
 In Kubernetes, the command is a Job run before the Deployment rolls out (a Helm `pre-upgrade` hook,
@@ -312,6 +313,7 @@ a pod never waits on another's migration at start (both are safe: they serialize
 | `0018_execution_ids`                     | `agboss_execution_ids`: every execution id handed out, the leases' of before (agbossjs/agboss#591)                                                      |
 | `0019_execution_ids_from_outbound_calls` | none: the ids of before of every execution that made an outbound call (agbossjs/agboss#638)                                                             |
 | `0020_pauses_by_tree`                    | `agboss_pauses` unique per tree and step key; the ids of before of every execution that paused, and its tree (agbossjs/agboss#663)                      |
+| `0021_pause_answers_by_tree`             | `agboss_pause_answers` keyed per tree and step key: another tree's answer under the same step key is kept (agbossjs/agboss#676)                         |
 | LangGraph                                | `checkpoints`, `checkpoint_blobs`, `checkpoint_writes`, `checkpoint_migrations`                                                                         |
 
 ## Text with a NUL character
