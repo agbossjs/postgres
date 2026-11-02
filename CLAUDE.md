@@ -14,7 +14,10 @@ PostgreSQL (`AGBOSS_POSTGRES_TEST_URL`) · api-extractor (`api/postgres.api.md`)
 ## Commands
 
 - `npm run pack:framework && npm run install:packed` — `@agboss/core` and `@agboss/cli` at the SHA
-  pinned in `.agboss-version.json` (pin the current agboss `main` when a store needs a newer core).
+  pinned in `.agboss-version.json` (pin the current agboss `main` when a store needs a newer core:
+  `node scripts/pin-framework.mjs --sha <sha>`; a release pins the published core,
+  `--registry <x.y.z>`, and `.github/workflows/release.yml` publishes on a `postgres-vX.Y.Z` tag —
+  CONTRIBUTING.md → Releasing, agbossjs/agboss#691).
 - `npm run check` — format, suppressions (budget 0), reviewed installs (`check:installs`: a
   workflow installs with `npm ci`, a script resolves ranges only with `--before`, three days back —
   agbossjs/agboss#523), no real-time threshold in a test (`check:real-time`), flow types (`check:types`: the CLI's
