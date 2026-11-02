@@ -25,7 +25,7 @@ own process, no shared disk — share every store on one database.
   `PostgresMeshRequestRepository` and `PostgresOutboundCallRepository` (#505, #508), on one `pg`
   pool per instance (`PostgresConnection`: `postgresUrl: Secret`, `postgresPoolSize`,
   `postgresMigrateOnStart`, declared environment fields, #511).
-- **Migrations** (#482 AC5) — `migrations/0001` … `0020` and LangGraph's checkpoint tables under one
+- **Migrations** (#482 AC5) — `migrations/0001` … `0021` and LangGraph's checkpoint tables under one
   advisory lock per schema: `npx agboss-postgres migrate --url <url>`, `migratePostgres({ url })`, or
   `postgresMigrateOnStart`; a second run changes nothing; `PostgresSchemaMissingError`,
   `PostgresSchemaTooNewError`, `PostgresMigrationChangedError`, `PostgresSettingsError`.
@@ -52,7 +52,8 @@ own process, no shared disk — share every store on one database.
 - Business keys, tenant, owner and thread ids are checked as a key's text at every store entry —
   lone surrogates, controls, invisible and unassigned characters refused (#538, #547, #552, #556,
   #580, #589; #13, #17, #18, #20, #25).
-- Every execution id is kept once (#591, #638, #663; #24, #29, #31: migrations `0018` – `0020`);
+- Every execution id is kept once (#591, #638, #663; #24, #29, #31: migrations `0018` – `0020`); the
+  pause answer log is keyed by tree, another tree's approval kept (#676; #34, migration `0021`);
   a minted thread id is a new thread (#550, #578, #613; #22, #26).
 - A child's end is heard once (#562; #19); a held job's paid action is refused once another process
   spent the tenant's day (#634; #30); every automatic undo runs once (#607; #27).
