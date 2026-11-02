@@ -89,7 +89,7 @@ export class OfflineClerkModelProvider {
       shipped === undefined
         ? {
             id: "call-ship",
-            name: "ship-tool",
+            name: request.tools.find((tool) => !tool.name.startsWith("answer-"))?.name ?? "",
             arguments: { name: fieldOf(asked?.text ?? "", "name") },
           }
         : {
@@ -131,3 +131,68 @@ export class ApprovalWorkflowFinish {}
   ],
 })
 export class ApprovalWorkflow {}
+
+/** The same shipping, a second time: its own tool, so its call asks its own approval. */
+@Tool({
+  name: "reship-tool",
+  description: "Ships the job once more, once an operator approved it",
+  input: JobDto,
+  output: DoneDto,
+  channel: ShipApprovalChannel,
+  deps: [ApplicationContext],
+})
+export class ReshipTool implements ToolHandler<JobDto, DoneDto> {
+  constructor(private readonly applicationContext: ApplicationContext) {}
+
+  run({ name }: JobDto): Promise<DoneDto> {
+    const { instanceId } = this.applicationContext;
+    emit("shipped", { name, instanceId });
+    return Promise.resolve({ name, by: instanceId });
+  }
+}
+
+/**
+ * agbossjs/agboss#682 — a second approval on the same tree: the clerk's job shipped again by a
+ * recheck clerk, whose call waits for its own answer. Two pauses, two resumes: the second resume
+ * continues from the checkpoint the first one's pass wrote last.
+ */
+@Agent({
+  name: "recheck-clerk-agent",
+  description: "Ships a shipped job once more",
+  prompt: "Ship the job with ship-tool, then answer with what was shipped.",
+  model: "offline/clerk",
+  input: { done: DoneDto },
+  output: DoneDto,
+  tools: [ReshipTool],
+  maxToolCalls: 2,
+})
+export class RecheckClerkAgent {}
+
+@WorkflowStart({
+  name: "two-approvals-workflow-start",
+  description: "A job to ship twice",
+  input: JobDto,
+})
+export class TwoApprovalsWorkflowStart {}
+
+@WorkflowFinish({
+  name: "two-approvals-workflow-finish",
+  description: "Shipped twice",
+  output: DoneDto,
+})
+export class TwoApprovalsWorkflowFinish {}
+
+@Workflow({
+  name: "two-approvals-workflow",
+  version: "1.0.0",
+  flow: [
+    start(TwoApprovalsWorkflowStart)
+      .returns(JobDto)
+      .toAgent(ClerkAgent)
+      .returns(DoneDto)
+      .toAgent(RecheckClerkAgent)
+      .returns(DoneDto)
+      .toFinish(TwoApprovalsWorkflowFinish),
+  ],
+})
+export class TwoApprovalsWorkflow {}

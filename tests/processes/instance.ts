@@ -12,7 +12,7 @@ import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { createInterface } from "node:readline";
 import { ApplicationContext, createApp, type App, type ExecutionOutput } from "@agboss/core";
-import { ApprovalWorkflowStart } from "../fixtures/approval.workflow.js";
+import { ApprovalWorkflowStart, TwoApprovalsWorkflowStart } from "../fixtures/approval.workflow.js";
 import { BatchWorkflowStart } from "../fixtures/batch.workflow.js";
 import { ChargeWorkflowStart, OrderChargeWorkflowStart } from "../fixtures/charge.workflow.js";
 import { a2aHttpListener } from "@agboss/core/a2a";
@@ -62,6 +62,8 @@ const STARTS: Readonly<
 > = {
   takeover: (app, input, options) => app.execute(TakeoverWorkflowStart, Job.parse(input), options),
   approval: (app, input, options) => app.execute(ApprovalWorkflowStart, Job.parse(input), options),
+  "two-approvals": (app, input, options) =>
+    app.execute(TwoApprovalsWorkflowStart, Job.parse(input), options),
   spend: (app, input, options) => app.execute(SpendWorkflowStart, Job.parse(input), options),
   "paid-hold": (app, input, options) =>
     app.execute(PaidHoldWorkflowStart, Job.parse(input), options),
