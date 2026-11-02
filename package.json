@@ -28,7 +28,7 @@
     "node": ">=22.13"
   },
   "bin": {
-    "agboss-postgres": "./bin/agboss-postgres.js"
+    "agboss-postgres": "bin/agboss-postgres.js"
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
