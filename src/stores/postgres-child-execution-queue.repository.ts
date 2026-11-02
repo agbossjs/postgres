@@ -5,6 +5,7 @@ import {
   ExecutionRecordStatus,
   Injectable,
   type ChildExecutionEnd,
+  type ChildExecutionQueueDepth,
   type QueuedChildExecution,
 } from "@agboss/core";
 import { z } from "zod";
@@ -74,6 +75,17 @@ const CLAIM = `UPDATE agboss_child_execution_queue AS queued
         ORDER BY depth DESC, queued_at LIMIT 1 FOR UPDATE SKIP LOCKED) first
   WHERE queued.tenant_id = first.tenant_id AND queued.execution_id = first.execution_id
   RETURNING queued.*`;
+
+/**
+ * The queue's depth (agbossjs/agboss#485): one aggregate over the claims index's `status` prefix —
+ * the queued and running rows only, at `READ COMMITTED` (a moment of the queue, never a lock).
+ */
+const DEPTH = `SELECT count(*) FILTER (WHERE status = 'queued')::int AS queued,
+    count(*) FILTER (WHERE status = 'running')::int AS running,
+    min(queued_at) FILTER (WHERE status = 'queued') AS oldest
+  FROM agboss_child_execution_queue WHERE status IN ('queued', 'running')`;
+
+const DepthRow = z.object({ queued: z.number(), running: z.number(), oldest: z.date().nullable() });
 
 /**
  * `ChildExecutionQueueRepository` on PostgreSQL (#333 PR 2, #482): one row per child queued with
@@ -162,5 +174,12 @@ export class PostgresChildExecutionQueueRepository extends ChildExecutionQueueRe
       "DELETE FROM agboss_child_execution_queue WHERE tenant_id = $1 AND root_execution_id = $2",
       [tenantId, rootExecutionId],
     );
+  }
+
+  async findQueueDepth(): Promise<ChildExecutionQueueDepth> {
+    const { queued, running, oldest } = DepthRow.parse(
+      await firstRowOf(this.connection.pool, DEPTH, []),
+    );
+    return { queued, running, oldestQueuedAt: oldest ?? undefined };
   }
 }
