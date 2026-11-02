@@ -27,6 +27,7 @@ const BEFORE = {
   "0018_execution_ids.sql": null,
   "0019_execution_ids_from_outbound_calls.sql": null,
   "0020_pauses_by_tree.sql": null,
+  "0021_pause_answers_by_tree.sql": null,
 };
 
 const leasesOn = (url: string, clock: VirtualClock, instanceId: string) =>
@@ -68,7 +69,7 @@ describe("migrations 0014–0016 keep the leases written before them", () => {
     await clock.advance(seconds(31));
 
     expect(report.applied.map((migration) => migration.version)).toEqual([
-      14, 15, 16, 17, 18, 19, 20,
+      14, 15, 16, 17, 18, 19, 20, 21,
     ]);
     const { rows } = await onSchema(
       url,

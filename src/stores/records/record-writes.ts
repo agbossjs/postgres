@@ -118,7 +118,7 @@ export async function savePauseAnswer(
   await changesOf(
     database,
     `INSERT INTO agboss_pause_answers (tenant_id, root_execution_id, step_key, asked_at, record)
-     VALUES ($1, $2, $3, $4, $5) ON CONFLICT (tenant_id, step_key) DO NOTHING`,
+     VALUES ($1, $2, $3, $4, $5) ON CONFLICT (tenant_id, root_execution_id, step_key) DO NOTHING`,
     [tenantId, rootExecutionId, answer.step.idempotencyKey, answer.askedAt, JSON.stringify(answer)],
   );
 }

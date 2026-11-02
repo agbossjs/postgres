@@ -49,7 +49,12 @@ const pauseOf = (pauseId: string, rootExecutionId: string): PauseRecord => ({
 /** A schema at 0019 holding the old root's lease and its child's refund pause, approved and taken. */
 async function schemaWithAnApprovedChildPause(): Promise<string> {
   const url = await freshSchema();
-  await migrateWith({ url }, migrationsIn(migrationsFolder({ "0020_pauses_by_tree.sql": null })));
+  await migrateWith(
+    { url },
+    migrationsIn(
+      migrationsFolder({ "0020_pauses_by_tree.sql": null, "0021_pause_answers_by_tree.sql": null }),
+    ),
+  );
   // the row as the store of before wrote it: the record as jsonb, its status and resolution time
   const taken = {
     ...pauseOf("old-pause", "old-root"),
@@ -81,7 +86,7 @@ describe("migration 0020 keeps the ids of every execution that paused, and finds
       new TestApplicationContext({}, "instance-1"),
     );
 
-    expect(report.applied.map((migration) => migration.version)).toEqual([20]);
+    expect(report.applied.map((migration) => migration.version)).toEqual([20, 21]);
     const { rows } = await onSchema(
       url,
       "SELECT execution_id, tenant_id FROM agboss_execution_ids ORDER BY execution_id",
@@ -120,7 +125,15 @@ describe("migration 0020 keeps the ids of every execution that paused, and finds
   });
   it("#663: an id of before holding U+E000 is kept as minted, not as the record escaped it (0013) — a pause's, and an outbound call's that 0019 kept escaped", async () => {
     const url = await freshSchema();
-    await migrateWith({ url }, migrationsIn(migrationsFolder({ "0020_pauses_by_tree.sql": null })));
+    await migrateWith(
+      { url },
+      migrationsIn(
+        migrationsFolder({
+          "0020_pauses_by_tree.sql": null,
+          "0021_pause_answers_by_tree.sql": null,
+        }),
+      ),
+    );
     const childId = "old\uE000child";
     const record = { ...pauseOf("odd-pause", "old-root"), executionId: "old\uE000\uE000child" };
     await onSchema(

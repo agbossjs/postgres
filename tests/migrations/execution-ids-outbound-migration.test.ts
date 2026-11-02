@@ -22,6 +22,7 @@ describe("migration 0019 keeps the ids of every execution that made an outbound 
       "0018_execution_ids.sql": null,
       "0019_execution_ids_from_outbound_calls.sql": null,
       "0020_pauses_by_tree.sql": null,
+      "0021_pause_answers_by_tree.sql": null,
     });
     await migrateWith({ url }, migrationsIn(before));
     await onSchema(
@@ -49,7 +50,7 @@ describe("migration 0019 keeps the ids of every execution that made an outbound 
       new TestApplicationContext({}, "instance-1"),
     );
 
-    expect(report.applied.map((migration) => migration.version)).toEqual([18, 19, 20]);
+    expect(report.applied.map((migration) => migration.version)).toEqual([18, 19, 20, 21]);
     const { rows } = await onSchema(
       url,
       "SELECT execution_id, tenant_id FROM agboss_execution_ids ORDER BY execution_id",
