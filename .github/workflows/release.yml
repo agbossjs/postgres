@@ -80,8 +80,20 @@ jobs:
       - name: Build
         run: npm run build
 
+      # npm refuses a dry run over a published version (after a release, until the next bump): it is
+      # dry-run as X.Y.Z-dry-run.<run id>, on this runner only
+      - name: A version already on npm takes a dry-run suffix
+        env:
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          if npm view "@agboss/postgres@$version" version > /dev/null 2>&1; then
+            npm pkg set "version=$version-dry-run.$RUN_ID"
+            echo "@agboss/postgres@$version is on npm: dry-run as $version-dry-run.$RUN_ID"
+          fi
+
       - name: npm publish --dry-run
-        run: npm publish --dry-run --access public
+        run: npm publish --dry-run --access public --tag dry-run
 
   publish:
     name: publish @agboss/postgres
