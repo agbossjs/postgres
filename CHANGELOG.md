@@ -60,6 +60,11 @@ own process, no shared disk — share every store on one database.
 - The published package keeps its command: `bin` is `bin/agboss-postgres.js` (npm 12 dropped the
   `./bin/…` form from the tarball's manifest, #691).
 
+### Fixed
+
+- **The README's wiring compiles** (agbossjs/agboss#749) — *1. List the stores* imported `days` from
+  `@agboss/core/units`, which has none; it reads `executionRecordRetention: hours(24 * 30)`.
+
 ### Changed
 
 - CI installs only reviewed releases (`npm ci`, `--before` three days back, #523; #7); the gate

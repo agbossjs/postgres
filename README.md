@@ -31,7 +31,7 @@ Every coordination store has a PostgreSQL implementation. List them in the appli
 
 ```ts
 import { Application } from "@agboss/core";
-import { days } from "@agboss/core/units";
+import { hours } from "@agboss/core/units";
 import {
   PostgresCheckpointSaver,
   PostgresChildExecutionQueueRepository,
@@ -54,7 +54,7 @@ import { AppEnvironment } from "./environments/app.environment.js";
   version: "1.0.0",
   environment: AppEnvironment,
   workflows: [DeskWorkflow],
-  executionRecordRetention: days(30), // keeps the history `agboss records export` reads
+  executionRecordRetention: hours(24 * 30), // 30 days of the history `agboss records export` reads
   providers: [
     PostgresCheckpointSaver, // LangGraph's PostgresSaver on the shared pool
     PostgresChildExecutionQueueRepository, // ChildPlacement.AnyInstance children
