@@ -52,7 +52,11 @@ async function schemaWithAnApprovedChildPause(): Promise<string> {
   await migrateWith(
     { url },
     migrationsIn(
-      migrationsFolder({ "0020_pauses_by_tree.sql": null, "0021_pause_answers_by_tree.sql": null }),
+      migrationsFolder({
+        "0020_pauses_by_tree.sql": null,
+        "0021_pause_answers_by_tree.sql": null,
+        "0022_cost_ledger_entries.sql": null,
+      }),
     ),
   );
   // the row as the store of before wrote it: the record as jsonb, its status and resolution time
@@ -86,7 +90,7 @@ describe("migration 0020 keeps the ids of every execution that paused, and finds
       new TestApplicationContext({}, "instance-1"),
     );
 
-    expect(report.applied.map((migration) => migration.version)).toEqual([20, 21]);
+    expect(report.applied.map((migration) => migration.version)).toEqual([20, 21, 22]);
     const { rows } = await onSchema(
       url,
       "SELECT execution_id, tenant_id FROM agboss_execution_ids ORDER BY execution_id",
@@ -131,6 +135,7 @@ describe("migration 0020 keeps the ids of every execution that paused, and finds
         migrationsFolder({
           "0020_pauses_by_tree.sql": null,
           "0021_pause_answers_by_tree.sql": null,
+          "0022_cost_ledger_entries.sql": null,
         }),
       ),
     );

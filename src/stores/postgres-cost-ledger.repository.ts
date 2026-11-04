@@ -12,14 +12,26 @@ import { PostgresConnection } from "../connection/postgres-connection.js";
 import { changesOf, firstRowOf } from "../connection/query.js";
 
 /**
- * Adds `$5` to every counter of the arrays (one counter per index) in one statement: a counter
- * given twice counts twice (grouped first — one upsert may not touch a row twice), and the rows
- * are upserted in key order, so two saves of overlapping counters lock them in one order and never
- * deadlock.
+ * Adds to every counter of the arrays (one counter per index), in one statement: `$5` — the cost of
+ * the records without a `ledgerId` — plus the cost of each entry of `$6` / `$7` (ids, costs) whose id
+ * this statement inserts (agbossjs/agboss#727: an id already there, or inserted by a save that
+ * commits first, adds nothing; the unique key makes the later save wait for the earlier one). A
+ * counter given twice counts twice (grouped first — one upsert may not touch a row twice), and the
+ * rows are upserted in key order, so two saves of overlapping counters lock them in one order and
+ * never deadlock.
  */
-const ADD = `INSERT INTO agboss_cost_counters AS counter
+const ADD = `WITH inserted AS (
+    INSERT INTO agboss_cost_entries (ledger_id) SELECT unnest($6::text[])
+    ON CONFLICT (ledger_id) DO NOTHING
+    RETURNING ledger_id
+  ), spent AS (
+    SELECT $5::double precision + COALESCE(sum(entry.cost), 0) AS usd
+      FROM unnest($6::text[], $7::double precision[]) AS entry (ledger_id, cost)
+      WHERE entry.ledger_id IN (SELECT ledger_id FROM inserted)
+  )
+  INSERT INTO agboss_cost_counters AS counter
     (budget, scope, scope_key, period, spent_usd)
-  SELECT budget, scope, scope_key, period, count(*) * $5::double precision
+  SELECT budget, scope, scope_key, period, count(*) * (SELECT usd FROM spent)
     FROM unnest($1::text[], $2::text[], $3::text[], $4::text[])
       AS given (budget, scope, scope_key, period)
     GROUP BY budget, scope, scope_key, period
@@ -27,21 +39,34 @@ const ADD = `INSERT INTO agboss_cost_counters AS counter
   ON CONFLICT (budget, scope, scope_key, period)
     DO UPDATE SET spent_usd = counter.spent_usd + EXCLUDED.spent_usd`;
 
+/** The entries of `records` (one per `ledgerId`, the first), and what the others cost. */
+function entriesOf(records: readonly UsageRecord[]): {
+  readonly ids: string[];
+  readonly costs: number[];
+  readonly unnamed: number;
+} {
+  const entries = new Map<string, number>();
+  let unnamed = 0;
+  for (const { ledgerId, costUsd } of records) {
+    if (ledgerId === undefined) unnamed += costUsd;
+    else if (!entries.has(ledgerId)) entries.set(ledgerId, costUsd);
+  }
+  return { ids: [...entries.keys()], costs: [...entries.values()], unnamed };
+}
+
 const SpentRow = z.object({ spent_usd: z.number() });
 const MaxSpendRow = z.object({ max_spend_usd: z.number() });
 
 /** The scope as stored: one of `BudgetScope`'s values (anything else is refused). */
 const scopeOf = (account: BudgetAccount): string => z.enum(BudgetScope).parse(account.scope);
 
-/** What the calls cost together, in USD. */
-const costOf = (records: readonly UsageRecord[]): number =>
-  records.reduce((sum, record) => sum + record.costUsd, 0);
-
 /**
  * `CostLedgerRepository` on PostgreSQL (agbossjs/agboss#483): one row per counter — budget, scope,
  * scope key and period — so the instances of an application share a tenant's day. `saveAll` is
- * one `INSERT … ON CONFLICT DO UPDATE SET spent_usd = spent_usd + …` of every counter it is given:
- * an addition under the row's own lock, so two instances' concurrent saves lose nothing. No other
+ * one statement: the entries' ids inserted into `agboss_cost_entries` (a repeated one adds nothing,
+ * agbossjs/agboss#727), then `INSERT … ON CONFLICT DO UPDATE SET spent_usd = spent_usd + …` of every
+ * counter it is given: an addition under the row's own lock, so two instances' concurrent saves
+ * lose nothing. No other
  * locking: as on SQLite, the core accepts a small overrun of executions racing past one check
  * (nothing is reserved). A read is one `SELECT` of the counter's row (`usd(0)` when none). The
  * period is the core's (the `Clock`'s UTC day, week or month), passed as text. Every statement runs
@@ -69,12 +94,15 @@ export class PostgresCostLedgerRepository extends CostLedgerRepository {
 
   async saveAll(counters: readonly CostCounter[], records: readonly UsageRecord[]): Promise<void> {
     if (counters.length === 0 || records.length === 0) return;
+    const { ids, costs, unnamed } = entriesOf(records);
     await changesOf(this.connection.pool, ADD, [
       counters.map((counter) => counter.budget),
       counters.map(scopeOf),
       counters.map((counter) => counter.key),
       counters.map((counter) => counter.period),
-      costOf(records),
+      unnamed,
+      ids,
+      costs,
     ]);
   }
 

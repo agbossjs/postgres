@@ -58,7 +58,12 @@ describe("migration 0021 keeps one pause answer per pause of a tree", () => {
     const url = await freshSchema();
     await migrateWith(
       { url },
-      migrationsIn(migrationsFolder({ "0021_pause_answers_by_tree.sql": null })),
+      migrationsIn(
+        migrationsFolder({
+          "0021_pause_answers_by_tree.sql": null,
+          "0022_cost_ledger_entries.sql": null,
+        }),
+      ),
     );
     // the rows as the store of before wrote them: one per tenant and step key
     for (const [key, responder] of [
@@ -91,7 +96,7 @@ describe("migration 0021 keeps one pause answer per pause of a tree", () => {
       answerOf("manager-99", "2026-02-01T09:00:00.000Z"),
     );
 
-    expect(report.applied.map((migration) => migration.version)).toEqual([21]);
+    expect(report.applied.map((migration) => migration.version)).toEqual([21, 22]);
     expect(await respondersOf(records, "old-root")).toEqual(["manager-17", "manager-18"]);
     expect(await respondersOf(records, "new-root")).toEqual(["manager-21"]);
     const { rows } = await onSchema(
