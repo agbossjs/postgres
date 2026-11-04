@@ -351,7 +351,7 @@ the tree over, so a pod never moves a tree whose lease it could not renew.
 | Lease         | `yield` / `reclaim`  | `UPDATE … WHERE holder AND lease_epoch AND expires_at > $now`: `yielded = true` / epoch + 1; 0 rows: lost                             |
 | Record        | `completeIfStatus`   | `UPDATE … WHERE status = $expected`                                                                                                   |
 | Tree          | `saveIfAbsent`       | `INSERT … ON CONFLICT DO NOTHING RETURNING`                                                                                           |
-| Child queue   | claim                | `UPDATE … FROM (SELECT … FOR UPDATE SKIP LOCKED LIMIT 1)`                                                                             |
+| Child queue   | claim                | `WITH … AS MATERIALIZED (SELECT … FOR UPDATE SKIP LOCKED LIMIT 1) UPDATE … FROM` — chosen once (agbossjs/agboss#720)                  |
 | Paused        | `Pending → …`        | `UPDATE … WHERE status = 'pending' RETURNING` (none → `NotPausedError` from the core)                                                 |
 | Fenced effect | `saveResultIfAbsent` | one transaction: lease row `FOR UPDATE`, mark upsert, key lookup, `await work(client)`, insert                                        |
 | Fenced effect | business key         | the same, the key's identity serialized by `pg_advisory_xact_lock` first (no lease row covers two trees)                              |
