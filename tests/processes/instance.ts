@@ -26,6 +26,7 @@ import {
   SpendWorkflowStart,
 } from "../fixtures/shared.workflow.js";
 import { PaidHoldWorkflowStart } from "../fixtures/paid-hold.workflow.js";
+import { PayItemsWorkflowStart } from "../fixtures/spend-in-flight.workflow.js";
 import { TakeoverWorkflowStart } from "../fixtures/takeover.workflow.js";
 import { z } from "zod";
 
@@ -73,6 +74,8 @@ const STARTS: Readonly<
     app.execute(OrderChargeWorkflowStart, Job.parse(input), options),
   batch: (app, input, options) =>
     app.execute(BatchWorkflowStart, z.array(Job).parse(input), options),
+  "pay-items": (app, input, options) =>
+    app.execute(PayItemsWorkflowStart, z.array(Job).parse(input), options),
 };
 
 /** Starts the named workflow with `input`, checked against its start's input, for `tenantId`. */

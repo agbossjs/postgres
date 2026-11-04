@@ -32,6 +32,7 @@ const PACKAGE_MIGRATIONS = [
   "19:execution_ids_from_outbound_calls",
   "20:pauses_by_tree",
   "21:pause_answers_by_tree",
+  "22:cost_ledger_entries",
 ];
 
 /** The migrations after 0013, left out of a folder: a database migrated by the 0.1.0 package. */
@@ -44,6 +45,7 @@ const AFTER_0013 = {
   "0019_execution_ids_from_outbound_calls.sql": null,
   "0020_pauses_by_tree.sql": null,
   "0021_pause_answers_by_tree.sql": null,
+  "0022_cost_ledger_entries.sql": null,
 };
 
 const rejectionOf = async (call: Promise<unknown>): Promise<unknown> =>
@@ -63,7 +65,7 @@ describe("migratePostgres (AC5)", () => {
     const second = await migratePostgres({ url });
 
     expect(first.applied.map((m) => `${String(m.version)}:${m.name}`)).toEqual(PACKAGE_MIGRATIONS);
-    expect(first.version).toBe(21);
+    expect(first.version).toBe(22);
     expect(first.checkpointMigrations).toBeGreaterThan(0);
     expect(second).toEqual({ ...first, applied: [], checkpointMigrations: 0 });
     expect(await schemaDumpOf(url)).toBe(dumped);
@@ -80,6 +82,7 @@ describe("migratePostgres (AC5)", () => {
       "agboss_child_execution_queue",
       "agboss_config_versions",
       "agboss_cost_counters",
+      "agboss_cost_entries",
       "agboss_cost_max_spend",
       "agboss_execution_history",
       "agboss_execution_ids",
@@ -116,7 +119,7 @@ describe("migratePostgres (AC5)", () => {
     const reports = await Promise.all([1, 2, 3].map(() => migratePostgres({ url })));
 
     const applied = reports.map((report) => report.applied.length).sort();
-    expect(applied).toEqual([0, 0, 21]);
+    expect(applied).toEqual([0, 0, 22]);
     expect(await historyOf(url)).toEqual(PACKAGE_MIGRATIONS);
   });
 
@@ -142,7 +145,7 @@ describe("migratePostgres (AC5)", () => {
     await holder.end();
 
     expect(doneWhileLocked).toBe(false);
-    expect((await run).applied).toHaveLength(21);
+    expect((await run).applied).toHaveLength(22);
   });
 
   it("a migration changed after it was applied fails the run, and nothing more is applied", async () => {
@@ -190,20 +193,20 @@ describe("migratePostgres (AC5)", () => {
   it("a database a newer package migrated fails the run: PostgresSchemaTooNewError", async () => {
     const url = await freshSchema();
     const newer = migrationsFolder({
-      "0022_later_feature.sql": "CREATE TABLE later (id integer);",
+      "0023_later_feature.sql": "CREATE TABLE later (id integer);",
     });
     await migrateWith({ url }, migrationsIn(newer));
 
     const error = await rejectionOf(migratePostgres({ url }));
 
     expect(error).toBeInstanceOf(PostgresSchemaTooNewError);
-    expect(error).toMatchObject({ code: "postgres.schema-too-new", applied: 22, expected: 21 });
+    expect(error).toMatchObject({ code: "postgres.schema-too-new", applied: 23, expected: 22 });
   });
 
   it("a failing migration is rolled back alone: the ones before it stay applied", async () => {
     const url = await freshSchema();
     const broken = migrationsFolder({
-      "0022_broken.sql": "CREATE TABLE half_made (id integer); SELECT no_such_function();",
+      "0023_broken.sql": "CREATE TABLE half_made (id integer); SELECT no_such_function();",
     });
 
     await expect(migrateWith({ url }, migrationsIn(broken))).rejects.toThrow(/no_such_function/);
@@ -227,6 +230,7 @@ describe("migratePostgres (AC5)", () => {
       { version: 19, name: "execution_ids_from_outbound_calls" },
       { version: 20, name: "pauses_by_tree" },
       { version: 21, name: "pause_answers_by_tree" },
+      { version: 22, name: "cost_ledger_entries" },
     ]);
     expect(report.checkpointMigrations).toBe(0);
   });

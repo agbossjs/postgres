@@ -74,21 +74,21 @@ import { AppEnvironment } from "./environments/app.environment.js";
 export class DeskApplication {}
 ```
 
-| Store                                   | Core contract                        | Tables                                                              |
-| --------------------------------------- | ------------------------------------ | ------------------------------------------------------------------- |
-| `PostgresExecutionLeaseRepository`      | `ExecutionLeaseRepository`           | `agboss_execution_leases`                                           |
-| `PostgresExecutionRecordRepository`     | `ExecutionRecordRepository`          | `agboss_threads`, `agboss_execution_records`, … (`0002`)            |
-| `PostgresExecutionTreeRepository`       | `ExecutionTreeRepository`            | `agboss_execution_tree_keys`                                        |
-| `PostgresPausedExecutionRepository`     | `PausedExecutionRepository`          | `agboss_paused_executions`, `agboss_pauses`                         |
-| `PostgresChildExecutionQueueRepository` | `ChildExecutionQueueRepository`      | `agboss_child_execution_queue`                                      |
-| `PostgresCheckpointSaver`               | LangGraph `BaseCheckpointSaver`      | `checkpoints`, `checkpoint_blobs`, `checkpoint_writes`              |
-| `PostgresFencedEffectRepository`        | `FencedEffectRepository<PoolClient>` | `agboss_fenced_effect_marks`, `…_results`, `…_business_results`     |
-| `PostgresOutboundCallRepository`        | `OutboundCallRepository`             | `agboss_outbound_calls` (and the leases' `superseded`, `0014`)      |
-| `PostgresExecutionLeaseEventRepository` | `ExecutionLeaseEventRepository`      | `agboss_execution_lease_events`                                     |
-| `PostgresCostLedgerRepository`          | `CostLedgerRepository`               | `agboss_cost_counters`, `agboss_cost_max_spend`                     |
-| `PostgresExecutionHistoryRepository`    | `ExecutionHistoryRepository`         | `agboss_execution_history`                                          |
-| `PostgresRateLimitRepository`           | `RateLimitRepository`                | `agboss_rate_limit_keys`, `…_slots`, `…_window_buckets`, `…_pauses` |
-| `PostgresMeshRequestRepository`         | `MeshRequestRepository`              | `agboss_mesh_requests`                                              |
+| Store                                   | Core contract                        | Tables                                                                 |
+| --------------------------------------- | ------------------------------------ | ---------------------------------------------------------------------- |
+| `PostgresExecutionLeaseRepository`      | `ExecutionLeaseRepository`           | `agboss_execution_leases`                                              |
+| `PostgresExecutionRecordRepository`     | `ExecutionRecordRepository`          | `agboss_threads`, `agboss_execution_records`, … (`0002`)               |
+| `PostgresExecutionTreeRepository`       | `ExecutionTreeRepository`            | `agboss_execution_tree_keys`                                           |
+| `PostgresPausedExecutionRepository`     | `PausedExecutionRepository`          | `agboss_paused_executions`, `agboss_pauses`                            |
+| `PostgresChildExecutionQueueRepository` | `ChildExecutionQueueRepository`      | `agboss_child_execution_queue`                                         |
+| `PostgresCheckpointSaver`               | LangGraph `BaseCheckpointSaver`      | `checkpoints`, `checkpoint_blobs`, `checkpoint_writes`                 |
+| `PostgresFencedEffectRepository`        | `FencedEffectRepository<PoolClient>` | `agboss_fenced_effect_marks`, `…_results`, `…_business_results`        |
+| `PostgresOutboundCallRepository`        | `OutboundCallRepository`             | `agboss_outbound_calls` (and the leases' `superseded`, `0014`)         |
+| `PostgresExecutionLeaseEventRepository` | `ExecutionLeaseEventRepository`      | `agboss_execution_lease_events`                                        |
+| `PostgresCostLedgerRepository`          | `CostLedgerRepository`               | `agboss_cost_counters`, `agboss_cost_max_spend`, `agboss_cost_entries` |
+| `PostgresExecutionHistoryRepository`    | `ExecutionHistoryRepository`         | `agboss_execution_history`                                             |
+| `PostgresRateLimitRepository`           | `RateLimitRepository`                | `agboss_rate_limit_keys`, `…_slots`, `…_window_buckets`, `…_pauses`    |
+| `PostgresMeshRequestRepository`         | `MeshRequestRepository`              | `agboss_mesh_requests`                                                 |
 
 With all of them listed, nothing of the application is per pod: budgets sum every pod's spend, a
 provider's limits hold across pods, `agboss records export` on any pod lists every pod's
@@ -322,6 +322,7 @@ a pod never waits on another's migration at start (both are safe: they serialize
 | `0019_execution_ids_from_outbound_calls` | none: the ids of before of every execution that made an outbound call (agbossjs/agboss#638)                                                             |
 | `0020_pauses_by_tree`                    | `agboss_pauses` unique per tree and step key; the ids of before of every execution that paused, and its tree (agbossjs/agboss#663)                      |
 | `0021_pause_answers_by_tree`             | `agboss_pause_answers` keyed per tree and step key: another tree's answer under the same step key is kept (agbossjs/agboss#676)                         |
+| `0022_cost_ledger_entries`               | `agboss_cost_entries`: each spend's `ledgerId`, so a step run again counts its spend once (agbossjs/agboss#727)                                         |
 | LangGraph                                | `checkpoints`, `checkpoint_blobs`, `checkpoint_writes`, `checkpoint_migrations`                                                                         |
 
 ## Text with a NUL character

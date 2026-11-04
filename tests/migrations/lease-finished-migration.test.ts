@@ -43,6 +43,7 @@ describe("migration 0017 keeps the leases written before it", () => {
           "0019_execution_ids_from_outbound_calls.sql": null,
           "0020_pauses_by_tree.sql": null,
           "0021_pause_answers_by_tree.sql": null,
+          "0022_cost_ledger_entries.sql": null,
         }),
       ),
     );
@@ -64,7 +65,7 @@ describe("migration 0017 keeps the leases written before it", () => {
     const report = await migratePostgres({ url });
     await clock.advance(seconds(31));
 
-    expect(report.applied.map((migration) => migration.version)).toEqual([17, 18, 19, 20, 21]);
+    expect(report.applied.map((migration) => migration.version)).toEqual([17, 18, 19, 20, 21, 22]);
     const { rows } = await onSchema(
       url,
       "SELECT root_execution_id, finished FROM agboss_execution_leases ORDER BY root_execution_id",
