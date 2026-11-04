@@ -10,7 +10,7 @@
     {
       "name": "contracts",
       "include": ["tests/contracts/**/*.test.ts"],
-      "minFiles": 2
+      "minFiles": 3
     }
   ]
 }
