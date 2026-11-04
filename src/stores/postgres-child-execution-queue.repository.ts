@@ -67,12 +67,19 @@ const SAVE = `INSERT INTO agboss_child_execution_queue AS queued (tenant_id, exe
 /**
  * Claims the first queued child — the deepest, then the longest waiting — in one statement: the
  * row is locked with `FOR UPDATE SKIP LOCKED` (a row another instance is claiming is passed over,
- * never waited for) and marked running for this instance.
+ * never waited for) and marked running for this instance. The choice is a `MATERIALIZED` CTE, run
+ * once (agbossjs/agboss#720): as a subquery joined to the table, a plan made on statistics of a
+ * nearly empty queue rescanned it once per row of the table — each rescan skipped the rows the
+ * statement had already marked and locked the next — so one claim marked many children `running`
+ * and answered one; the others ran nowhere.
  */
-const CLAIM = `UPDATE agboss_child_execution_queue AS queued
+const CLAIM = `WITH first AS MATERIALIZED (
+    SELECT tenant_id, execution_id FROM agboss_child_execution_queue WHERE status = 'queued'
+    ORDER BY depth DESC, queued_at LIMIT 1 FOR UPDATE SKIP LOCKED
+  )
+  UPDATE agboss_child_execution_queue AS queued
   SET status = 'running', instance_id = $1, claimed_at = $2
-  FROM (SELECT tenant_id, execution_id FROM agboss_child_execution_queue WHERE status = 'queued'
-        ORDER BY depth DESC, queued_at LIMIT 1 FOR UPDATE SKIP LOCKED) first
+  FROM first
   WHERE queued.tenant_id = first.tenant_id AND queued.execution_id = first.execution_id
   RETURNING queued.*`;
 
@@ -89,8 +96,9 @@ const DepthRow = z.object({ queued: z.number(), running: z.number(), oldest: z.d
 
 /**
  * `ChildExecutionQueueRepository` on PostgreSQL (#333 PR 2, #482): one row per child queued with
- * `ChildPlacement.AnyInstance`. A claim is one `UPDATE … FROM (SELECT … FOR UPDATE SKIP LOCKED
- * LIMIT 1)`, so of two instances exactly one claims a child and neither waits on the other's; a
+ * `ChildPlacement.AnyInstance`. A claim is one `WITH first AS MATERIALIZED (SELECT … FOR UPDATE
+ * SKIP LOCKED LIMIT 1) UPDATE … FROM first`, so of two instances exactly one claims a child, a claim
+ * marks exactly the child it answers, and neither waits on the other's; a
  * completion is one `UPDATE` matching this instance's running row. Times are the framework
  * clock's. Listed in `@Application({ providers })` with `postgresUrl`.
  */

@@ -61,6 +61,33 @@ describe("PostgresChildExecutionQueueRepository: FOR UPDATE SKIP LOCKED", () => 
     expect(stored).toMatchObject({ status: ExecutionRecordStatus.Running });
   });
 
+  it("agbossjs/agboss#720: on statistics taken while the queue held one row, a claim marks exactly one child", async () => {
+    const connection = connectionTo(database.url(), 1);
+    const queue = new PostgresChildExecutionQueueRepository(
+      connection,
+      new VirtualClock(),
+      new TestApplicationContext({}, "instance-1"),
+    );
+    // the queue after a batch of one (the frozen pod's job): analyzed at one row, then a batch
+    await connection.pool.query("DELETE FROM agboss_child_execution_queue");
+    await queue.saveIfAbsent({ ...child(99), rootExecutionId: "root-0" });
+    await connection.pool.query("VACUUM ANALYZE agboss_child_execution_queue");
+    await queue.deleteAllByTenantIdAndRootExecutionId("default", "root-0");
+    const children = Array.from({ length: 48 }, (_, index) => ({
+      ...child(index),
+      executionId: `batch-${String(index)}`,
+    }));
+    for (const one of children) await queue.saveIfAbsent(one);
+
+    const claimed = await queue.claimFirstByStatusQueuedOrderByDepthDesc();
+
+    const { rows } = await connection.pool.query<{ readonly execution_id: string }>(
+      "SELECT execution_id FROM agboss_child_execution_queue WHERE status = 'running'",
+    );
+    expect(rows.map((row) => row.execution_id)).toEqual([claimed?.executionId]);
+    await connection.pool.end();
+  });
+
   it("a lost connection rejects the claim", async () => {
     const queue = new PostgresChildExecutionQueueRepository(
       connectionTo("postgres://postgres:pw@127.0.0.1:1/postgres"),
