@@ -62,6 +62,11 @@ own process, no shared disk — share every store on one database.
 
 ### Fixed
 
+- **A question role's pause is read back** (agbossjs/agboss#746) — the pause row check took every
+  `ask` for an approval's tool call (`callId`, `tool`, `summary`), so a question asked by a flow step
+  (agbossjs/agboss#659) or an agent's tool (#712) failed its execution reading its own pause. A
+  question's ask (`component.kind: "question"`) is kept as written; an approval's still needs its
+  tool call. The core's `pausedExecutionContract` now has the case.
 - **The README's wiring compiles** (agbossjs/agboss#749) — _1. List the stores_ imported `days` from
   `@agboss/core/units`, which has none; it reads `executionRecordRetention: hours(24 * 30)`.
 
