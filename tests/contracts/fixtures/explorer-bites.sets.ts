@@ -1,5 +1,6 @@
-// agbossjs/agboss#590: the interleaving explorer bites on PostgreSQL — two deliberately broken lease
-// stores run through storeConformance (in a vitest of its own, explorer-bites.test.ts).
+// agbossjs/agboss#590: the interleaving explorer bites on PostgreSQL — the two deliberately broken
+// lease stores, each run through storeConformance by a fixture of its own (agbossjs/agboss#760: one
+// sabotage per test file, explorer-bites-*.test.ts, each in a vitest of its own).
 import type { ExecutionLease, StoreClock } from "@agboss/core";
 import { TestStoreClock } from "@agboss/core/testing";
 import { storeConformance } from "@agboss/core/testing/contracts";
@@ -17,10 +18,17 @@ class ReleasingFinishLeases extends PostgresExecutionLeaseRepository {
   }
 }
 
-const database = testDatabase();
+type Seam = Parameters<Parameters<typeof postgresStore>[1]>[1];
+type Connection = Parameters<Parameters<typeof postgresStore>[1]>[0];
+type LeasesOf = (
+  connection: Connection,
+  storeClock: StoreClock,
+  seam: Seam,
+) => PostgresExecutionLeaseRepository;
 
 /** A set of the broken leases and the outbound-call store on them. */
-function brokenSet(name: string, leasesOf: typeof makeLeases): void {
+function brokenSet(name: string, leasesOf: LeasesOf): void {
+  const database = testDatabase();
   storeConformance({
     name,
     reset: async () => {
@@ -40,22 +48,27 @@ function brokenSet(name: string, leasesOf: typeof makeLeases): void {
   });
 }
 
-type Seam = Parameters<Parameters<typeof postgresStore>[1]>[1];
-type Connection = Parameters<Parameters<typeof postgresStore>[1]>[0];
+export const FINISH_RELEASES = "a finish that only releases";
+export const CALLER_CLOCK = "leases on the caller's clock";
 
-const makeLeases = (
-  connection: Connection,
-  storeClock: StoreClock,
-  seam: Seam,
-): PostgresExecutionLeaseRepository =>
-  new PostgresExecutionLeaseRepository(connection, storeClock, seam.application);
+/** `finish` only releases. */
+export const finishReleasesSet = (): void => {
+  brokenSet(
+    FINISH_RELEASES,
+    (connection, storeClock, seam) =>
+      new ReleasingFinishLeases(connection, storeClock, seam.application),
+  );
+};
 
-brokenSet(
-  "a finish that only releases",
-  (connection, storeClock, seam) =>
-    new ReleasingFinishLeases(connection, storeClock, seam.application),
-);
-// the caller's own (skewed) clock instead of the store's time: two live holders
-brokenSet("leases on the caller's clock", (connection, _storeClock, seam) =>
-  makeLeases(connection, new TestStoreClock(seam.clock), seam),
-);
+/** The caller's own (skewed) clock instead of the store's time: two live holders. */
+export const callerClockSet = (): void => {
+  brokenSet(
+    CALLER_CLOCK,
+    (connection, _storeClock, seam) =>
+      new PostgresExecutionLeaseRepository(
+        connection,
+        new TestStoreClock(seam.clock),
+        seam.application,
+      ),
+  );
+};
