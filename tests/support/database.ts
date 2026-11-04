@@ -88,14 +88,35 @@ export async function onSchema(
   }
 }
 
-/** Every table of the migrations and LangGraph's checkpoints, emptied: a contract case's `reset`. */
+/**
+ * Every table of the migrations and LangGraph's checkpoints, emptied: a contract case's `reset`.
+ * By `DELETE`, a table that references another first (agbossjs/agboss#760): the explorer resets
+ * before every schedule it replays, and a `TRUNCATE` per table — new files for each, 330 ms a reset
+ * on a loaded machine — took most of a 15-minute search; the tables hold a few rows, a `DELETE` of
+ * all of them is 9 ms. Sequences are kept, as `TRUNCATE` without `RESTART IDENTITY` kept them.
+ */
 export const truncateAll = (url: string): Promise<pg.QueryResult> =>
   onSchema(
     url,
     `DO $$ DECLARE t text; BEGIN
-       FOR t IN SELECT tablename FROM pg_tables WHERE schemaname = current_schema()
-         AND tablename NOT IN ('agboss_schema_migrations', 'checkpoint_migrations') LOOP
-         EXECUTE format('TRUNCATE %I CASCADE', t);
+       FOR t IN
+         WITH RECURSIVE tables AS (
+           SELECT c.oid FROM pg_class c
+           WHERE c.relnamespace = current_schema()::regnamespace AND c.relkind IN ('r', 'p')
+             AND c.relname NOT IN ('agboss_schema_migrations', 'checkpoint_migrations')
+         ), refs AS (
+           SELECT conrelid AS child, confrelid AS parent FROM pg_constraint
+           WHERE contype = 'f' AND connamespace = current_schema()::regnamespace
+             AND conrelid <> confrelid
+         ), heights(rel, height) AS (
+           SELECT oid, 0 FROM tables
+           UNION ALL SELECT refs.parent, heights.height + 1 FROM refs JOIN heights ON heights.rel = refs.child
+             WHERE heights.height < 64
+         )
+         SELECT rel::regclass::text FROM heights JOIN tables ON tables.oid = heights.rel
+         GROUP BY rel ORDER BY max(height), rel::regclass::text
+       LOOP
+         EXECUTE format('DELETE FROM %s', t);
        END LOOP; END $$`,
   );
 
