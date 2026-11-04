@@ -62,7 +62,7 @@ own process, no shared disk — share every store on one database.
 
 ### Fixed
 
-- **The README's wiring compiles** (agbossjs/agboss#749) — *1. List the stores* imported `days` from
+- **The README's wiring compiles** (agbossjs/agboss#749) — _1. List the stores_ imported `days` from
   `@agboss/core/units`, which has none; it reads `executionRecordRetention: hours(24 * 30)`.
 
 ### Changed
