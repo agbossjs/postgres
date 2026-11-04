@@ -35,13 +35,14 @@ const MarkRow = z.object({ highest_token: z.number(), now: z.date() });
  * The key's lease is held at its token (not released, not expired at the store's time — `now`: the
  * database's when `null`, agbossjs/agboss#533) and no newer token wrote its scope — else
  * `ExecutionFencedError`; the mark is raised to the token. The lease row stays locked until the
- * caller's transaction ends.
+ * caller's transaction ends. Answers the store's time it decided by (agbossjs/agboss#658: what an
+ * outbound call's attempt starts and is read at).
  */
 export async function checkFence(
   client: PoolClient,
   key: FencedEffectKey,
   now: Date | null,
-): Promise<void> {
+): Promise<Date> {
   const { scopeKey, token } = key;
   const row = await firstRowOf(client, LOCK_LEASE, [key.tenantId, key.leaseExecutionId]);
   const lease = row === undefined ? undefined : LeaseRow.parse(row);
@@ -53,4 +54,5 @@ export async function checkFence(
   if (lease.expires_at.getTime() <= mark.now.getTime()) throw refused();
   if (mark.highest_token > token)
     throw new ExecutionFencedError({ scopeKey, token, observedToken: mark.highest_token });
+  return mark.now;
 }

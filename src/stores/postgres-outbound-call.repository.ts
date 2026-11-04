@@ -83,20 +83,27 @@ export class PostgresOutboundCallRepository extends OutboundCallRepository {
   }
 
   findByKey(key: FencedEffectKey): Promise<OutboundCallRecord | undefined> {
-    return this.#fenced(key, async (client) => {
+    return this.#fenced(key, async (client, now) => {
       const [where, values] = whereOf(key, 1);
       const row = await firstRowOf(
         client,
         `SELECT record FROM agboss_outbound_calls WHERE ${where}`,
         values,
       );
-      return row === undefined ? undefined : callRecordOf(row);
+      // read at the store's time the fence decided by (agbossjs/agboss#658), never stored
+      return row === undefined ? undefined : { ...callRecordOf(row), readAt: now.toISOString() };
     });
   }
 
   saveIfAbsent(key: FencedEffectKey, intent: OutboundCallIntent): Promise<boolean> {
-    return this.#fenced(key, async (client) => {
-      const record = pendingOutboundCallOf(key, intent, this.clock.now());
+    return this.#fenced(key, async (client, now) => {
+      // its first attempt starts at the store's time (agbossjs/agboss#658: the database's own)
+      const startedAt = now.toISOString();
+      const record = {
+        ...pendingOutboundCallOf(key, intent, this.clock.now()),
+        attemptStartedAt: startedAt,
+        firstAttemptStartedAt: startedAt,
+      };
       const saved = await changesOf(client, SAVE, [
         key.scopeKey,
         escapedText(key.idempotencyKey),
@@ -119,17 +126,22 @@ export class PostgresOutboundCallRepository extends OutboundCallRepository {
     claim: OutboundCallClaim,
   ): Promise<boolean> {
     const status = OutboundCallStatus.Pending;
-    return this.#moved(key, expected, { status, ...claim, fields: { status, ...claim } });
+    // the next attempt starts at the store's time (agbossjs/agboss#658); the first's start is kept
+    return this.#moved(key, expected, (now) => ({
+      status,
+      ...claim,
+      fields: { status, ...claim, attemptStartedAt: now.toISOString() },
+    }));
   }
 
   markCompleted(key: FencedEffectKey, attemptOwner: string, result: string): Promise<boolean> {
     const status = OutboundCallStatus.Completed;
     const endedAt = this.clock.now().toISOString();
-    return this.#moved(
-      key,
-      { status: OutboundCallStatus.Pending, attemptOwner },
-      { status, endedAt, fields: { status, result, endedAt } },
-    );
+    return this.#moved(key, { status: OutboundCallStatus.Pending, attemptOwner }, () => ({
+      status,
+      endedAt,
+      fields: { status, result, endedAt },
+    }));
   }
 
   markFailed(
@@ -140,11 +152,11 @@ export class PostgresOutboundCallRepository extends OutboundCallRepository {
     const status = OutboundCallStatus.Failed;
     const endedAt = this.clock.now().toISOString();
     const { name, code, message } = failure;
-    return this.#moved(
-      key,
-      { status: OutboundCallStatus.Pending, attemptOwner },
-      { status, endedAt, fields: { status, failure: { name, code, message }, endedAt } },
-    );
+    return this.#moved(key, { status: OutboundCallStatus.Pending, attemptOwner }, () => ({
+      status,
+      endedAt,
+      fields: { status, failure: { name, code, message }, endedAt },
+    }));
   }
 
   async findAllByTenantIdAndRootExecutionId(
@@ -186,11 +198,13 @@ export class PostgresOutboundCallRepository extends OutboundCallRepository {
   }
 
   /**
-   * The compare-and-set of `key`'s row, fenced: `change` written under the key's lease and token
-   * only while the row is still `from` — one statement, `true` when it changed the row.
+   * The compare-and-set of `key`'s row, fenced: `changeAt(now)` — `now` the store's time the fence
+   * decided by — written under the key's lease and token only while the row is still `from`; one
+   * statement, `true` when it changed the row.
    */
-  #moved(key: FencedEffectKey, from: AsRead, change: Change): Promise<boolean> {
-    return this.#fenced(key, async (client) => {
+  #moved(key: FencedEffectKey, from: AsRead, changeAt: (now: Date) => Change): Promise<boolean> {
+    return this.#fenced(key, async (client, now) => {
+      const change = changeAt(now);
       const fields = { ...change.fields, token: key.token, leaseExecutionId: key.leaseExecutionId };
       const [where, values] = whereOf(key, 5);
       const changed = await changesOf(
@@ -219,14 +233,14 @@ export class PostgresOutboundCallRepository extends OutboundCallRepository {
   /** `work` after the fencing checks (the lease row locked, the mark raised), in one transaction. */
   async #fenced<TValue>(
     key: FencedEffectKey,
-    work: (client: PoolClient) => Promise<TValue>,
+    work: (client: PoolClient, now: Date) => Promise<TValue>,
   ): Promise<TValue> {
     checkedEffectName(key.name);
     // a business key's text (agbossjs/agboss#538): refused by its rule before any statement
     checkedBusinessKey(key);
     return inPoolTransaction(this.connection.pool, async (client) => {
-      await checkFence(client, key, storeNowOf(this.clock));
-      return work(client);
+      const now = await checkFence(client, key, storeNowOf(this.clock));
+      return work(client, now);
     });
   }
 }

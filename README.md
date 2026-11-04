@@ -101,8 +101,8 @@ reclaims, fences a write under or closes a lease reads `clock_timestamp()` insid
 whose wall clocks disagree — by seconds or by minutes — agree on the instant of expiry; each take and
 renewal answers the time the lease has left, which the holder counts down on its monotonic clock
 less a 1 s margin. Under `testWith` and the contract suites the test's clock is injected instead
-(`StoreClock`), so time can be moved. Other times (records, retention) are the application's
-`Clock`'s. A project subclasses a store through public tokens only: `@Injectable({ deps:
+(`StoreClock`), so time can be moved. An outbound call's attempt times are the database's too
+(agbossjs/agboss#658). Other times (records, retention) are the application's `Clock`'s. A project subclasses a store through public tokens only: `@Injectable({ deps:
 [PostgresConnection, StoreClock, ApplicationContext] })`, the store's own `deps`.
 
 **One backend.** `PostgresExecutionLeaseRepository`, `PostgresFencedEffectRepository` and
@@ -165,6 +165,14 @@ flight (`OutboundCallInFlightError`); an expired one is closed by that check, in
 the same transaction — released and marked `superseded`, so its holder can neither renew it nor
 write under it again, and the next take of its tree names it (`takenOverFrom`) — and the call is
 reconciled (`lease-superseded` in the lease log, with the closed lease).
+
+**An attempt's times are the database's** (agbossjs/agboss#658): `saveIfAbsent` writes the first
+attempt's `attemptStartedAt` and `firstAttemptStartedAt`, `markPending` each next `attemptStartedAt`,
+and every `findByKey` answers its record with `readAt` — all the store's time the fence read right
+after it locked the lease row (`clock_timestamp()`), to the millisecond, never a pod's wall clock.
+So `lookup.attemptStartedAt` and `lookup.keyAge`, and a call's `keyRetention`, mean the same on
+every pod and after a takeover. No migration: they live in the record's `jsonb`; an intent written
+before has none, so its key's age is unknown and a `keyRetention` refuses its replay.
 
 The lease log keeps who took a tree over and from whom — `app.leaseEventsOf({ tenantId,
 rootExecutionId })` reads it on any instance, oldest first:
