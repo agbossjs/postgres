@@ -1,4 +1,10 @@
-import { PauseAnswerer, PauseResolution, PauseStatus, type PauseRecord } from "@agboss/core";
+import {
+  ComponentKind,
+  PauseAnswerer,
+  PauseResolution,
+  PauseStatus,
+  type PauseRecord,
+} from "@agboss/core";
 import { VirtualClock } from "@agboss/core/testing";
 import { describe, expect, it } from "vitest";
 import { PostgresPausedExecutionRepository } from "../../src/index.js";
@@ -33,7 +39,57 @@ const pauseOf = (pauseId: string, stepKey: string): PauseRecord => ({
   askedAt: "2026-01-05T09:00:00.000Z",
 });
 
+/** agbossjs/agboss#746: a question role's pause — the role its component, its ask the role's DTO. */
+const questionPauseOf = (pauseId: string, stepKey: string): PauseRecord => ({
+  ...pauseOf(pauseId, stepKey),
+  nodeId: "ship-question",
+  agent: "ship-question",
+  channel: "ship-question",
+  component: {
+    name: "ship-question",
+    kind: ComponentKind.Question,
+    promptHash: undefined,
+    schemaHash: "ddb0c5dd",
+  },
+  ask: { name: "box-1" },
+});
+
 describe("PostgresPausedExecutionRepository", () => {
+  it("agbossjs/agboss#746: a question's pause, whose ask is no tool call, is read back as written", async () => {
+    const pauses = pausesOn();
+    const asked = questionPauseOf("p-question", "step-question");
+
+    await pauses.findOrCreateByStepKey(asked);
+    await pauses.resolveByTenantIdAndPauseId(
+      "default",
+      "p-question",
+      { decision: { verdict: "yes" }, answerer: undefined },
+      NINE,
+    );
+
+    expect(await pauses.findAllByTenantIdAndRootExecutionId("default", "run-1")).toEqual([
+      expect.objectContaining({ pauseId: "p-question", ask: { name: "box-1" } }),
+    ]);
+    expect(await pauses.findByTenantIdAndPauseId("default", "p-question")).toMatchObject({
+      component: { kind: ComponentKind.Question },
+      status: PauseStatus.Resolved,
+      answer: { decision: { verdict: "yes" } },
+    });
+  });
+
+  it("an approval's pause whose ask lost its tool call still fails loudly when read", async () => {
+    const pauses = pausesOn();
+    await pauses.findOrCreateByStepKey(pauseOf("p-no-call", "step-no-call"));
+    await onSchema(
+      database.url(),
+      `UPDATE agboss_pauses SET record = record #- '{ask,callId}' WHERE pause_id = 'p-no-call'`,
+    );
+
+    await expect(pauses.findByTenantIdAndPauseId("default", "p-no-call")).rejects.toThrow(
+      /a stored pause is not readable/,
+    );
+  });
+
   it("markTaken turns a Resolved pause to Taken, and nothing else", async () => {
     const pauses = pausesOn();
     await pauses.findOrCreateByStepKey(pauseOf("p-resolved", "step-resolved"));
