@@ -172,6 +172,8 @@ export interface PostgresConnectionSettings {
 export class PostgresCostLedgerRepository extends CostLedgerRepository {
     constructor(connection: PostgresConnection);
     // (undocumented)
+    deleteEntriesByMadeAtBefore(cutoff: Date): Promise<void>;
+    // (undocumented)
     findMaxSpendByAccount(account: BudgetAccount): Promise<Usd | undefined>;
     // (undocumented)
     findSpentByCounter(counter: CostCounter): Promise<Usd>;
@@ -325,6 +327,15 @@ export class PostgresFencedEffectRepository extends FencedEffectRepository<PoolC
     ping(): Promise<void>;
     // (undocumented)
     protected runInTransaction<TResult>(key: FencedEffectKey, work: FencedEffectWork<PoolClient, TResult>): Promise<FencedEffectOutcome<TResult>>;
+}
+
+// @public
+export class PostgresLedgerMarkMissingError extends AGBossError {
+    constructor();
+    // (undocumented)
+    static readonly code: string;
+    // (undocumented)
+    name: string;
 }
 
 // @public
@@ -514,6 +525,8 @@ export interface SchemaVersions {
 // src/errors.ts:76:3 - (ae-undocumented) Missing documentation for "migration".
 // src/errors.ts:92:3 - (ae-undocumented) Missing documentation for "code".
 // src/errors.ts:93:12 - (ae-undocumented) Missing documentation for "name".
+// src/errors.ts:103:3 - (ae-undocumented) Missing documentation for "code".
+// src/errors.ts:104:12 - (ae-undocumented) Missing documentation for "name".
 // src/migrations/migrate.ts:23:3 - (ae-undocumented) Missing documentation for "version".
 // src/migrations/migrate.ts:24:3 - (ae-undocumented) Missing documentation for "name".
 // src/stores/postgres-checkpoint-saver.ts:44:9 - (ae-undocumented) Missing documentation for "getTuple".
@@ -528,11 +541,12 @@ export interface SchemaVersions {
 // src/stores/postgres-child-execution-queue.repository.ts:176:9 - (ae-undocumented) Missing documentation for "completeByTenantIdAndExecutionId".
 // src/stores/postgres-child-execution-queue.repository.ts:197:9 - (ae-undocumented) Missing documentation for "deleteAllByTenantIdAndRootExecutionId".
 // src/stores/postgres-child-execution-queue.repository.ts:208:9 - (ae-undocumented) Missing documentation for "findQueueDepth".
-// src/stores/postgres-cost-ledger.repository.ts:81:3 - (ae-undocumented) Missing documentation for "ping".
-// src/stores/postgres-cost-ledger.repository.ts:85:9 - (ae-undocumented) Missing documentation for "findSpentByCounter".
-// src/stores/postgres-cost-ledger.repository.ts:95:9 - (ae-undocumented) Missing documentation for "saveAll".
-// src/stores/postgres-cost-ledger.repository.ts:109:9 - (ae-undocumented) Missing documentation for "findMaxSpendByAccount".
-// src/stores/postgres-cost-ledger.repository.ts:119:9 - (ae-undocumented) Missing documentation for "saveMaxSpend".
+// src/stores/postgres-cost-ledger.repository.ts:131:3 - (ae-undocumented) Missing documentation for "ping".
+// src/stores/postgres-cost-ledger.repository.ts:135:9 - (ae-undocumented) Missing documentation for "findSpentByCounter".
+// src/stores/postgres-cost-ledger.repository.ts:145:9 - (ae-undocumented) Missing documentation for "saveAll".
+// src/stores/postgres-cost-ledger.repository.ts:165:9 - (ae-undocumented) Missing documentation for "deleteEntriesByMadeAtBefore".
+// src/stores/postgres-cost-ledger.repository.ts:169:9 - (ae-undocumented) Missing documentation for "findMaxSpendByAccount".
+// src/stores/postgres-cost-ledger.repository.ts:179:9 - (ae-undocumented) Missing documentation for "saveMaxSpend".
 // src/stores/postgres-execution-history.repository.ts:48:3 - (ae-undocumented) Missing documentation for "ping".
 // src/stores/postgres-execution-history.repository.ts:52:9 - (ae-undocumented) Missing documentation for "save".
 // src/stores/postgres-execution-history.repository.ts:63:9 - (ae-undocumented) Missing documentation for "findByTenantIdAndExecutionId".

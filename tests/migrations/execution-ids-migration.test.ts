@@ -25,6 +25,7 @@ describe("migration 0018 keeps the ids of the trees already there", () => {
           "0020_pauses_by_tree.sql": null,
           "0021_pause_answers_by_tree.sql": null,
           "0022_cost_ledger_entries.sql": null,
+          "0023_cost_entries_pruned.sql": null,
         }),
       ),
     );
@@ -47,7 +48,7 @@ describe("migration 0018 keeps the ids of the trees already there", () => {
       new TestApplicationContext({}, "instance-1"),
     );
 
-    expect(report.applied.map((migration) => migration.version)).toEqual([18, 19, 20, 21, 22]);
+    expect(report.applied.map((migration) => migration.version)).toEqual([18, 19, 20, 21, 22, 23]);
     const { rows } = await onSchema(
       url,
       "SELECT execution_id FROM agboss_execution_ids ORDER BY execution_id",

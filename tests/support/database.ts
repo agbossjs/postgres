@@ -93,7 +93,8 @@ export async function onSchema(
  * By `DELETE`, a table that references another first (agbossjs/agboss#760): the explorer resets
  * before every schedule it replays, and a `TRUNCATE` per table — new files for each, 330 ms a reset
  * on a loaded machine — took most of a 15-minute search; the tables hold a few rows, a `DELETE` of
- * all of them is 9 ms. Sequences are kept, as `TRUNCATE` without `RESTART IDENTITY` kept them.
+ * all of them is 9 ms. Sequences are kept, as `TRUNCATE` without `RESTART IDENTITY` kept them; the
+ * ledger's pruning mark is seeded again, as the migration seeds it.
  */
 export const truncateAll = (url: string): Promise<pg.QueryResult> =>
   onSchema(
@@ -117,7 +118,11 @@ export const truncateAll = (url: string): Promise<pg.QueryResult> =>
          GROUP BY rel ORDER BY max(height), rel::regclass::text
        LOOP
          EXECUTE format('DELETE FROM %s', t);
-       END LOOP; END $$`,
+       END LOOP;
+       -- the ledger's pruning mark is one row the migration seeds (agbossjs/agboss#771)
+       IF to_regclass('agboss_cost_entries_pruned') IS NOT NULL THEN
+         INSERT INTO agboss_cost_entries_pruned VALUES (true, '-infinity');
+       END IF; END $$`,
   );
 
 const created: string[] = [];
