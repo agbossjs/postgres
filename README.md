@@ -223,6 +223,14 @@ a pool size of 0) fails the start with `PostgresSettingsError`, naming the field
 The tables go to the first existing schema of the connection's `search_path` (`public` by default);
 `?options=-c%20search_path%3Dmy_schema` in the URL picks another.
 
+Each instance holds one more connection than its pool (agbossjs/agboss#777): the child queue's
+`LISTEN agboss_child_queued`, so a child another pod queues wakes this one at once instead of at its
+next sweep (30 s). It is idle while nothing is queued — the server pushes each `NOTIFY`, nothing is
+polled — and reconnects on its own (1 s, doubling up to 30 s), waking the claimers once when it is
+back. Behind a transaction-mode pooler (PgBouncer `pool_mode = transaction`) a `LISTEN` hears
+nothing: the children are still claimed, at the sweep — point the URL at the server or a
+session-mode pool for the wake-ups.
+
 ## 3. Migrations
 
 The schema is created by versioned SQL files (`migrations/NNNN_<name>.sql`, shipped in the package)
@@ -353,6 +361,8 @@ the tree over, so a pod never moves a tree whose lease it could not renew.
 | Record        | `completeIfStatus`   | `UPDATE … WHERE status = $expected`                                                                                                   |
 | Tree          | `saveIfAbsent`       | `INSERT … ON CONFLICT DO NOTHING RETURNING`                                                                                           |
 | Child queue   | claim                | `WITH … AS MATERIALIZED (SELECT … FOR UPDATE SKIP LOCKED LIMIT 1) UPDATE … FROM` — chosen once (agbossjs/agboss#720)                  |
+| Child queue   | `saveIfAbsent`       | `WITH saved AS (INSERT … ON CONFLICT DO UPDATE … RETURNING) SELECT pg_notify('agboss_child_queued', current_schema()) FROM saved`     |
+| Child queue   | `watchQueued`        | `LISTEN agboss_child_queued` on a connection of its own (agbossjs/agboss#777): its schema's notifications wake the claimers           |
 | Paused        | `Pending → …`        | `UPDATE … WHERE status = 'pending' RETURNING` (none → `NotPausedError` from the core)                                                 |
 | Fenced effect | `saveResultIfAbsent` | one transaction: lease row `FOR UPDATE`, mark upsert, key lookup, `await work(client)`, insert                                        |
 | Fenced effect | business key         | the same, the key's identity serialized by `pg_advisory_xact_lock` first (no lease row covers two trees)                              |

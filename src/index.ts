@@ -8,6 +8,7 @@
  */
 export { PostgresConnection } from "./connection/postgres-connection.js";
 export type { PostgresConnectionSettings } from "./connection/settings.js";
+export { PostgresListener, type PostgresListenerOptions } from "./connection/listener.js";
 export { PostgresExecutionLeaseRepository } from "./stores/postgres-execution-lease.repository.js";
 export { PostgresExecutionTreeRepository } from "./stores/postgres-execution-tree.repository.js";
 export {

@@ -5,12 +5,16 @@ import {
   ExecutionRecordStatus,
   Injectable,
   type ChildExecutionEnd,
+  type ChildExecutionQueueWatch,
   type ChildExecutionQueueDepth,
   type QueuedChildExecution,
 } from "@agboss/core";
 import { z } from "zod";
 import { PostgresConnection } from "../connection/postgres-connection.js";
 import { changesOf, firstRowOf } from "../connection/query.js";
+
+/** The channel a save that queues a child notifies (agbossjs/agboss#777). */
+const CHILD_QUEUED_CHANNEL = "agboss_child_queued";
 
 const QueueRow = z.object({
   tenant_id: z.string(),
@@ -53,16 +57,19 @@ function childOf(row: unknown): QueuedChildExecution {
 /**
  * Queues a child, or queues it again: a paused child (resumed), or a running claim whose worker
  * lost its lease (the caller names that claim's `claimedAt`) — one statement, so of two instances
- * saving one child exactly one gets `true`.
+ * saving one child exactly one gets `true`. A save that queues a child notifies the queue's
+ * channel in the same statement (agbossjs/agboss#777), with the stores' schema as its payload:
+ * delivered at commit, so a woken instance's claim sees the row.
  */
-const SAVE = `INSERT INTO agboss_child_execution_queue AS queued (tenant_id, execution_id,
+const SAVE = `WITH saved AS (INSERT INTO agboss_child_execution_queue AS queued (tenant_id, execution_id,
     root_execution_id, parent_execution_id, root_workflow, workflow, depth, status, run, queued_at)
   VALUES ($1, $2, $3, $4, $5, $6, $7, 'queued', $8, $9)
   ON CONFLICT (tenant_id, execution_id) DO UPDATE SET status = 'queued', run = EXCLUDED.run,
     queued_at = EXCLUDED.queued_at, instance_id = NULL, claimed_at = NULL, ended_at = NULL,
     failure = NULL
   WHERE queued.status = 'paused' OR (queued.status = 'running' AND queued.claimed_at = $10)
-  RETURNING 1`;
+  RETURNING 1)
+  SELECT pg_notify('${CHILD_QUEUED_CHANNEL}', current_schema()) FROM saved`;
 
 /**
  * Claims the first queued child — the deepest, then the longest waiting — in one statement: the
@@ -100,7 +107,10 @@ const DepthRow = z.object({ queued: z.number(), running: z.number(), oldest: z.d
  * SKIP LOCKED LIMIT 1) UPDATE … FROM first`, so of two instances exactly one claims a child, a claim
  * marks exactly the child it answers, and neither waits on the other's; a
  * completion is one `UPDATE` matching this instance's running row. Times are the framework
- * clock's. Listed in `@Application({ providers })` with `postgresUrl`.
+ * clock's. `watchQueued` is a `LISTEN` on the channel every save that queues a child notifies
+ * (agbossjs/agboss#777): one connection of its own per instance, beside the pool, idle while
+ * nothing is queued; behind a transaction-mode pooler (PgBouncer) notifications do not arrive, and
+ * the children are claimed at the sweep. Listed in `@Application({ providers })` with `postgresUrl`.
  */
 @Injectable({ deps: [PostgresConnection, Clock, ApplicationContext] })
 export class PostgresChildExecutionQueueRepository extends ChildExecutionQueueRepository {
@@ -130,6 +140,17 @@ export class PostgresChildExecutionQueueRepository extends ChildExecutionQueueRe
       child.claimedAt ?? null,
     ]);
     return saved === 1;
+  }
+
+  /** Wakes `onQueued` whenever any instance queues a child in this schema (agbossjs/agboss#777). */
+  override async watchQueued(onQueued: () => void): Promise<ChildExecutionQueueWatch> {
+    const listener = await this.connection.listen({
+      channel: CHILD_QUEUED_CHANNEL,
+      payload: await this.connection.schema(),
+      clock: this.clock,
+      onNotify: onQueued,
+    });
+    return { close: () => listener.close() };
   }
 
   async findByTenantIdAndExecutionId(
