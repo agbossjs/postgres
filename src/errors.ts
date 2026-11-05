@@ -92,3 +92,20 @@ export class PostgresSettingsError extends AGBossError {
   static override readonly code: string = "postgres.settings-invalid";
   override name = "PostgresSettingsError";
 }
+
+/**
+ * The ledger's pruning mark (agbossjs/agboss#771, the one row of `agboss_cost_entries_pruned` that
+ * migration 0023 seeds) is gone — deleted by hand: without it a save cannot tell an entry the ledger
+ * pruned from a new one, so it adds nothing and fails. Put the row back with a mark no lower than
+ * any prune's cutoff (`now − ledgerEntryRetention` covers every prune the sweep made).
+ */
+export class PostgresLedgerMarkMissingError extends AGBossError {
+  static override readonly code: string = "postgres.ledger-mark-missing";
+  override name = "PostgresLedgerMarkMissingError";
+
+  constructor() {
+    super(
+      "the ledger's pruning mark is missing (agboss_cost_entries_pruned has no row): nothing was added — insert it with a mark no lower than any prune's cutoff, e.g. INSERT INTO agboss_cost_entries_pruned VALUES (true, now())",
+    );
+  }
+}

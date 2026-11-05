@@ -18,6 +18,7 @@ export {
   type MigrationReport,
 } from "./migrations/migrate.js";
 export {
+  PostgresLedgerMarkMissingError,
   PostgresMigrationChangedError,
   PostgresSchemaMissingError,
   PostgresSchemaTooNewError,

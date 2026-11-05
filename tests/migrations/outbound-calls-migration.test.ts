@@ -29,6 +29,7 @@ const BEFORE = {
   "0020_pauses_by_tree.sql": null,
   "0021_pause_answers_by_tree.sql": null,
   "0022_cost_ledger_entries.sql": null,
+  "0023_cost_entries_pruned.sql": null,
 };
 
 const leasesOn = (url: string, clock: VirtualClock, instanceId: string) =>
@@ -70,7 +71,7 @@ describe("migrations 0014–0016 keep the leases written before them", () => {
     await clock.advance(seconds(31));
 
     expect(report.applied.map((migration) => migration.version)).toEqual([
-      14, 15, 16, 17, 18, 19, 20, 21, 22,
+      14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
     ]);
     const { rows } = await onSchema(
       url,

@@ -1,14 +1,20 @@
 import { BudgetScope, type CostCounter, type UsageRecord } from "@agboss/core";
 import { usd } from "@agboss/core/units";
 import { describe, expect, it } from "vitest";
-import { PostgresCostLedgerRepository } from "../../src/index.js";
-import { onSchema, testDatabase } from "../support/database.js";
+import {
+  migratePostgres,
+  PostgresCostLedgerRepository,
+  PostgresLedgerMarkMissingError,
+} from "../../src/index.js";
+import { freshSchema, onSchema, testDatabase } from "../support/database.js";
 import { connectionTo } from "../support/stores.js";
 
 /**
  * The cost ledger's edges beyond the contract: a counter given twice counts twice, nothing is
  * written without counters or calls, the period's rollover starts a new row, overlapping saves in
- * opposite orders never deadlock, an unknown scope is refused, and a lost connection rejects.
+ * opposite orders never deadlock, an unknown scope is refused, and a lost connection rejects;
+ * agbossjs/agboss#771: lost answers retried while other instances prune never count twice, and a
+ * ledger whose pruning mark was deleted adds nothing and says why.
  */
 const database = testDatabase();
 
@@ -114,5 +120,63 @@ describe("PostgresCostLedgerRepository", () => {
     await expect(down.saveAll([day("down")], [call(1)])).rejects.toThrow();
     await expect(down.findMaxSpendByAccount(account)).rejects.toThrow();
     await expect(down.saveMaxSpend(account, usd(1))).rejects.toThrow();
+  });
+});
+
+describe("PostgresCostLedgerRepository: pruning (agbossjs/agboss#771)", () => {
+  /** A schema of its own, migrated: the pruning mark is the schema's one row. */
+  const migrated = async (): Promise<string> => {
+    const url = await freshSchema();
+    await migratePostgres({ url });
+    return url;
+  };
+
+  const entry = (index: number): UsageRecord => ({
+    ...call(0.125),
+    ledgerId: `pass-r:${String(index)}`,
+    madeAt: new Date(Date.parse("2026-10-18T08:00:00.000Z") + index * 1000).toISOString(),
+  });
+
+  it("lost answers retried on two instances while a third prunes again and again: each entry once", async () => {
+    const url = await migrated();
+    const [first, second, sweeper] = [ledgerOn(url), ledgerOn(url), ledgerOn(url)];
+    const entries = Array.from({ length: 40 }, (_, index) => entry(index));
+    // every write landed; its answer was lost
+    for (const record of entries) await first.saveAll([day("race")], [record]);
+
+    const outcomes = await Promise.allSettled([
+      ...entries.map((record, index) =>
+        (index % 2 === 0 ? first : second).saveAll([day("race")], [record]),
+      ),
+      ...Array.from({ length: 10 }, (_, step) =>
+        sweeper.deleteEntriesByMadeAtBefore(
+          new Date(Date.parse("2026-10-18T08:00:00.000Z") + (step + 1) * 4000),
+        ),
+      ),
+    ]);
+
+    for (const outcome of outcomes)
+      if (outcome.status === "rejected")
+        expect(outcome.reason).toMatchObject({ code: "cost-ledger.entry-expired" });
+    expect(await first.findSpentByCounter(day("race"))).toBe(5);
+    const held = await onSchema(url, "SELECT count(*)::int AS n FROM agboss_cost_entries");
+    expect(held.rows).toEqual([{ n: 0 }]);
+  });
+
+  it("without its pruning mark a save adds nothing and fails, naming the row", async () => {
+    const url = await migrated();
+    const ledger = ledgerOn(url);
+    await onSchema(url, "DELETE FROM agboss_cost_entries_pruned");
+
+    await expect(ledger.saveAll([day("unmarked")], [entry(0), call(1)])).rejects.toBeInstanceOf(
+      PostgresLedgerMarkMissingError,
+    );
+    await expect(ledger.saveAll([day("unmarked")], [call(1)])).rejects.toThrow(
+      /agboss_cost_entries_pruned has no row/,
+    );
+    const counters = await onSchema(url, "SELECT count(*)::int AS n FROM agboss_cost_counters");
+    expect(counters.rows).toEqual([{ n: 0 }]);
+    // a prune without it removes nothing
+    await ledger.deleteEntriesByMadeAtBefore(new Date("2026-10-18T09:00:00.000Z"));
   });
 });

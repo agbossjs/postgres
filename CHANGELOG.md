@@ -21,6 +21,15 @@ own process, no shared disk — share every store on one database.
   (`PostgresConnection.listen`): an idle pod claims at once instead of at its next sweep. Idle on an
   empty queue; a dropped connection reconnects and wakes once; a notification lost costs at most a
   sweep.
+- **The ledger's entries are pruned** (agbossjs/agboss#771) — migration `0023_cost_entries_pruned`:
+  `agboss_cost_entries.made_at` (indexed; entries of before dated `infinity`, never pruned) and
+  `agboss_cost_entries_pruned`, the pruning mark. `deleteEntriesByMadeAtBefore` raises the mark and
+  deletes in one statement; `saveAll` reads the mark `FOR SHARE` in its own statement and refuses an
+  entry made before it that the table does not hold (`CostLedgerEntryExpiredError`, nothing added).
+  Without the mark's row a save fails with `PostgresLedgerMarkMissingError`
+  (`postgres.ledger-mark-missing`) and adds nothing. 0023's header also corrects 0022's, which
+  described dropped ids.
+
 - **Every store of the core on PostgreSQL** (#482, #483; #1, #3, #5, #8) — `PostgresExecutionLeaseRepository`,
   `PostgresExecutionRecordRepository`, `PostgresExecutionTreeRepository`,
   `PostgresPausedExecutionRepository`, `PostgresChildExecutionQueueRepository`,

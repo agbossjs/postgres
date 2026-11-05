@@ -31,6 +31,7 @@ describe("AC4: migration 0013 keeps the rows written before it", () => {
           "0020_pauses_by_tree.sql": null,
           "0021_pause_answers_by_tree.sql": null,
           "0022_cost_ledger_entries.sql": null,
+          "0023_cost_entries_pruned.sql": null,
         }),
       ),
     );
