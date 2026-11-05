@@ -15,6 +15,12 @@ own process, no shared disk — share every store on one database.
 
 ### Added
 
+- **A child queued by one pod wakes the others** (#777) — `PostgresChildExecutionQueueRepository`
+  notifies `agboss_child_queued` (payload: its schema) in the statement that queues a child and
+  implements the core's `watchQueued` with a `LISTEN` on a connection of its own per instance
+  (`PostgresConnection.listen`): an idle pod claims at once instead of at its next sweep. Idle on an
+  empty queue; a dropped connection reconnects and wakes once; a notification lost costs at most a
+  sweep.
 - **Every store of the core on PostgreSQL** (#482, #483; #1, #3, #5, #8) — `PostgresExecutionLeaseRepository`,
   `PostgresExecutionRecordRepository`, `PostgresExecutionTreeRepository`,
   `PostgresPausedExecutionRepository`, `PostgresChildExecutionQueueRepository`,

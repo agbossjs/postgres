@@ -9,6 +9,7 @@ import pg from "pg";
 import { z } from "zod";
 import { migrationsIn } from "../migrations/files.js";
 import { once } from "./once.js";
+import { PostgresListener, type PostgresListenerOptions } from "./listener.js";
 import { checkSchema } from "../migrations/schema-check.js";
 import {
   DEFAULT_POOL_SIZE,
@@ -54,6 +55,14 @@ export class PostgresConnection implements OnInit, OnDestroy {
     // and an operation in flight rejects with its own error — nothing to do here but not crash
     this.pool.on("error", () => undefined);
     this.#schema = once(() => this.#currentSchema());
+  }
+
+  /**
+   * A `LISTEN` on `channel` over a connection of its own, outside the pool (agbossjs/agboss#777):
+   * what a store's watch is made of. Rejects when its first connection fails.
+   */
+  listen(options: Omit<PostgresListenerOptions, "url">): Promise<PostgresListener> {
+    return PostgresListener.open({ ...options, url: this.#settings.url });
   }
 
   /**

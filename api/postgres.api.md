@@ -16,6 +16,7 @@ import { CheckpointTuple } from '@langchain/langgraph-checkpoint';
 import { ChildExecutionEnd } from '@agboss/core';
 import { ChildExecutionQueueDepth } from '@agboss/core';
 import { ChildExecutionQueueRepository } from '@agboss/core';
+import { ChildExecutionQueueWatch } from '@agboss/core';
 import { Class } from '@agboss/core';
 import { Clock } from '@agboss/core';
 import type { ConfigSnapshot } from '@agboss/core';
@@ -146,11 +147,13 @@ export class PostgresChildExecutionQueueRepository extends ChildExecutionQueueRe
     ping(): Promise<void>;
     // (undocumented)
     saveIfAbsent(child: QueuedChildExecution): Promise<boolean>;
+    watchQueued(onQueued: () => void): Promise<ChildExecutionQueueWatch>;
 }
 
 // @public
 export class PostgresConnection implements OnInit, OnDestroy {
     constructor(source: ApplicationContext | PostgresConnectionSettings);
+    listen(options: Omit<PostgresListenerOptions, "url">): Promise<PostgresListener>;
     onDestroy(): Promise<void>;
     onInit(): Promise<void>;
     ping(): Promise<void>;
@@ -325,6 +328,23 @@ export class PostgresFencedEffectRepository extends FencedEffectRepository<PoolC
 }
 
 // @public
+export class PostgresListener {
+    close(): Promise<void>;
+    static open(options: PostgresListenerOptions): Promise<PostgresListener>;
+}
+
+// @public
+export interface PostgresListenerOptions {
+    readonly channel: string;
+    // (undocumented)
+    readonly clock: Clock;
+    // (undocumented)
+    readonly onNotify: () => void;
+    readonly payload: string;
+    readonly url: string;
+}
+
+// @public
 export class PostgresMeshRequestRepository extends MeshRequestRepository {
     constructor(connection: PostgresConnection);
     // (undocumented)
@@ -476,6 +496,8 @@ export interface SchemaVersions {
 
 // Warnings were encountered during analysis:
 //
+// src/connection/listener.ts:22:3 - (ae-undocumented) Missing documentation for "clock".
+// src/connection/listener.ts:23:3 - (ae-undocumented) Missing documentation for "onNotify".
 // src/errors.ts:27:3 - (ae-undocumented) Missing documentation for "code".
 // src/errors.ts:28:12 - (ae-undocumented) Missing documentation for "name".
 // src/errors.ts:29:3 - (ae-undocumented) Missing documentation for "applied".
@@ -499,13 +521,13 @@ export interface SchemaVersions {
 // src/stores/postgres-checkpoint-saver.ts:55:9 - (ae-undocumented) Missing documentation for "put".
 // src/stores/postgres-checkpoint-saver.ts:65:9 - (ae-undocumented) Missing documentation for "putWrites".
 // src/stores/postgres-checkpoint-saver.ts:74:9 - (ae-undocumented) Missing documentation for "deleteThread".
-// src/stores/postgres-child-execution-queue.repository.ts:115:3 - (ae-undocumented) Missing documentation for "ping".
-// src/stores/postgres-child-execution-queue.repository.ts:119:9 - (ae-undocumented) Missing documentation for "saveIfAbsent".
-// src/stores/postgres-child-execution-queue.repository.ts:135:9 - (ae-undocumented) Missing documentation for "findByTenantIdAndExecutionId".
-// src/stores/postgres-child-execution-queue.repository.ts:147:9 - (ae-undocumented) Missing documentation for "claimFirstByStatusQueuedOrderByDepthDesc".
-// src/stores/postgres-child-execution-queue.repository.ts:155:9 - (ae-undocumented) Missing documentation for "completeByTenantIdAndExecutionId".
-// src/stores/postgres-child-execution-queue.repository.ts:176:9 - (ae-undocumented) Missing documentation for "deleteAllByTenantIdAndRootExecutionId".
-// src/stores/postgres-child-execution-queue.repository.ts:187:9 - (ae-undocumented) Missing documentation for "findQueueDepth".
+// src/stores/postgres-child-execution-queue.repository.ts:125:3 - (ae-undocumented) Missing documentation for "ping".
+// src/stores/postgres-child-execution-queue.repository.ts:129:9 - (ae-undocumented) Missing documentation for "saveIfAbsent".
+// src/stores/postgres-child-execution-queue.repository.ts:156:9 - (ae-undocumented) Missing documentation for "findByTenantIdAndExecutionId".
+// src/stores/postgres-child-execution-queue.repository.ts:168:9 - (ae-undocumented) Missing documentation for "claimFirstByStatusQueuedOrderByDepthDesc".
+// src/stores/postgres-child-execution-queue.repository.ts:176:9 - (ae-undocumented) Missing documentation for "completeByTenantIdAndExecutionId".
+// src/stores/postgres-child-execution-queue.repository.ts:197:9 - (ae-undocumented) Missing documentation for "deleteAllByTenantIdAndRootExecutionId".
+// src/stores/postgres-child-execution-queue.repository.ts:208:9 - (ae-undocumented) Missing documentation for "findQueueDepth".
 // src/stores/postgres-cost-ledger.repository.ts:81:3 - (ae-undocumented) Missing documentation for "ping".
 // src/stores/postgres-cost-ledger.repository.ts:85:9 - (ae-undocumented) Missing documentation for "findSpentByCounter".
 // src/stores/postgres-cost-ledger.repository.ts:95:9 - (ae-undocumented) Missing documentation for "saveAll".
