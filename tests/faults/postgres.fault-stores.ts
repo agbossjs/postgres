@@ -1,6 +1,6 @@
 import type { Secret } from "@agboss/core";
 import { secret } from "@agboss/core";
-import type { FaultStores } from "@agboss/core/testing/faults";
+import { FaultStoreTime, type FaultStores } from "@agboss/core/testing/faults";
 import type { PoolClient } from "pg";
 import {
   PostgresCheckpointSaver,
@@ -35,6 +35,9 @@ export class PostgresFaultEnvironment {
 export const FAULT_BUSINESS_ROWS_DDL = "CREATE TABLE fault_business_rows (row text NOT NULL)";
 
 export const faultStores: FaultStores<PoolClient> = {
+  // agbossjs/agboss#799: the leases expire by the database's clock_timestamp(), at the real rate —
+  // the fault suite reads the history on it, whatever the pods' timeScale
+  storeTime: FaultStoreTime.Database,
   providers: [
     PostgresConnection,
     PostgresCheckpointSaver,
