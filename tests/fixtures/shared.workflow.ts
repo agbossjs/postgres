@@ -171,5 +171,10 @@ export class LimitedWorkflowFinish {}
 export class LimitedWorkflow {}
 
 /** AC4: what the processes serve over A2A — the limited workflow. */
-@A2AExpose({ name: "process-a2a-expose", version: "1.0.0", exports: [LimitedWorkflowStart] })
+@A2AExpose({
+  name: "process-a2a-expose",
+  version: "1.0.0",
+  description: "Answers jobs",
+  exports: [LimitedWorkflowStart],
+})
 export class ProcessA2AExpose {}

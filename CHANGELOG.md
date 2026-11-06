@@ -15,6 +15,10 @@ own process, no shared disk — share every store on one database.
 
 ### Added
 
+- **A run's record by its id** (#808) — `PostgresExecutionRecordRepository.findByTenantIdAndRunId`,
+  the core's new record contract method (an A2A task's read repair finds its root record however
+  many later turns its thread has), on migration 0025's index `(tenant_id, run_id)`. The process
+  harness serves A2A v1.0; the old wire's trusted mesh dedupe test is gone with that wire.
 - **A child queued by one pod wakes the others** (#777) — `PostgresChildExecutionQueueRepository`
   notifies `agboss_child_queued` (payload: its schema) in the statement that queues a child and
   implements the core's `watchQueued` with a `LISTEN` on a connection of its own per instance

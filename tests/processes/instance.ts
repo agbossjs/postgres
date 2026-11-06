@@ -136,11 +136,16 @@ async function answer(app: App, command: Command): Promise<void> {
 }
 
 const app = await createApp(ProcessApplication, { env: "process" });
-const server = createServer(
-  a2aHttpListener(app, { expose: ProcessA2AExpose, callerResolver: OrdersCallerResolver }),
-);
+// the listener names its public URL in its Agent Card (agbossjs/agboss#808): built once listening
+const served: { listener?: ReturnType<typeof a2aHttpListener> } = {};
+const server = createServer((req, res) => served.listener?.(req, res));
 await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
 const { port } = server.address() as AddressInfo;
+served.listener = a2aHttpListener(app, {
+  expose: ProcessA2AExpose,
+  callerResolver: OrdersCallerResolver,
+  publicUrl: `http://127.0.0.1:${String(port)}`,
+});
 const { instanceId } = app.resolve(ApplicationContext);
 reportHolds(instanceId);
 emit("ready", { instanceId, pid: process.pid, port });

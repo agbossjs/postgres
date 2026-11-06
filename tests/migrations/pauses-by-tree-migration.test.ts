@@ -65,6 +65,7 @@ async function schemaWithAnApprovedChildPause(): Promise<string> {
         "0022_cost_ledger_entries.sql": null,
         "0023_cost_entries_pruned.sql": null,
         "0024_pause_kind.sql": null,
+        "0025_records_by_run.sql": null,
       }),
     ),
   );
@@ -99,7 +100,7 @@ describe("migration 0020 keeps the ids of every execution that paused, and finds
       new TestApplicationContext({}, "instance-1"),
     );
 
-    expect(report.applied.map((migration) => migration.version)).toEqual([20, 21, 22, 23, 24]);
+    expect(report.applied.map((migration) => migration.version)).toEqual([20, 21, 22, 23, 24, 25]);
     const { rows } = await onSchema(
       url,
       "SELECT execution_id, tenant_id FROM agboss_execution_ids ORDER BY execution_id",
@@ -147,6 +148,7 @@ describe("migration 0020 keeps the ids of every execution that paused, and finds
           "0022_cost_ledger_entries.sql": null,
           "0023_cost_entries_pruned.sql": null,
           "0024_pause_kind.sql": null,
+          "0025_records_by_run.sql": null,
         }),
       ),
     );

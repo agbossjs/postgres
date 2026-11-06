@@ -26,6 +26,21 @@ export async function lastRecordsOf(
   );
 }
 
+/** The latest record a run of the tenant wrote (agbossjs/agboss#808), however old; `undefined`: none. */
+export async function recordByRunIdOf(
+  database: Queryable,
+  tenantId: string,
+  runId: string,
+): Promise<StoredRecord | undefined> {
+  const found = await rowsOf(
+    database,
+    `SELECT ${RECORD_COLUMNS} FROM agboss_execution_records
+       WHERE tenant_id = $1 AND run_id = $2 ORDER BY seq DESC LIMIT 1`,
+    [tenantId, runId],
+  );
+  return recordsOf(found)[0];
+}
+
 /** The records of `ids`, in the order they were appended. */
 export async function recordsByIds(
   database: Queryable,

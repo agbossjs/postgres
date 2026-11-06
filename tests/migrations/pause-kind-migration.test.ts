@@ -59,7 +59,12 @@ const OLD_ROWS = [
 /** A schema at 0023 holding the rows of before. */
 async function schemaWithOldPauses(): Promise<string> {
   const url = await freshSchema();
-  await migrateWith({ url }, migrationsIn(migrationsFolder({ "0024_pause_kind.sql": null })));
+  await migrateWith(
+    { url },
+    migrationsIn(
+      migrationsFolder({ "0024_pause_kind.sql": null, "0025_records_by_run.sql": null }),
+    ),
+  );
   for (const record of OLD_ROWS)
     await onSchema(
       url,
@@ -77,7 +82,7 @@ describe("migration 0024 stores each pause's kind and names its step", () => {
     const report = await migratePostgres({ url });
     const pauses = new PostgresPausedExecutionRepository(connectionTo(url), new VirtualClock());
 
-    expect(report.applied.map((migration) => migration.version)).toEqual([24]);
+    expect(report.applied.map((migration) => migration.version)).toEqual([24, 25]);
     expect(await pauses.findByTenantIdAndPauseId("acme", "approval-pause")).toMatchObject({
       kind: PauseKind.Approval,
       step: "refund-agent",
