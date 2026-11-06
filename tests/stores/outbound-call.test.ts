@@ -3,7 +3,7 @@ import {
   OutboundCallLeaseState,
   OutboundCallStatus,
   type ExecutionLease,
-  type FencedEffectKey,
+  type EffectKey,
   type OutboundCallIntent,
 } from "@agboss/core";
 import { VirtualClock, TestStoreClock } from "@agboss/core/testing";
@@ -45,7 +45,7 @@ function instanceOn(clock: VirtualClock, index: number, poolSize = 2) {
 const instancesOn = (clock: VirtualClock) =>
   Array.from({ length: RACERS }, (_, index) => instanceOn(clock, index));
 
-const keyOf = (lease: ExecutionLease, extra: Partial<FencedEffectKey> = {}): FencedEffectKey => ({
+const keyOf = (lease: ExecutionLease, extra: Partial<EffectKey> = {}): EffectKey => ({
   scopeKey: `${lease.tenantId}:${lease.rootExecutionId}`,
   tenantId: lease.tenantId,
   leaseExecutionId: lease.rootExecutionId,
@@ -55,7 +55,7 @@ const keyOf = (lease: ExecutionLease, extra: Partial<FencedEffectKey> = {}): Fen
   ...extra,
 });
 
-const intentOf = (key: FencedEffectKey, owner = "owner-1"): OutboundCallIntent => ({
+const intentOf = (key: EffectKey, owner = "owner-1"): OutboundCallIntent => ({
   rootExecutionId: key.leaseExecutionId,
   executionId: key.leaseExecutionId,
   workflow: "charge-workflow",

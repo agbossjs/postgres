@@ -1,4 +1,4 @@
-import { ExecutionFencedError, type FencedEffectKey } from "@agboss/core";
+import { ExecutionFencedError, type EffectKey } from "@agboss/core";
 import type { PoolClient } from "pg";
 import { z } from "zod";
 import { firstRowOf } from "../connection/query.js";
@@ -40,7 +40,7 @@ const MarkRow = z.object({ highest_token: z.number(), now: z.date() });
  */
 export async function checkFence(
   client: PoolClient,
-  key: FencedEffectKey,
+  key: EffectKey,
   now: Date | null,
 ): Promise<Date> {
   const { scopeKey, token } = key;

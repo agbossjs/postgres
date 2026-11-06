@@ -7,7 +7,7 @@ import {
   OutboundCallStatus,
   pendingOutboundCallOf,
   type Class,
-  type FencedEffectKey,
+  type EffectKey,
   type OutboundCallClaim,
   type OutboundCallFailure,
   type OutboundCallIntent,
@@ -82,7 +82,7 @@ export class PostgresOutboundCallRepository extends OutboundCallRepository {
     return this.connection.ping();
   }
 
-  findByKey(key: FencedEffectKey): Promise<OutboundCallRecord | undefined> {
+  findByKey(key: EffectKey): Promise<OutboundCallRecord | undefined> {
     return this.#fenced(key, async (client, now) => {
       const [where, values] = whereOf(key, 1);
       const row = await firstRowOf(
@@ -95,7 +95,7 @@ export class PostgresOutboundCallRepository extends OutboundCallRepository {
     });
   }
 
-  saveIfAbsent(key: FencedEffectKey, intent: OutboundCallIntent): Promise<boolean> {
+  saveIfAbsent(key: EffectKey, intent: OutboundCallIntent): Promise<boolean> {
     return this.#fenced(key, async (client, now) => {
       // its first attempt starts at the store's time (agbossjs/agboss#658: the database's own)
       const startedAt = now.toISOString();
@@ -121,7 +121,7 @@ export class PostgresOutboundCallRepository extends OutboundCallRepository {
   }
 
   markPending(
-    key: FencedEffectKey,
+    key: EffectKey,
     expected: OutboundCallState,
     claim: OutboundCallClaim,
   ): Promise<boolean> {
@@ -134,7 +134,7 @@ export class PostgresOutboundCallRepository extends OutboundCallRepository {
     }));
   }
 
-  markCompleted(key: FencedEffectKey, attemptOwner: string, result: string): Promise<boolean> {
+  markCompleted(key: EffectKey, attemptOwner: string, result: string): Promise<boolean> {
     const status = OutboundCallStatus.Completed;
     const endedAt = this.clock.now().toISOString();
     return this.#moved(key, { status: OutboundCallStatus.Pending, attemptOwner }, () => ({
@@ -144,11 +144,7 @@ export class PostgresOutboundCallRepository extends OutboundCallRepository {
     }));
   }
 
-  markFailed(
-    key: FencedEffectKey,
-    attemptOwner: string,
-    failure: OutboundCallFailure,
-  ): Promise<boolean> {
+  markFailed(key: EffectKey, attemptOwner: string, failure: OutboundCallFailure): Promise<boolean> {
     const status = OutboundCallStatus.Failed;
     const endedAt = this.clock.now().toISOString();
     const { name, code, message } = failure;
@@ -202,7 +198,7 @@ export class PostgresOutboundCallRepository extends OutboundCallRepository {
    * decided by — written under the key's lease and token only while the row is still `from`; one
    * statement, `true` when it changed the row.
    */
-  #moved(key: FencedEffectKey, from: AsRead, changeAt: (now: Date) => Change): Promise<boolean> {
+  #moved(key: EffectKey, from: AsRead, changeAt: (now: Date) => Change): Promise<boolean> {
     return this.#fenced(key, async (client, now) => {
       const change = changeAt(now);
       const fields = { ...change.fields, token: key.token, leaseExecutionId: key.leaseExecutionId };
@@ -232,7 +228,7 @@ export class PostgresOutboundCallRepository extends OutboundCallRepository {
 
   /** `work` after the fencing checks (the lease row locked, the mark raised), in one transaction. */
   async #fenced<TValue>(
-    key: FencedEffectKey,
+    key: EffectKey,
     work: (client: PoolClient, now: Date) => Promise<TValue>,
   ): Promise<TValue> {
     checkedEffectName(key.name);

@@ -9,7 +9,7 @@ import {
   replayedFromOf,
   storedKeyFactsOf,
   type Class,
-  type FencedEffectKey,
+  type EffectKey,
   type FencedEffectOutcome,
   type FencedEffectWork,
 } from "@agboss/core";
@@ -35,7 +35,7 @@ const FactsRow = z.object({ fingerprint: z.string().nullable(), origin: z.unknow
 const LOCK_BUSINESS_KEY = "SELECT pg_advisory_xact_lock(hashtextextended($1, 508))";
 
 /** The row of `key`: by its step, or by its tenant, name and business key. */
-async function storedRowOf(client: PoolClient, key: FencedEffectKey): Promise<unknown> {
+async function storedRowOf(client: PoolClient, key: EffectKey): Promise<unknown> {
   if (key.businessKey === undefined)
     return firstRowOf(
       client,
@@ -57,7 +57,7 @@ async function storedRowOf(client: PoolClient, key: FencedEffectKey): Promise<un
 /** Writes `key`'s result `text` under its token at `now`, in the table of its kind. */
 async function insertRowOf(
   client: PoolClient,
-  key: FencedEffectKey,
+  key: EffectKey,
   now: Date,
   text: string,
 ): Promise<void> {
@@ -90,7 +90,7 @@ async function insertRowOf(
 }
 
 /** The replay of a stored row: its result, its token, the step it names (a business key's). */
-function replayOf<TResult>(key: FencedEffectKey, row: unknown): FencedEffectOutcome<TResult> {
+function replayOf<TResult>(key: EffectKey, row: unknown): FencedEffectOutcome<TResult> {
   const { token, result } = ResultRow.parse(row);
   const facts = key.businessKey === undefined ? undefined : FactsRow.parse(row);
   const replayedFrom =
@@ -142,7 +142,7 @@ export class PostgresFencedEffectRepository extends FencedEffectRepository<PoolC
   }
 
   protected async runInTransaction<TResult>(
-    key: FencedEffectKey,
+    key: EffectKey,
     work: FencedEffectWork<PoolClient, TResult>,
   ): Promise<FencedEffectOutcome<TResult>> {
     checkedEffectName(key.name);
@@ -164,7 +164,7 @@ export class PostgresFencedEffectRepository extends FencedEffectRepository<PoolC
 
   async #effect<TResult>(
     client: PoolClient,
-    key: FencedEffectKey,
+    key: EffectKey,
     work: FencedEffectWork<PoolClient, TResult>,
   ): Promise<FencedEffectOutcome<TResult>> {
     const now = this.clock.now();
