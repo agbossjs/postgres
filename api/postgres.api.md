@@ -4,6 +4,15 @@
 
 ```ts
 
+import { A2AMessageKey } from '@agboss/core';
+import { A2AMessageRecord } from '@agboss/core';
+import { A2ATaskKey } from '@agboss/core';
+import { A2ATaskPage } from '@agboss/core';
+import { A2ATaskQuery } from '@agboss/core';
+import { A2ATaskRecord } from '@agboss/core';
+import { A2ATaskRepository } from '@agboss/core';
+import { A2ATaskSave } from '@agboss/core';
+import { A2ATaskStatus } from '@agboss/core';
 import { AGBossError } from '@agboss/core';
 import { ApplicationContext } from '@agboss/core';
 import { BaseCheckpointSaver } from '@langchain/langgraph-checkpoint';
@@ -45,6 +54,7 @@ import { MeshRequestKey } from '@agboss/core';
 import { MeshRequestRecord } from '@agboss/core';
 import { MeshRequestRepository } from '@agboss/core';
 import type { Milliseconds } from '@agboss/core/units';
+import { NewA2ATask } from '@agboss/core';
 import type { NewSummary } from '@agboss/core';
 import type { NewTern } from '@agboss/core';
 import type { NewThread } from '@agboss/core';
@@ -111,6 +121,31 @@ export interface MigrationReport {
     readonly checkpointMigrations: number;
     readonly schema: string;
     readonly version: number;
+}
+
+// @public
+export class PostgresA2ATaskRepository extends A2ATaskRepository {
+    constructor(connection: PostgresConnection);
+    // (undocumented)
+    static readonly backend: string | undefined;
+    // (undocumented)
+    compareAndSetStatus(key: A2ATaskKey, expectedVersion: number, status: A2ATaskStatus, statusAt: Date): Promise<A2ATaskRecord | undefined>;
+    // (undocumented)
+    deleteTerminalByStatusAtBefore(cutoff: Date): Promise<void>;
+    // (undocumented)
+    findById(key: A2ATaskKey): Promise<A2ATaskRecord | undefined>;
+    // (undocumented)
+    findByMessage(key: A2AMessageKey): Promise<A2AMessageRecord | undefined>;
+    // (undocumented)
+    list(query: A2ATaskQuery): Promise<A2ATaskPage>;
+    // (undocumented)
+    ping(): Promise<void>;
+    // (undocumented)
+    saveIfAbsent(task: NewA2ATask): Promise<A2ATaskSave>;
+    // (undocumented)
+    saveMessageIfAbsent(message: A2AMessageRecord): Promise<A2AMessageRecord | undefined>;
+    // (undocumented)
+    saveReplyIfAbsent(key: A2AMessageKey, reply: unknown): Promise<boolean>;
 }
 
 // @public
@@ -531,6 +566,16 @@ export interface SchemaVersions {
 // src/errors.ts:104:12 - (ae-undocumented) Missing documentation for "name".
 // src/migrations/migrate.ts:23:3 - (ae-undocumented) Missing documentation for "version".
 // src/migrations/migrate.ts:24:3 - (ae-undocumented) Missing documentation for "name".
+// src/stores/postgres-a2a-task.repository.ts:51:3 - (ae-undocumented) Missing documentation for "backend".
+// src/stores/postgres-a2a-task.repository.ts:57:3 - (ae-undocumented) Missing documentation for "ping".
+// src/stores/postgres-a2a-task.repository.ts:61:3 - (ae-undocumented) Missing documentation for "saveIfAbsent".
+// src/stores/postgres-a2a-task.repository.ts:98:9 - (ae-undocumented) Missing documentation for "saveMessageIfAbsent".
+// src/stores/postgres-a2a-task.repository.ts:103:9 - (ae-undocumented) Missing documentation for "saveReplyIfAbsent".
+// src/stores/postgres-a2a-task.repository.ts:112:3 - (ae-undocumented) Missing documentation for "findById".
+// src/stores/postgres-a2a-task.repository.ts:116:3 - (ae-undocumented) Missing documentation for "findByMessage".
+// src/stores/postgres-a2a-task.repository.ts:120:9 - (ae-undocumented) Missing documentation for "compareAndSetStatus".
+// src/stores/postgres-a2a-task.repository.ts:145:3 - (ae-undocumented) Missing documentation for "list".
+// src/stores/postgres-a2a-task.repository.ts:149:9 - (ae-undocumented) Missing documentation for "deleteTerminalByStatusAtBefore".
 // src/stores/postgres-checkpoint-saver.ts:44:9 - (ae-undocumented) Missing documentation for "getTuple".
 // src/stores/postgres-checkpoint-saver.ts:48:10 - (ae-undocumented) Missing documentation for "list".
 // src/stores/postgres-checkpoint-saver.ts:55:9 - (ae-undocumented) Missing documentation for "put".

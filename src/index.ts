@@ -37,3 +37,4 @@ export { PostgresExecutionHistoryRepository } from "./stores/postgres-execution-
 export { PostgresRateLimitRepository } from "./stores/postgres-rate-limit.repository.js";
 export { PostgresMeshRequestRepository } from "./stores/postgres-mesh-request.repository.js";
 export { PostgresOutboundCallRepository } from "./stores/postgres-outbound-call.repository.js";
+export { PostgresA2ATaskRepository } from "./stores/postgres-a2a-task.repository.js";

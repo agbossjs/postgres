@@ -15,6 +15,12 @@ own process, no shared disk — share every store on one database.
 
 ### Added
 
+- **The A2A tasks, shared by the pods** (#824) — `PostgresA2ATaskRepository`, the core's
+  `A2ATaskRepository` on migration `0026_a2a_tasks` (`agboss_a2a_tasks`, `agboss_a2a_messages`):
+  the same `messageId` sent to two pods at once starts one execution and both answer the same task;
+  `GetTask` / `ListTasks` (with its `totalSize`) read any pod's tasks; the retention sweep removes
+  finished tasks with their messages. Declares `backend = "postgres"`: an application serving A2A on
+  `PostgresExecutionLeaseRepository` lists it, or assembly refuses it (`[a2a.task-store-not-shared]`).
 - **A run's record by its id** (#808) — `PostgresExecutionRecordRepository.findByTenantIdAndRunId`,
   the core's new record contract method (an A2A task's read repair finds its root record however
   many later turns its thread has), on migration 0025's index `(tenant_id, run_id)`. The process
