@@ -1,4 +1,5 @@
-import { BudgetScope, type UsageRecord } from "@agboss/core";
+import { BudgetScope, CostSource, type LedgerEntry } from "@agboss/core";
+import { usd } from "@agboss/core/units";
 import { describe, expect, it } from "vitest";
 import { migratePostgres, PostgresCostLedgerRepository } from "../../src/index.js";
 import { migrationsIn } from "../../src/migrations/files.js";
@@ -20,16 +21,22 @@ const tenantDay = {
   period: "2026-11-04",
 };
 
-const paid = (costUsd: number, ledgerId?: string): UsageRecord => ({
+/** An entry of the ledger (agbossjs/agboss#817: every save is of entries). */
+const paid = (
+  costUsd: number,
+  ledgerId: string,
+  madeAt = new Date("2026-11-04T12:00:00.000Z"),
+): LedgerEntry => ({
   caller: "action:pay-action",
   model: "pay-api",
   inputTokens: 0,
   outputTokens: 0,
   cacheReadTokens: 0,
   cacheWriteTokens: 0,
-  costUsd,
-  costSource: "tool",
-  ...(ledgerId === undefined ? {} : { isRecordedElsewhere: true, ledgerId }),
+  costUsd: usd(costUsd),
+  costSource: CostSource.Tool,
+  ledgerId,
+  madeAt,
 });
 
 describe("migration 0022 adds the ledger's entries", () => {
@@ -58,7 +65,10 @@ describe("migration 0022 adds the ledger's entries", () => {
 
     const report = await migratePostgres({ url });
     const ledger = new PostgresCostLedgerRepository(connectionTo(url));
-    await ledger.saveAll([tenantDay], [paid(0.25, "run-1:pay-action:1#0"), paid(0.5)]);
+    await ledger.saveAll(
+      [tenantDay],
+      [paid(0.25, "run-1:pay-action:1#0"), paid(0.5, "run-1:pay-action:2#0")],
+    );
     await ledger.saveAll([tenantDay], [paid(0.25, "run-1:pay-action:1#0")]);
 
     expect(report.applied.map((migration) => migration.version)).toEqual([
@@ -88,10 +98,10 @@ describe("migration 0023 dates the ledger's entries", () => {
     await onSchema(url, "INSERT INTO agboss_cost_entries (ledger_id) VALUES ('pass-a:0')", []);
 
     const report = await migratePostgres({ url });
-    await before.deleteEntriesByMadeAtBefore(new Date("2030-01-01T00:00:00.000Z"));
+    await before.deleteByMadeAtBefore(new Date("2030-01-01T00:00:00.000Z"));
     await before.saveAll(
       [tenantDay],
-      [{ ...paid(0.25, "pass-a:0"), madeAt: "2026-11-04T08:00:00.000Z" }],
+      [paid(0.25, "pass-a:0", new Date("2026-11-04T08:00:00.000Z"))],
     );
 
     expect(report.applied.map((migration) => migration.version)).toEqual([23, 24, 25, 26, 27, 28]);

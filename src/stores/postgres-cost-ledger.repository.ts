@@ -1,11 +1,12 @@
 import {
+  assertLedgerEntries,
   BudgetScope,
   CostLedgerEntryExpiredError,
   CostLedgerRepository,
   Injectable,
   type BudgetAccount,
   type CostCounter,
-  type UsageRecord,
+  type LedgerEntry,
 } from "@agboss/core";
 import { usd, type Usd } from "@agboss/core/units";
 import { z } from "zod";
@@ -14,9 +15,9 @@ import { changesOf, firstRowOf } from "../connection/query.js";
 import { PostgresLedgerMarkMissingError } from "../errors.js";
 
 /**
- * Adds to every counter of the arrays (one counter per index), in one statement: `$5` — the cost of
- * the records without a `ledgerId` — plus the cost of each entry of `$6` / `$7` / `$8` (ids, costs,
- * `madeAt`s) whose id this statement inserts (agbossjs/agboss#727: an id already there, or inserted
+ * Adds to every counter of the arrays (one counter per index), in one statement: the cost of each
+ * entry of `$5` / `$6` / `$7` (ids, costs, `madeAt`s; every save is of entries, agbossjs/agboss#817)
+ * whose id this statement inserts (agbossjs/agboss#727: an id already there, or inserted
  * by a save that commits first, adds nothing; the unique key makes the later save wait for the
  * earlier one). The pruning mark (agbossjs/agboss#771) is read `FOR SHARE`: a prune's `UPDATE` of it
  * waits for this statement, or this one waits for the prune and reads the new mark (a locked row is
@@ -30,7 +31,7 @@ import { PostgresLedgerMarkMissingError } from "../errors.js";
 const ADD = `WITH mark AS (
     SELECT pruned_before FROM agboss_cost_entries_pruned WHERE id FOR SHARE
   ), given AS (
-    SELECT * FROM unnest($6::text[], $7::double precision[], $8::timestamptz[])
+    SELECT * FROM unnest($5::text[], $6::double precision[], $7::timestamptz[])
       AS entry (ledger_id, cost, made_at)
   ), expired AS (
     SELECT given.ledger_id FROM given, mark
@@ -43,7 +44,7 @@ const ADD = `WITH mark AS (
     ON CONFLICT (ledger_id) DO NOTHING
     RETURNING ledger_id
   ), spent AS (
-    SELECT $5::double precision + COALESCE(sum(given.cost), 0) AS usd
+    SELECT COALESCE(sum(given.cost), 0) AS usd
       FROM given WHERE given.ledger_id IN (SELECT ledger_id FROM inserted)
   ), counted AS (
     INSERT INTO agboss_cost_counters AS counter
@@ -80,26 +81,20 @@ const ExpiredRow = z.object({
   pruned_before: z.date().nullable(),
 });
 
-/** The entries of `records` (one per `ledgerId`, the first), and what the others cost. */
-function entriesOf(records: readonly UsageRecord[]): {
+/** The entries of a save, one per `ledgerId` (the first), as the statement's arrays. */
+function entriesOf(given: readonly LedgerEntry[]): {
   readonly ids: string[];
   readonly costs: number[];
   readonly madeAt: Date[];
-  readonly unnamed: number;
 } {
-  const entries = new Map<string, UsageRecord>();
-  let unnamed = 0;
-  for (const record of records) {
-    if (record.ledgerId === undefined) unnamed += record.costUsd;
-    else if (!entries.has(record.ledgerId)) entries.set(record.ledgerId, record);
-  }
+  const entries = new Map<string, LedgerEntry>();
+  for (const entry of given) if (!entries.has(entry.ledgerId)) entries.set(entry.ledgerId, entry);
   const kept = [...entries.values()];
   return {
     ids: [...entries.keys()],
-    costs: kept.map((record) => record.costUsd),
-    // an entry without a date is the oldest (agbossjs/agboss#771)
-    madeAt: kept.map((record) => new Date(record.madeAt ?? 0)),
-    unnamed,
+    costs: kept.map((entry) => entry.costUsd),
+    // to the millisecond, as made (a timestamptz keeps microseconds)
+    madeAt: kept.map((entry) => entry.madeAt),
   };
 }
 
@@ -111,8 +106,9 @@ const scopeOf = (account: BudgetAccount): string => z.enum(BudgetScope).parse(ac
 
 /**
  * `CostLedgerRepository` on PostgreSQL (agbossjs/agboss#483): one row per counter — budget, scope,
- * scope key and period — so the instances of an application share a tenant's day. `saveAll` is
- * one statement: the entries' ids inserted into `agboss_cost_entries` with their dates (a repeated
+ * scope key and period — so the instances of an application share a tenant's day. `saveAll` takes
+ * ledger entries only (agbossjs/agboss#817: anything else refused by `assertLedgerEntries` first)
+ * and is one statement: the entries' ids inserted into `agboss_cost_entries` with their dates (a repeated
  * one adds nothing, agbossjs/agboss#727; one made before the pruning mark and not held refuses the
  * save, agbossjs/agboss#771), then `INSERT … ON CONFLICT DO UPDATE SET spent_usd = spent_usd + …` of every
  * counter it is given: an addition under the row's own lock, so two instances' concurrent saves
@@ -142,15 +138,16 @@ export class PostgresCostLedgerRepository extends CostLedgerRepository {
     return usd(row === undefined ? 0 : SpentRow.parse(row).spent_usd);
   }
 
-  async saveAll(counters: readonly CostCounter[], records: readonly UsageRecord[]): Promise<void> {
-    if (counters.length === 0 || records.length === 0) return;
-    const { ids, costs, madeAt, unnamed } = entriesOf(records);
+  async saveAll(counters: readonly CostCounter[], entries: readonly LedgerEntry[]): Promise<void> {
+    // a JS caller's record without an identity is refused before anything (agbossjs/agboss#817)
+    assertLedgerEntries(entries);
+    if (counters.length === 0 || entries.length === 0) return;
+    const { ids, costs, madeAt } = entriesOf(entries);
     const row = await firstRowOf(this.connection.pool, ADD, [
       counters.map((counter) => counter.budget),
       counters.map(scopeOf),
       counters.map((counter) => counter.key),
       counters.map((counter) => counter.period),
-      unnamed,
       ids,
       costs,
       madeAt,
@@ -162,7 +159,7 @@ export class PostgresCostLedgerRepository extends CostLedgerRepository {
       throw new CostLedgerEntryExpiredError({ ledgerIds: expired, prunedBefore });
   }
 
-  async deleteEntriesByMadeAtBefore(cutoff: Date): Promise<void> {
+  async deleteByMadeAtBefore(cutoff: Date): Promise<void> {
     await changesOf(this.connection.pool, PRUNE, [cutoff]);
   }
 
