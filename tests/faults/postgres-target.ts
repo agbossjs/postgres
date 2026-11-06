@@ -58,10 +58,10 @@ export function postgresFaultTarget(): FaultSuiteOptions {
   return {
     name: "PostgreSQL",
     stores: POSTGRES_FAULT_STORES,
-    // the pods and PostgreSQL's `clock_timestamp()` at one rate: the lease, its margin and the
-    // linearizability checker's times are the core's own (see above)
+    // the pods and PostgreSQL's `clock_timestamp()` at one rate: the lease and its margin are the
+    // core's own (see above); the history is read on the database's clock as the set declares it
+    // (`faultStores.storeTime`, agbossjs/agboss#799)
     timeScale: 1,
-    storeTimeScale: 1,
     scenarios: scenariosOf(faultShardOf(process.env.AGBOSS_FAULT_SHARD)),
     database: {
       get url() {
