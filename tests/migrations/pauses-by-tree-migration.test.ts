@@ -1,4 +1,10 @@
-import { PauseAnswerer, PauseResolution, PauseStatus, type PauseRecord } from "@agboss/core";
+import {
+  PauseAnswerer,
+  PauseKind,
+  PauseResolution,
+  PauseStatus,
+  type PauseRecord,
+} from "@agboss/core";
 import { TestStoreClock, VirtualClock } from "@agboss/core/testing";
 import { describe, expect, it } from "vitest";
 import {
@@ -37,7 +43,8 @@ const pauseOf = (pauseId: string, rootExecutionId: string): PauseRecord => ({
   visitNumber: 1,
   itemIndex: undefined,
   copyNumber: 1,
-  agent: "child-refund-agent",
+  kind: PauseKind.Approval,
+  step: "child-refund-agent",
   channel: "finance-desk-refund-approval-channel",
   answeredBy: PauseAnswerer.Channel,
   ask: { callId: "call-1", tool: "refund-tool", arguments: { orderId: "A" }, summary: "refund A" },
@@ -57,6 +64,7 @@ async function schemaWithAnApprovedChildPause(): Promise<string> {
         "0021_pause_answers_by_tree.sql": null,
         "0022_cost_ledger_entries.sql": null,
         "0023_cost_entries_pruned.sql": null,
+        "0024_pause_kind.sql": null,
       }),
     ),
   );
@@ -91,7 +99,7 @@ describe("migration 0020 keeps the ids of every execution that paused, and finds
       new TestApplicationContext({}, "instance-1"),
     );
 
-    expect(report.applied.map((migration) => migration.version)).toEqual([20, 21, 22, 23]);
+    expect(report.applied.map((migration) => migration.version)).toEqual([20, 21, 22, 23, 24]);
     const { rows } = await onSchema(
       url,
       "SELECT execution_id, tenant_id FROM agboss_execution_ids ORDER BY execution_id",
@@ -138,6 +146,7 @@ describe("migration 0020 keeps the ids of every execution that paused, and finds
           "0021_pause_answers_by_tree.sql": null,
           "0022_cost_ledger_entries.sql": null,
           "0023_cost_entries_pruned.sql": null,
+          "0024_pause_kind.sql": null,
         }),
       ),
     );

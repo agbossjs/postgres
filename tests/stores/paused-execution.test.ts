@@ -1,7 +1,9 @@
 import {
   ComponentKind,
   PauseAnswerer,
+  PauseKind,
   PauseResolution,
+  questionAskOf,
   PauseStatus,
   type PauseRecord,
 } from "@agboss/core";
@@ -30,7 +32,8 @@ const pauseOf = (pauseId: string, stepKey: string): PauseRecord => ({
   visitNumber: 1,
   itemIndex: undefined,
   copyNumber: 1,
-  agent: "clerk-agent",
+  kind: PauseKind.Approval,
+  step: "clerk-agent",
   channel: "refund-approval-channel",
   answeredBy: PauseAnswerer.Channel,
   ask: { callId: "call-1", tool: "charge", arguments: { text: "10 USD" }, summary: "charge" },
@@ -43,7 +46,8 @@ const pauseOf = (pauseId: string, stepKey: string): PauseRecord => ({
 const questionPauseOf = (pauseId: string, stepKey: string): PauseRecord => ({
   ...pauseOf(pauseId, stepKey),
   nodeId: "ship-question",
-  agent: "ship-question",
+  kind: PauseKind.Question,
+  step: "ship-question",
   channel: "ship-question",
   component: {
     name: "ship-question",
@@ -51,7 +55,7 @@ const questionPauseOf = (pauseId: string, stepKey: string): PauseRecord => ({
     promptHash: undefined,
     schemaHash: "ddb0c5dd",
   },
-  ask: { name: "box-1" },
+  ask: questionAskOf({ name: "box-1" }),
 });
 
 describe("PostgresPausedExecutionRepository", () => {
@@ -134,6 +138,33 @@ describe("PostgresPausedExecutionRepository", () => {
     await pauses.deleteResolvedBefore(new Date("2026-01-05T09:00:00.001Z"));
 
     expect(await pauses.findByTenantIdAndPauseId("default", "p-swept")).toBeUndefined();
+  });
+
+  it("agbossjs/agboss#801: a kind is read as written — a question whose component is an agent's stays a question", async () => {
+    const pauses = pausesOn();
+    await pauses.findOrCreateByStepKey(questionPauseOf("p-kept", "step-kept"));
+    await onSchema(
+      database.url(),
+      `UPDATE agboss_pauses SET record = jsonb_set(record, '{component,kind}', '"agent"') WHERE pause_id = 'p-kept'`,
+    );
+
+    expect(await pauses.findByTenantIdAndPauseId("default", "p-kept")).toMatchObject({
+      kind: PauseKind.Question,
+      ask: { name: "box-1" },
+    });
+  });
+
+  it("agbossjs/agboss#801: an approval's pause asks a tool call — a question's ask under kind approval fails loudly", async () => {
+    const pauses = pausesOn();
+    await pauses.findOrCreateByStepKey(questionPauseOf("p-unkinded", "step-unkinded"));
+    await onSchema(
+      database.url(),
+      `UPDATE agboss_pauses SET record = jsonb_set(record, '{kind}', '"approval"') WHERE pause_id = 'p-unkinded'`,
+    );
+
+    await expect(pauses.findByTenantIdAndPauseId("default", "p-unkinded")).rejects.toThrow(
+      /a stored pause is not readable/,
+    );
   });
 
   it("a pause row that is not one fails loudly when read", async () => {
