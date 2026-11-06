@@ -265,6 +265,8 @@ export class PostgresExecutionRecordRepository extends ExecutionRecordRepository
     // (undocumented)
     findByStatus(status: ExecutionRecordStatus, limit: number, after?: string): Promise<rows.StoredRecord[]>;
     // (undocumented)
+    findByTenantIdAndRunId(tenantId: string, runId: string): Promise<rows.StoredRecord | undefined>;
+    // (undocumented)
     findPauseAnswersByTenantIdAndRootExecutionId(tenantId: string, rootExecutionId: string): Promise<rows.PauseAnswer[]>;
     // (undocumented)
     hasThread(workflow: string, tenantId: string, threadId: string): Promise<boolean>;
@@ -574,24 +576,25 @@ export interface SchemaVersions {
 // src/stores/postgres-execution-record.repository.ts:78:9 - (ae-undocumented) Missing documentation for "complete".
 // src/stores/postgres-execution-record.repository.ts:81:3 - (ae-undocumented) Missing documentation for "completeIfStatus".
 // src/stores/postgres-execution-record.repository.ts:88:3 - (ae-undocumented) Missing documentation for "lastTerns".
-// src/stores/postgres-execution-record.repository.ts:91:3 - (ae-undocumented) Missing documentation for "byIds".
-// src/stores/postgres-execution-record.repository.ts:94:3 - (ae-undocumented) Missing documentation for "findByStatus".
-// src/stores/postgres-execution-record.repository.ts:101:3 - (ae-undocumented) Missing documentation for "byVersion".
-// src/stores/postgres-execution-record.repository.ts:104:3 - (ae-undocumented) Missing documentation for "unscored".
-// src/stores/postgres-execution-record.repository.ts:111:3 - (ae-undocumented) Missing documentation for "saveScore".
-// src/stores/postgres-execution-record.repository.ts:114:3 - (ae-undocumented) Missing documentation for "meanScore".
-// src/stores/postgres-execution-record.repository.ts:117:3 - (ae-undocumented) Missing documentation for "summary".
-// src/stores/postgres-execution-record.repository.ts:120:3 - (ae-undocumented) Missing documentation for "rememberConfig".
-// src/stores/postgres-execution-record.repository.ts:129:3 - (ae-undocumented) Missing documentation for "configSnapshots".
-// src/stores/postgres-execution-record.repository.ts:132:3 - (ae-undocumented) Missing documentation for "recentOriginals".
-// src/stores/postgres-execution-record.repository.ts:135:3 - (ae-undocumented) Missing documentation for "uncovered".
-// src/stores/postgres-execution-record.repository.ts:138:3 - (ae-undocumented) Missing documentation for "before".
-// src/stores/postgres-execution-record.repository.ts:146:3 - (ae-undocumented) Missing documentation for "turnNumber".
-// src/stores/postgres-execution-record.repository.ts:149:3 - (ae-undocumented) Missing documentation for "addSummary".
-// src/stores/postgres-execution-record.repository.ts:152:3 - (ae-undocumented) Missing documentation for "latestSummaries".
-// src/stores/postgres-execution-record.repository.ts:160:3 - (ae-undocumented) Missing documentation for "summaryCount".
-// src/stores/postgres-execution-record.repository.ts:163:3 - (ae-undocumented) Missing documentation for "savePauseAnswer".
-// src/stores/postgres-execution-record.repository.ts:170:9 - (ae-undocumented) Missing documentation for "findPauseAnswersByTenantIdAndRootExecutionId".
+// src/stores/postgres-execution-record.repository.ts:91:3 - (ae-undocumented) Missing documentation for "findByTenantIdAndRunId".
+// src/stores/postgres-execution-record.repository.ts:94:3 - (ae-undocumented) Missing documentation for "byIds".
+// src/stores/postgres-execution-record.repository.ts:97:3 - (ae-undocumented) Missing documentation for "findByStatus".
+// src/stores/postgres-execution-record.repository.ts:104:3 - (ae-undocumented) Missing documentation for "byVersion".
+// src/stores/postgres-execution-record.repository.ts:107:3 - (ae-undocumented) Missing documentation for "unscored".
+// src/stores/postgres-execution-record.repository.ts:114:3 - (ae-undocumented) Missing documentation for "saveScore".
+// src/stores/postgres-execution-record.repository.ts:117:3 - (ae-undocumented) Missing documentation for "meanScore".
+// src/stores/postgres-execution-record.repository.ts:120:3 - (ae-undocumented) Missing documentation for "summary".
+// src/stores/postgres-execution-record.repository.ts:123:3 - (ae-undocumented) Missing documentation for "rememberConfig".
+// src/stores/postgres-execution-record.repository.ts:132:3 - (ae-undocumented) Missing documentation for "configSnapshots".
+// src/stores/postgres-execution-record.repository.ts:135:3 - (ae-undocumented) Missing documentation for "recentOriginals".
+// src/stores/postgres-execution-record.repository.ts:138:3 - (ae-undocumented) Missing documentation for "uncovered".
+// src/stores/postgres-execution-record.repository.ts:141:3 - (ae-undocumented) Missing documentation for "before".
+// src/stores/postgres-execution-record.repository.ts:149:3 - (ae-undocumented) Missing documentation for "turnNumber".
+// src/stores/postgres-execution-record.repository.ts:152:3 - (ae-undocumented) Missing documentation for "addSummary".
+// src/stores/postgres-execution-record.repository.ts:155:3 - (ae-undocumented) Missing documentation for "latestSummaries".
+// src/stores/postgres-execution-record.repository.ts:163:3 - (ae-undocumented) Missing documentation for "summaryCount".
+// src/stores/postgres-execution-record.repository.ts:166:3 - (ae-undocumented) Missing documentation for "savePauseAnswer".
+// src/stores/postgres-execution-record.repository.ts:173:9 - (ae-undocumented) Missing documentation for "findPauseAnswersByTenantIdAndRootExecutionId".
 // src/stores/postgres-execution-tree.repository.ts:38:3 - (ae-undocumented) Missing documentation for "ping".
 // src/stores/postgres-execution-tree.repository.ts:42:9 - (ae-undocumented) Missing documentation for "saveIfAbsentInTree".
 // src/stores/postgres-execution-tree.repository.ts:56:9 - (ae-undocumented) Missing documentation for "findByIdInTree".

@@ -88,6 +88,9 @@ export class PostgresExecutionRecordRepository extends ExecutionRecordRepository
   lastTerns(tenantId: string, threadId: string, limit: number): Promise<rows.StoredRecord[]> {
     return reads.lastRecordsOf(this.connection.pool, tenantId, threadId, limit);
   }
+  findByTenantIdAndRunId(tenantId: string, runId: string): Promise<rows.StoredRecord | undefined> {
+    return reads.recordByRunIdOf(this.connection.pool, tenantId, runId);
+  }
   byIds(ids: readonly string[]): Promise<rows.StoredRecord[]> {
     return reads.recordsByIds(this.connection.pool, ids);
   }
