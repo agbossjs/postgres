@@ -63,6 +63,7 @@ describe("migration 0021 keeps one pause answer per pause of a tree", () => {
           "0021_pause_answers_by_tree.sql": null,
           "0022_cost_ledger_entries.sql": null,
           "0023_cost_entries_pruned.sql": null,
+          "0024_pause_kind.sql": null,
         }),
       ),
     );
@@ -97,7 +98,7 @@ describe("migration 0021 keeps one pause answer per pause of a tree", () => {
       answerOf("manager-99", "2026-02-01T09:00:00.000Z"),
     );
 
-    expect(report.applied.map((migration) => migration.version)).toEqual([21, 22, 23]);
+    expect(report.applied.map((migration) => migration.version)).toEqual([21, 22, 23, 24]);
     expect(await respondersOf(records, "old-root")).toEqual(["manager-17", "manager-18"]);
     expect(await respondersOf(records, "new-root")).toEqual(["manager-21"]);
     const { rows } = await onSchema(

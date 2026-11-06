@@ -87,5 +87,10 @@ own process, no shared disk — share every store on one database.
 
 ### Changed
 
+- **A pause record stores its kind and names its step** (agbossjs/agboss#801) — migration
+  `0024_pause_kind`: the record's `kind` (`approval` | `question`) is read as written, never told by
+  its `component`, and `agent` is `step`. A row written before is rewritten once by the rule it was
+  written under: a question role's component → `question`, every other pause → `approval`.
+
 - CI installs only reviewed releases (`npm ci`, `--before` three days back, #523; #7); the gate
   fails by name unless every declared test file ran (#630; #28).

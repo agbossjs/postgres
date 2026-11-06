@@ -41,6 +41,7 @@ describe("migration 0022 adds the ledger's entries", () => {
         migrationsFolder({
           "0022_cost_ledger_entries.sql": null,
           "0023_cost_entries_pruned.sql": null,
+          "0024_pause_kind.sql": null,
         }),
       ),
     );
@@ -56,7 +57,7 @@ describe("migration 0022 adds the ledger's entries", () => {
     await ledger.saveAll([tenantDay], [paid(0.25, "run-1:pay-action:1#0"), paid(0.5)]);
     await ledger.saveAll([tenantDay], [paid(0.25, "run-1:pay-action:1#0")]);
 
-    expect(report.applied.map((migration) => migration.version)).toEqual([22, 23]);
+    expect(report.applied.map((migration) => migration.version)).toEqual([22, 23, 24]);
     expect(await ledger.findSpentByCounter(tenantDay)).toBe(2.25);
   });
 });
@@ -66,7 +67,12 @@ describe("migration 0023 dates the ledger's entries", () => {
     const url = await freshSchema();
     await migrateWith(
       { url },
-      migrationsIn(migrationsFolder({ "0023_cost_entries_pruned.sql": null })),
+      migrationsIn(
+        migrationsFolder({
+          "0023_cost_entries_pruned.sql": null,
+          "0024_pause_kind.sql": null,
+        }),
+      ),
     );
     const before = new PostgresCostLedgerRepository(connectionTo(url));
     await onSchema(url, "INSERT INTO agboss_cost_entries (ledger_id) VALUES ('pass-a:0')", []);
@@ -78,7 +84,7 @@ describe("migration 0023 dates the ledger's entries", () => {
       [{ ...paid(0.25, "pass-a:0"), madeAt: "2026-11-04T08:00:00.000Z" }],
     );
 
-    expect(report.applied.map((migration) => migration.version)).toEqual([23]);
+    expect(report.applied.map((migration) => migration.version)).toEqual([23, 24]);
     expect(await before.findSpentByCounter(tenantDay)).toBe(0);
     const rows = await onSchema(
       url,
