@@ -1,7 +1,9 @@
+import { effectKeyForTesting } from "@agboss/core/testing/contracts";
 import {
   ExecutionFencedError,
   FencedEffectSettings,
   FencedEffectStatus,
+  FingerprintPolicy,
   IdempotencyKeyConflictError,
   InvalidFencedEffectNameError,
 } from "@agboss/core";
@@ -39,14 +41,15 @@ function storesOn(connection: PostgresConnection, clock = new VirtualClock()) {
   };
 }
 
-const keyOf = (rootExecutionId: string, token: number) => ({
-  scopeKey: `default:${rootExecutionId}`,
-  tenantId: "default",
-  leaseExecutionId: rootExecutionId,
-  token,
-  idempotencyKey: `${rootExecutionId}:charge-action:1`,
-  name: "charge",
-});
+const keyOf = (rootExecutionId: string, token: number) =>
+  effectKeyForTesting({
+    scopeKey: `default:${rootExecutionId}`,
+    tenantId: "default",
+    leaseExecutionId: rootExecutionId,
+    token,
+    idempotencyKey: `${rootExecutionId}:charge-action:1`,
+    name: "charge",
+  });
 
 describe("PostgresFencedEffectRepository", () => {
   it("a pool of one: the work's awaited statements run on the transaction's connection, no deadlock", async () => {
@@ -99,17 +102,19 @@ describe("PostgresFencedEffectRepository", () => {
   });
 
   it("is listed with the lease store whose leases it reads", () => {
-    expect(PostgresFencedEffectRepository.leaseRepository).toBe(PostgresExecutionLeaseRepository);
+    expect(PostgresFencedEffectRepository.store.backend).toBe(
+      PostgresExecutionLeaseRepository.store.backend,
+    );
   });
 });
 
 /** One business key's effect from the lease of `root` at `token`, with `fingerprint`. */
-const businessKeyOf = (root: string, token: number, fingerprint = "f", visitNumber = 1) => ({
-  ...keyOf(root, token),
-  businessKey: "order:42",
-  fingerprint,
-  origin: { executionId: root, nodeId: "charge-action", visitNumber },
-});
+const businessKeyOf = (root: string, token: number, fingerprint = "f", visitNumber = 1) =>
+  effectKeyForTesting(keyOf(root, token), {
+    businessKey: "order:42",
+    fingerprint,
+    origin: { executionId: root, nodeId: "charge-action", visitNumber },
+  });
 
 describe("PostgresFencedEffectRepository: business keys (agbossjs/agboss#508)", () => {
   it("six executions on six instances racing on one business key, round after round: one Ran, the work once", async () => {
@@ -123,7 +128,9 @@ describe("PostgresFencedEffectRepository: business keys (agbossjs/agboss#508)", 
       const outcomes = await Promise.all(
         instances.map(({ effects, root }) =>
           effects.saveResultIfAbsent(
-            { ...businessKeyOf(root, 1), businessKey: `order:race-${String(round)}` },
+            effectKeyForTesting(businessKeyOf(root, 1), {
+              businessKey: `order:race-${String(round)}`,
+            }),
             async (client) => {
               runs += 1;
               await client.query("INSERT INTO charges VALUES ($1, 1)", [`race-${String(round)}`]);
@@ -174,14 +181,17 @@ describe("PostgresFencedEffectRepository: business keys (agbossjs/agboss#508)", 
     expect(JSON.stringify(conflict) + String(conflict)).not.toContain("order:42");
   });
 
-  it("a key with no step of its own (built by hand) replays without replayedFrom; one without a fingerprint stores none", async () => {
+  it("a key with no step of its own (built by hand) replays without replayedFrom; one under FingerprintPolicy.None stores no fingerprint", async () => {
     const { effects, leases } = storesOn(connectionTo(database.url()));
     await leases.acquire("default", "bk-bare", hours(1));
-    const bare = { ...keyOf("bk-bare", 1), businessKey: "order:bare" };
+    const bare = effectKeyForTesting(keyOf("bk-bare", 1), {
+      businessKey: "order:bare",
+      fingerprintPolicy: FingerprintPolicy.None,
+    });
 
     await effects.saveResultIfAbsent(bare, () => ({ receipt: "r1" }));
     const again = await effects.saveResultIfAbsent(
-      { ...bare, origin: { executionId: "x", nodeId: "n", visitNumber: 1 } },
+      effectKeyForTesting(bare, { origin: { executionId: "x", nodeId: "n", visitNumber: 1 } }),
       () => ({ receipt: "r2" }),
     );
 
@@ -203,7 +213,9 @@ describe("PostgresFencedEffectRepository: business keys (agbossjs/agboss#508)", 
 
     for (const name of ["charge:twice", "x".repeat(101), "-lead"])
       await expect(
-        effects.saveResultIfAbsent({ ...keyOf("bad-name", 1), name }, () => ({ ran: true })),
+        effects.saveResultIfAbsent(effectKeyForTesting(keyOf("bad-name", 1), { name }), () => ({
+          ran: true,
+        })),
       ).rejects.toBeInstanceOf(InvalidFencedEffectNameError);
   });
 
@@ -212,12 +224,12 @@ describe("PostgresFencedEffectRepository: business keys (agbossjs/agboss#508)", 
     const { effects, leases } = storesOn(connectionTo(database.url()), clock);
     await leases.acquire("default", "sweep", hours(10));
     await effects.saveResultIfAbsent(
-      { ...businessKeyOf("sweep", 1), businessKey: "sweep:old" },
+      effectKeyForTesting(businessKeyOf("sweep", 1), { businessKey: "sweep:old" }),
       () => 1,
     );
     await clock.advance(seconds(10));
     await effects.saveResultIfAbsent(
-      { ...businessKeyOf("sweep", 1), businessKey: "sweep:new" },
+      effectKeyForTesting(businessKeyOf("sweep", 1), { businessKey: "sweep:new" }),
       () => 2,
     );
 

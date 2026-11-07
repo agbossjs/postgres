@@ -146,7 +146,7 @@ describe("PostgresExecutionLeaseEventRepository", () => {
     await expect(down.deleteByOccurredAtBefore(new Date())).rejects.toThrow();
   });
 
-  it("#508: the business key's and the superseded rows round-trip — replayedFrom, supersededBy, supersededLease, the new outcomes", async () => {
+  it("#508: the business key's and the superseded rows round-trip — replayedFrom, supersededBy, closedLease, the new outcomes", async () => {
     const events = eventsOn();
     const origin = { executionId: "root-other", nodeId: "charge-action", visitNumber: 3 };
     const call = (outcome: OutboundCallEventOutcome, at: string): OutboundCallEventRecord => ({
@@ -169,11 +169,11 @@ describe("PostgresExecutionLeaseEventRepository", () => {
     const rows = [
       { ...fenced("root-508"), occurredAt: "2026-01-05T09:00:00.100Z", replayedFrom: origin },
       {
-        ...call(OutboundCallEventOutcome.LeaseSuperseded, "2026-01-05T09:00:00.200Z"),
-        supersededLease: { rootExecutionId: "root-a", leaseExecutionId: "root-a", token: 1 },
+        ...call(OutboundCallEventOutcome.LeaseClosed, "2026-01-05T09:00:00.200Z"),
+        closedLease: { rootExecutionId: "root-a", leaseExecutionId: "root-a", token: 1 },
       },
       {
-        ...call(OutboundCallEventOutcome.Superseded, "2026-01-05T09:00:00.300Z"),
+        ...call(OutboundCallEventOutcome.AttemptSuperseded, "2026-01-05T09:00:00.300Z"),
         supersededBy: 2,
       },
       {

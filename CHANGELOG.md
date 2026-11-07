@@ -13,6 +13,17 @@ this repository's.
 The first published version. An application runs on PostgreSQL alone: several instances — each its
 own process, no shared disk — share every store on one database.
 
+### Changed
+
+- **The core's #825** — every store declares one `static store = { backend: "postgres" }`, the A2A
+  task store too; a fencing store checks a key's name, business key and fingerprint decision at its
+  entry (`FingerprintRequiredError` before any statement); `findAllByTenantIdAndStatus({ tenantId,
+status, limit, after? })` is keyset-paged on the row's identity `id`, its limit and cursor checked
+  (`RangeError`); migration `0027_outbound_call_outcome_names` renames the lease log's outbound-call
+  outcomes in place — `superseded` → `attempt-superseded`, `lease-superseded` → `lease-closed` with
+  `supersededLease` as `closedLease` — in `agboss_execution_lease_events` and in the kept records'
+  `leaseEvents`.
+
 ### Added
 
 - **The A2A tasks, shared by the pods** (#824) — `PostgresA2ATaskRepository`, the core's
@@ -55,7 +66,7 @@ own process, no shared disk — share every store on one database.
   `postgresMigrateOnStart`; a second run changes nothing; `PostgresSchemaMissingError`,
   `PostgresSchemaTooNewError`, `PostgresMigrationChangedError`, `PostgresSettingsError`.
 - **One backend for the fencing stores** (#526; #11) — the lease, fenced-effect and outbound-call
-  stores declare `static backend = "postgres"`; a mixed layout fails assembly.
+  stores declare `static store = { backend: "postgres" }` (#825); a mixed layout fails assembly.
 - **The database's clock decides a lease's expiry** (#533; #16) — `clock_timestamp()` inside each
   statement that takes, renews, yields, reclaims, fences or closes a lease; every take and renewal
   answers `remaining`; pods whose clocks disagree agree on the instant of expiry.

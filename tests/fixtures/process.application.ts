@@ -102,6 +102,7 @@ export class ProcessObserver implements OnExecutionEnd, OnExecutionLeaseTakeover
   name: "postgres-process-application",
   version: "1.0.0",
   environment: ProcessEnvironment,
+  idempotencyKeyField: "idempotencyKey",
   workflows: [
     TakeoverWorkflow,
     BatchWorkflow,

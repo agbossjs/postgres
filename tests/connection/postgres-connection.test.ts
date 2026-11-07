@@ -108,7 +108,7 @@ describe("PostgresConnection.onInit: the schema check at start", () => {
     );
 
     expect(error).toBeInstanceOf(PostgresSchemaMissingError);
-    expect(error).toMatchObject({ code: "postgres.schema-missing", applied: 0, expected: 26 });
+    expect(error).toMatchObject({ code: "postgres.schema-missing", applied: 0, expected: 27 });
     expect(String(error)).toContain('npx agboss-postgres migrate --url "$DATABASE_URL"');
     expect(String(error)).toContain("postgresMigrateOnStart");
   });
@@ -126,6 +126,7 @@ describe("PostgresConnection.onInit: the schema check at start", () => {
           "0024_pause_kind.sql": null,
           "0025_records_by_run.sql": null,
           "0026_a2a_tasks.sql": null,
+          "0027_outbound_call_outcome_names.sql": null,
         }),
       ),
     );
@@ -134,7 +135,7 @@ describe("PostgresConnection.onInit: the schema check at start", () => {
       rejectionOf(connection.onInit()),
     );
 
-    expect(error).toMatchObject({ applied: 19, expected: 26 });
+    expect(error).toMatchObject({ applied: 19, expected: 27 });
   });
 
   it("postgresMigrateOnStart: a missing schema is migrated at start", async () => {
@@ -146,7 +147,7 @@ describe("PostgresConnection.onInit: the schema check at start", () => {
 
     await withConnection(new PostgresConnection(application), (connection) => connection.onInit());
 
-    expect(await historyOf(url)).toHaveLength(26);
+    expect(await historyOf(url)).toHaveLength(27);
   });
 
   it("postgresMigrateOnStart: two instances starting at once migrate it once", async () => {
@@ -158,14 +159,14 @@ describe("PostgresConnection.onInit: the schema check at start", () => {
     await Promise.all(instances.map((connection) => connection.onInit()));
     await Promise.all(instances.map((connection) => connection.onDestroy()));
 
-    expect(await historyOf(url)).toHaveLength(26);
+    expect(await historyOf(url)).toHaveLength(27);
   });
 
   it("a schema a newer package migrated fails with PostgresSchemaTooNewError, flag or not", async () => {
     const url = await freshSchema();
     await migrateWith(
       { url },
-      migrationsIn(migrationsFolder({ "0027_later.sql": "CREATE TABLE later (id integer);" })),
+      migrationsIn(migrationsFolder({ "0028_later.sql": "CREATE TABLE later (id integer);" })),
     );
 
     for (const migrateOnStart of [false, true]) {
@@ -174,7 +175,7 @@ describe("PostgresConnection.onInit: the schema check at start", () => {
         (connection) => rejectionOf(connection.onInit()),
       );
       expect(error).toBeInstanceOf(PostgresSchemaTooNewError);
-      expect(error).toMatchObject({ applied: 27, expected: 26 });
+      expect(error).toMatchObject({ applied: 28, expected: 27 });
       expect(String(error)).toContain("the migrations are not rolled back");
     }
   });

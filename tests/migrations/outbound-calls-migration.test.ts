@@ -33,6 +33,7 @@ const BEFORE = {
   "0024_pause_kind.sql": null,
   "0025_records_by_run.sql": null,
   "0026_a2a_tasks.sql": null,
+  "0027_outbound_call_outcome_names.sql": null,
 };
 
 const leasesOn = (url: string, clock: VirtualClock, instanceId: string) =>
@@ -74,7 +75,7 @@ describe("migrations 0014–0016 keep the leases written before them", () => {
     await clock.advance(seconds(31));
 
     expect(report.applied.map((migration) => migration.version)).toEqual([
-      14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26,
+      14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27,
     ]);
     const { rows } = await onSchema(
       url,
@@ -98,7 +99,7 @@ describe("migrations 0014–0016 keep the leases written before them", () => {
     const state = { tenantId: "default", leaseExecutionId: "root-held", token: 1 };
     expect(await calls.leaseStateOf(state)).toBe(OutboundCallLeaseState.Live);
     await clock.advance(seconds(31));
-    expect(await calls.leaseStateOf(state)).toBe(OutboundCallLeaseState.Superseded);
+    expect(await calls.leaseStateOf(state)).toBe(OutboundCallLeaseState.LeaseClosed);
     expect(await calls.findAllByTenantIdAndRootExecutionId("default", "root-held")).toEqual([]);
     const business = await onSchema(url, "SELECT * FROM agboss_fenced_effect_business_results");
     expect(business.rows).toEqual([]);

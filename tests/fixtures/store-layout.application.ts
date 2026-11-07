@@ -20,6 +20,7 @@ export function storeLayoutOf(providers: readonly Class[]): Class {
     name: "store-layout-application",
     version: "1.0.0",
     environment: ProcessEnvironment,
+    idempotencyKeyField: "idempotencyKey",
     workflows: [ChargeWorkflow],
     budgets: [ProcessApplicationBudget, ProcessTenantBudget, ProcessExecutionBudget],
     providers: [OfflineClerkModelProvider, PostgresConnection, ...providers],

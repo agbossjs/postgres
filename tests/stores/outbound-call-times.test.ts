@@ -6,6 +6,7 @@
  * days ahead and one two days behind, read the same times, close to the database's own. It bites:
  * the same store handed the caller's clock as its time (`TestStoreClock`) writes the skewed time.
  */
+import { effectKeyForTesting } from "@agboss/core/testing/contracts";
 import {
   Clock,
   DatabaseStoreClock,
@@ -59,14 +60,15 @@ function instanceOn(clock: Clock, time: Time, index: number) {
   };
 }
 
-const keyOf = (lease: ExecutionLease): EffectKey => ({
-  scopeKey: `${lease.tenantId}:${lease.rootExecutionId}`,
-  tenantId: lease.tenantId,
-  leaseExecutionId: lease.rootExecutionId,
-  token: lease.leaseEpoch,
-  idempotencyKey: `${lease.rootExecutionId}:charge-action:1`,
-  name: "charge",
-});
+const keyOf = (lease: ExecutionLease): EffectKey =>
+  effectKeyForTesting({
+    scopeKey: `${lease.tenantId}:${lease.rootExecutionId}`,
+    tenantId: lease.tenantId,
+    leaseExecutionId: lease.rootExecutionId,
+    token: lease.leaseEpoch,
+    idempotencyKey: `${lease.rootExecutionId}:charge-action:1`,
+    name: "charge",
+  });
 
 /** The database's own time now. */
 async function databaseNow(): Promise<number> {

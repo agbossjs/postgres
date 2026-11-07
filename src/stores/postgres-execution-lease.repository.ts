@@ -5,6 +5,7 @@ import {
   StoreClock,
   type ExecutionIdentity,
   type ExecutionLease,
+  type StoreDescriptor,
 } from "@agboss/core";
 import type { Milliseconds } from "@agboss/core/units";
 import { z } from "zod";
@@ -163,7 +164,7 @@ const TakenRow = z.object({
 @Injectable({ deps: [PostgresConnection, StoreClock, ApplicationContext] })
 export class PostgresExecutionLeaseRepository extends ExecutionLeaseRepository {
   /** One transactional backend with the other PostgreSQL stores (agbossjs/agboss#526). */
-  static override readonly backend: string | undefined = "postgres";
+  static override readonly store: StoreDescriptor = { backend: "postgres" };
   constructor(
     private readonly connection: PostgresConnection,
     private readonly clock: StoreClock,

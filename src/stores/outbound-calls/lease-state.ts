@@ -41,5 +41,5 @@ export async function leaseStateIn(
   if (found === undefined || found.released || found.lease_epoch !== token)
     return OutboundCallLeaseState.Ended;
   const closed = await changesOf(client, CLOSE, [tenantId, leaseExecutionId, token, now]);
-  return closed === 1 ? OutboundCallLeaseState.Superseded : OutboundCallLeaseState.Live;
+  return closed === 1 ? OutboundCallLeaseState.LeaseClosed : OutboundCallLeaseState.Live;
 }

@@ -1,9 +1,12 @@
+import { effectKeyForTesting } from "@agboss/core/testing/contracts";
 import {
   ExecutionFencedError,
+  FingerprintRequiredError,
   OutboundCallLeaseState,
   OutboundCallStatus,
   type ExecutionLease,
   type EffectKey,
+  type EffectKeyFields,
   type OutboundCallIntent,
 } from "@agboss/core";
 import { VirtualClock, TestStoreClock } from "@agboss/core/testing";
@@ -45,15 +48,16 @@ function instanceOn(clock: VirtualClock, index: number, poolSize = 2) {
 const instancesOn = (clock: VirtualClock) =>
   Array.from({ length: RACERS }, (_, index) => instanceOn(clock, index));
 
-const keyOf = (lease: ExecutionLease, extra: Partial<EffectKey> = {}): EffectKey => ({
-  scopeKey: `${lease.tenantId}:${lease.rootExecutionId}`,
-  tenantId: lease.tenantId,
-  leaseExecutionId: lease.rootExecutionId,
-  token: lease.leaseEpoch,
-  idempotencyKey: `${lease.rootExecutionId}:charge-action:1`,
-  name: "charge",
-  ...extra,
-});
+const keyOf = (lease: ExecutionLease, extra: Partial<EffectKeyFields> = {}): EffectKey =>
+  effectKeyForTesting({
+    scopeKey: `${lease.tenantId}:${lease.rootExecutionId}`,
+    tenantId: lease.tenantId,
+    leaseExecutionId: lease.rootExecutionId,
+    token: lease.leaseEpoch,
+    idempotencyKey: `${lease.rootExecutionId}:charge-action:1`,
+    name: "charge",
+    ...extra,
+  });
 
 const intentOf = (key: EffectKey, owner = "owner-1"): OutboundCallIntent => ({
   rootExecutionId: key.leaseExecutionId,
@@ -148,7 +152,7 @@ describe("PostgresOutboundCallRepository: many connections racing", () => {
     }
   });
 
-  it("#508: leaseStateOf on five instances racing the holder's renewal of its expired lease: renewed and Live everywhere, or one Superseded and the rest Ended", async () => {
+  it("#508: leaseStateOf on five instances racing the holder's renewal of its expired lease: renewed and Live everywhere, or one LeaseClosed and the rest Ended", async () => {
     const clock = new VirtualClock();
     const [holder, ...checkers] = instancesOn(clock);
     if (holder === undefined) throw new Error("six instances");
@@ -164,8 +168,8 @@ describe("PostgresOutboundCallRepository: many connections racing", () => {
         ...checkers.map((stores) => stores.calls.leaseStateOf(state)),
       ]);
 
-      const { Live, Ended, Superseded } = OutboundCallLeaseState;
-      const superseded = states.filter((found) => found === Superseded);
+      const { Live, Ended, LeaseClosed } = OutboundCallLeaseState;
+      const superseded = states.filter((found) => found === LeaseClosed);
       if (isRenewed) expect(states.every((found) => found === Live)).toBe(true);
       else {
         expect(superseded).toHaveLength(1);
@@ -256,7 +260,7 @@ describe("PostgresOutboundCallRepository: edges", () => {
     const lease = await leaseOf(holder, "late-release", seconds(30));
     await clock.advance(seconds(31));
     const state = { tenantId: "default", leaseExecutionId: "late-release", token: 1 };
-    expect(await other.calls.leaseStateOf(state)).toBe(OutboundCallLeaseState.Superseded);
+    expect(await other.calls.leaseStateOf(state)).toBe(OutboundCallLeaseState.LeaseClosed);
 
     await holder.leases.release(lease);
     const taken = await leaseOf(other, "late-release");
@@ -303,6 +307,20 @@ describe("PostgresOutboundCallRepository: edges", () => {
     expect(refused).toMatchObject({ token: 1, observedToken: undefined });
   });
 
+  it("agbossjs/agboss#825: a business key without its fingerprint decision is refused at the entry, nothing written", async () => {
+    const stores = instanceOn(new VirtualClock(), 0);
+    const lease = await stores.leases.acquire("default", "unfingerprinted", hours(1));
+    if (lease === undefined) throw new Error("the lease is held");
+    const key = keyOf(lease, { businessKey: "order:825" });
+
+    await expect(stores.calls.saveIfAbsent(key, intentOf(key))).rejects.toBeInstanceOf(
+      FingerprintRequiredError,
+    );
+    expect(
+      await stores.calls.findAllByTenantIdAndRootExecutionId("default", "unfingerprinted"),
+    ).toEqual([]);
+  });
+
   it("an unreachable database rejects every method", async () => {
     const connection = connectionTo("postgres://postgres:pw@127.0.0.1:1/postgres");
     const calls = new PostgresOutboundCallRepository(
@@ -321,7 +339,11 @@ describe("PostgresOutboundCallRepository: edges", () => {
     await expect(calls.ping()).rejects.toThrow();
     await expect(calls.findByKey(key)).rejects.toThrow();
     await expect(
-      calls.findAllByTenantIdAndStatus("default", OutboundCallStatus.Pending),
+      calls.findAllByTenantIdAndStatus({
+        tenantId: "default",
+        status: OutboundCallStatus.Pending,
+        limit: 10,
+      }),
     ).rejects.toThrow();
     await expect(calls.deleteByEndedAtBefore(new Date())).rejects.toThrow();
     await expect(

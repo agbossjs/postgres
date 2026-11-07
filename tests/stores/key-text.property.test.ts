@@ -1,3 +1,4 @@
+import { effectKeyForTesting } from "@agboss/core/testing/contracts";
 import {
   FencedEffectSettings,
   FencedEffectStatus,
@@ -128,15 +129,17 @@ function instanceOn(clock: VirtualClock, index: number) {
   };
 }
 
-const keyOf = (lease: ExecutionLease, name: string, businessKey: string): EffectKey => ({
-  scopeKey: `${lease.tenantId}:${lease.rootExecutionId}`,
-  tenantId: lease.tenantId,
-  leaseExecutionId: lease.rootExecutionId,
-  token: lease.leaseEpoch,
-  idempotencyKey: `${lease.rootExecutionId}:charge-action:1`,
-  name,
-  businessKey,
-});
+const keyOf = (lease: ExecutionLease, name: string, businessKey: string): EffectKey =>
+  effectKeyForTesting({
+    scopeKey: `${lease.tenantId}:${lease.rootExecutionId}`,
+    tenantId: lease.tenantId,
+    leaseExecutionId: lease.rootExecutionId,
+    token: lease.leaseEpoch,
+    idempotencyKey: `${lease.rootExecutionId}:charge-action:1`,
+    name,
+    businessKey,
+    fingerprint: "f",
+  });
 
 const intentOf = (key: EffectKey, index: number): OutboundCallIntent => ({
   rootExecutionId: key.leaseExecutionId,

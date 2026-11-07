@@ -38,8 +38,9 @@ describe("the package's migration files", () => {
       "24:pause_kind",
       "25:records_by_run",
       "26:a2a_tasks",
+      "27:outbound_call_outcome_names",
     ]);
-    expect(newestVersionOf(files)).toBe(26);
+    expect(newestVersionOf(files)).toBe(27);
     expect(files.every((file) => file.checksum === checksumOf(file.sql))).toBe(true);
   });
 
@@ -79,8 +80,8 @@ describe("the package's migration files", () => {
       .map(({ version, name, checksum }) => ({ version, name, checksum }));
 
     expect(pendingMigrations(files, applied).map((file) => file.version)).toEqual([
-      5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26,
+      5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27,
     ]);
-    expect(pendingMigrations(files, [])).toHaveLength(26);
+    expect(pendingMigrations(files, [])).toHaveLength(27);
   });
 });
