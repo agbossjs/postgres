@@ -37,7 +37,7 @@ const momentOf = (iso: string | undefined): Date | null =>
  * the periods' reads are paged by `LIMIT` / `OFFSET` on the start indexes. The sweep's
  * `deleteByEndedAtBefore` removes only ended rows, by the `Clock`'s cutoff passed as a parameter.
  * Every statement runs alone at `READ COMMITTED`; no other locking. Listed in
- * `@Application({ providers })` with `postgresUrl` and `executionRecordRetention`.
+ * `@Application({ providers })` with `postgresUrl` and `retention.executionRecords`.
  */
 @Injectable({ deps: [PostgresConnection] })
 export class PostgresExecutionHistoryRepository extends ExecutionHistoryRepository {

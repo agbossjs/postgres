@@ -97,7 +97,7 @@ export class PostgresSettingsError extends AGBossError {
  * The ledger's pruning mark (agbossjs/agboss#771, the one row of `agboss_cost_entries_pruned` that
  * migration 0023 seeds) is gone — deleted by hand: without it a save cannot tell an entry the ledger
  * pruned from a new one, so it adds nothing and fails. Put the row back with a mark no lower than
- * any prune's cutoff (`now − ledgerEntryRetention` covers every prune the sweep made).
+ * any prune's cutoff (`now − retention.costLedgerEntries` covers every prune the sweep made).
  */
 export class PostgresLedgerMarkMissingError extends AGBossError {
   static override readonly code: string = "postgres.ledger-mark-missing";
