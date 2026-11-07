@@ -5,7 +5,7 @@ import {
   KeyTextRule,
   keyTextRuleOf,
   type ExecutionLease,
-  type FencedEffectKey,
+  type EffectKey,
   type OutboundCallIntent,
 } from "@agboss/core";
 import { VirtualClock, TestStoreClock } from "@agboss/core/testing";
@@ -128,7 +128,7 @@ function instanceOn(clock: VirtualClock, index: number) {
   };
 }
 
-const keyOf = (lease: ExecutionLease, name: string, businessKey: string): FencedEffectKey => ({
+const keyOf = (lease: ExecutionLease, name: string, businessKey: string): EffectKey => ({
   scopeKey: `${lease.tenantId}:${lease.rootExecutionId}`,
   tenantId: lease.tenantId,
   leaseExecutionId: lease.rootExecutionId,
@@ -138,7 +138,7 @@ const keyOf = (lease: ExecutionLease, name: string, businessKey: string): Fenced
   businessKey,
 });
 
-const intentOf = (key: FencedEffectKey, index: number): OutboundCallIntent => ({
+const intentOf = (key: EffectKey, index: number): OutboundCallIntent => ({
   rootExecutionId: key.leaseExecutionId,
   executionId: key.leaseExecutionId,
   workflow: "charge-workflow",
@@ -172,7 +172,7 @@ async function nextRound(stores: Stores, test: string) {
 }
 
 type Stores = ReturnType<typeof instanceOn>;
-type Keyed = (businessKey: string) => FencedEffectKey;
+type Keyed = (businessKey: string) => EffectKey;
 
 /**
  * A key the round is about to save has no row yet, on the other connection: a row here is another

@@ -121,7 +121,7 @@ A fenced effect's work gets the transaction's `PoolClient` and may `await` its s
 
 ```ts
 const outcome = await effects.saveResultIfAbsent(
-  fencedEffectKeyOf(executionContext, "charge"),
+  effectKeyOf(executionContext, "charge"),
   async (client) => {
     await client.query("INSERT INTO charges (order_id, amount) VALUES ($1, $2)", [orderId, amount]);
     return { receipt: orderId };
@@ -131,7 +131,7 @@ const outcome = await effects.saveResultIfAbsent(
 
 With a business key (#508) the effect is one per tenant, name and key — whatever execution, visit or
 thread makes it — instead of one per step:
-`fencedEffectKeyOf(executionContext, "charge", { businessKey: "order:42", fingerprint: { amount } })`.
+`effectKeyOf(executionContext, "charge", { businessKey: "order:42", fingerprint: { amount } })`.
 A second execution's call replays the first one's result (`replayedFrom` names its step); the same
 key with another fingerprint is `IdempotencyKeyConflictError`, nothing run.
 
@@ -142,7 +142,7 @@ and settles it after; an intent left pending — the pod died or froze mid-call 
 the other system (`reconcile`) by whichever pod runs the step next, never sent again blindly:
 
 ```ts
-const key = fencedEffectKeyOf(executionContext, "charge", { businessKey: `order:${orderId}` });
+const key = effectKeyOf(executionContext, "charge", { businessKey: `order:${orderId}` });
 const { result } = await outboundCalls.send(key, {
   target: "payments",
   operation: "charge",
@@ -154,6 +154,8 @@ const { result } = await outboundCalls.send(key, {
       ? OutboundCallReconciliation.notSent()
       : OutboundCallReconciliation.completed(found);
   },
+  // required (agbossjs/agboss#795): the gateway's own record — or a KeyReplay with its keyRetention
+  notSent: { trust: NotSentTrust.Lookup },
 });
 ```
 
@@ -170,9 +172,9 @@ reconciled (`lease-superseded` in the lease log, with the closed lease).
 attempt's `attemptStartedAt` and `firstAttemptStartedAt`, `markPending` each next `attemptStartedAt`,
 and every `findByKey` answers its record with `readAt` — all the store's time the fence read right
 after it locked the lease row (`clock_timestamp()`), to the millisecond, never a pod's wall clock.
-So `lookup.attemptStartedAt` and `lookup.keyAge`, and a call's `keyRetention`, mean the same on
-every pod and after a takeover. No migration: they live in the record's `jsonb`; an intent written
-before has none, so its key's age is unknown and a `keyRetention` refuses its replay.
+So `lookup.attemptStartedAt` and `lookup.keyAge`, and a `NotSentTrust.KeyReplay`'s `keyRetention`,
+mean the same on every pod and after a takeover. No migration: they live in the record's `jsonb`; an
+intent written before has none, so its key's age is unknown and a `KeyReplay` refuses its replay.
 
 The lease log keeps who took a tree over and from whom — `app.leaseEventsOf({ tenantId,
 rootExecutionId })` reads it on any instance, oldest first:

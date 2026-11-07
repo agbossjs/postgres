@@ -2,13 +2,14 @@ import {
   Action,
   ApplicationContext,
   ExecutionContext,
-  fencedEffectKeyOf,
+  NotSentTrust,
   OutboundCallReconciliation,
   OutboundCalls,
-  start,
   Workflow,
   WorkflowFinish,
   WorkflowStart,
+  effectKeyOf,
+  start,
   type Produced,
 } from "@agboss/core";
 import { PostgresConnection } from "../../src/index.js";
@@ -51,7 +52,7 @@ async function charged(
   const { applicationContext, executionContext, outboundCalls, connection } = parts;
   const by = applicationContext.instanceId;
   const options = byOrder ? { businessKey: `order:${name}` } : undefined;
-  const key = fencedEffectKeyOf(executionContext, "charge", options);
+  const key = effectKeyOf(executionContext, "charge", options);
   const where = { name, instanceId: by, rootExecutionId: executionContext.root.executionId };
   const outcome = await outboundCalls.send<{ orderId: string }, Receipt>(key, {
     target: "payments",
@@ -63,6 +64,8 @@ async function charged(
       await atGate(call.signal);
       return { receipt: `receipt:${call.idempotencyKey}` };
     },
+    // the gateway table is the record of every charge: its "not there" holds at any age (#795)
+    notSent: { trust: NotSentTrust.Lookup },
     reconcile: async (lookup) => {
       emit("reconciling", { ...where, idempotencyKey: lookup.idempotencyKey });
       const { rowCount } = await connection.pool.query(
