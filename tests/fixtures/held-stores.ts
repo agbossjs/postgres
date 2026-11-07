@@ -1,7 +1,7 @@
 import {
-  heldStoreSeam,
   OperationPhase,
   processHoldPoints,
+  reportHeldOperations,
   StoreHoldPoint,
   withHoldPoints,
 } from "@agboss/core/testing/faults";
@@ -22,12 +22,13 @@ export const HeldPostgresExecutionLeaseRepository = withHoldPoints(
 
 /** Tells the test of every held operation and every answered `acquire` of this process. */
 export function reportHolds(instanceId: string): void {
-  heldStoreSeam.instanceId = instanceId;
-  processHoldPoints.onHeld((operation) => {
-    emit("held", { ...operation });
-  });
-  heldStoreSeam.recorder = {
-    record: (event) => {
+  // the process's own, for its life: nothing undoes it (agbossjs/agboss#831)
+  reportHeldOperations({
+    instanceId,
+    onHeld: (operation) => {
+      emit("held", { ...operation });
+    },
+    onOperation: (event) => {
       if (
         event.phase !== OperationPhase.Complete ||
         event.operation !== StoreHoldPoint.LeaseAcquire
@@ -36,7 +37,7 @@ export function reportHolds(instanceId: string): void {
       const lease = event.output as { leaseEpoch?: number } | null | undefined;
       emit("acquire-result", { key: event.key, leaseEpoch: lease?.leaseEpoch ?? null });
     },
-  };
+  });
 }
 
 /** The next `acquire` of `key` waits for `letAcquireGo(key)`. */
