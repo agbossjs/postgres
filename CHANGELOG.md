@@ -23,6 +23,11 @@ status, limit, after? })` is keyset-paged on the row's identity `id`, its limit 
   outcomes in place — `superseded` → `attempt-superseded`, `lease-superseded` → `lease-closed` with
   `supersededLease` as `closedLease` — in `agboss_execution_lease_events` and in the kept records'
   `leaseEvents`.
+- **The core's #810, the mesh's facts of an A2A task** — `PostgresA2ATaskRepository` keeps a trusted
+  task's `meshBodyHash` (migration `0028_a2a_task_mesh_body_hash`, a nullable column: a task saved
+  before reads as untrusted) and its status's `errorDetails` (a mesh limit's facts) and `spentUsd`
+  (what its run report signs); before, the two status fields were dropped on read. A status with a
+  field the store does not know is now refused, never read without it.
 
 ### Added
 

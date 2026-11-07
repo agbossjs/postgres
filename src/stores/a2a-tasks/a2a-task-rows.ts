@@ -30,8 +30,12 @@ export const messageKeyOf = (key: A2AMessageKey): readonly [string, string, stri
   key.messageId,
 ];
 
-/** A status as written: a corrupt column is refused, never read as a task's state. */
-const Status = z.object({
+/**
+ * A status as written: a corrupt column is refused, never read as a task's state — and so is a field
+ * this store does not know (strict): a status the core grew is never read back without it
+ * (agbossjs/agboss#810: a mesh refusal's facts and a completion's spend were dropped so).
+ */
+const Status = z.strictObject({
   state: z.enum(A2ATaskState),
   message: z.string().optional(),
   pendingPauses: z.array(
@@ -40,6 +44,9 @@ const Status = z.object({
   finish: z.string().optional(),
   output: z.unknown().optional(),
   errorCode: z.string().optional(),
+  // agbossjs/agboss#810: a mesh limit's facts (REJECTED), the execution's spend (COMPLETED)
+  errorDetails: z.unknown().optional(),
+  spentUsd: z.number().nonnegative().optional(),
   cancelRequestedAt: z.iso.datetime().optional(),
 });
 
@@ -55,6 +62,8 @@ const TaskRow = z.object({
   accepted_at: z.date(),
   status_at: z.date(),
   caller_peer: z.string().nullable(),
+  // agbossjs/agboss#810, migration 0028: none on a task saved before (read as untrusted)
+  mesh_body_hash: z.string().nullable(),
 });
 
 /** `answered` tells a reply of JSON `null` from a message with none yet (SQL `NULL`). */
@@ -92,6 +101,7 @@ export const taskOf = (row: unknown): A2ATaskRecord => {
     acceptedAt: parsed.accepted_at,
     statusAt: parsed.status_at,
     ...(parsed.caller_peer === null ? {} : { callerPeer: parsed.caller_peer }),
+    ...(parsed.mesh_body_hash === null ? {} : { meshBodyHash: parsed.mesh_body_hash }),
   };
 };
 

@@ -91,7 +91,7 @@ export class DeskApplication {}
 | `PostgresExecutionHistoryRepository`    | `ExecutionHistoryRepository`         | `agboss_execution_history`                                                                           |
 | `PostgresRateLimitRepository`           | `RateLimitRepository`                | `agboss_rate_limit_keys`, `…_slots`, `…_window_buckets`, `…_pauses`                                  |
 | `PostgresMeshRequestRepository`         | `MeshRequestRepository`              | `agboss_mesh_requests`                                                                               |
-| `PostgresA2ATaskRepository`             | `A2ATaskRepository`                  | `agboss_a2a_tasks`, `agboss_a2a_messages` (`0026`)                                                   |
+| `PostgresA2ATaskRepository`             | `A2ATaskRepository`                  | `agboss_a2a_tasks`, `agboss_a2a_messages` (`0026`, `0028`)                                           |
 
 With all of them listed, nothing of the application is per pod: budgets sum every pod's spend, a
 provider's limits hold across pods, `agboss records export` on any pod lists every pod's

@@ -68,6 +68,7 @@ async function schemaWithAnApprovedChildPause(): Promise<string> {
         "0025_records_by_run.sql": null,
         "0026_a2a_tasks.sql": null,
         "0027_outbound_call_outcome_names.sql": null,
+        "0028_a2a_task_mesh_body_hash.sql": null,
       }),
     ),
   );
@@ -103,7 +104,7 @@ describe("migration 0020 keeps the ids of every execution that paused, and finds
     );
 
     expect(report.applied.map((migration) => migration.version)).toEqual([
-      20, 21, 22, 23, 24, 25, 26, 27,
+      20, 21, 22, 23, 24, 25, 26, 27, 28,
     ]);
     const { rows } = await onSchema(
       url,
@@ -155,6 +156,7 @@ describe("migration 0020 keeps the ids of every execution that paused, and finds
           "0025_records_by_run.sql": null,
           "0026_a2a_tasks.sql": null,
           "0027_outbound_call_outcome_names.sql": null,
+          "0028_a2a_task_mesh_body_hash.sql": null,
         }),
       ),
     );

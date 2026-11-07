@@ -28,6 +28,7 @@ export const taskFieldsOf = (task: NewA2ATask): Omit<A2ATaskRecord, "version" | 
   status: task.status,
   acceptedAt: task.acceptedAt,
   ...(task.callerPeer === undefined ? {} : { callerPeer: task.callerPeer }),
+  ...(task.meshBodyHash === undefined ? {} : { meshBodyHash: task.meshBodyHash }),
 });
 
 export async function insertedMessage(
@@ -55,8 +56,8 @@ export async function insertedTask(database: Queryable, task: A2ATaskRecord): Pr
   const inserted = await changesOf(
     database,
     `INSERT INTO agboss_a2a_tasks (tenant_id, task_id, owner_id, context_id, skill, state, status,
-       version, accepted_at, status_at, caller_peer)
-     VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10, $11)
+       version, accepted_at, status_at, caller_peer, mesh_body_hash)
+     VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10, $11, $12)
      ON CONFLICT (tenant_id, task_id) DO NOTHING`,
     [
       task.tenantId,
@@ -70,6 +71,7 @@ export async function insertedTask(database: Queryable, task: A2ATaskRecord): Pr
       task.acceptedAt,
       task.statusAt,
       task.callerPeer ?? null,
+      task.meshBodyHash ?? null,
     ],
   );
   return inserted === 1;

@@ -39,8 +39,9 @@ describe("the package's migration files", () => {
       "25:records_by_run",
       "26:a2a_tasks",
       "27:outbound_call_outcome_names",
+      "28:a2a_task_mesh_body_hash",
     ]);
-    expect(newestVersionOf(files)).toBe(27);
+    expect(newestVersionOf(files)).toBe(28);
     expect(files.every((file) => file.checksum === checksumOf(file.sql))).toBe(true);
   });
 
@@ -80,8 +81,8 @@ describe("the package's migration files", () => {
       .map(({ version, name, checksum }) => ({ version, name, checksum }));
 
     expect(pendingMigrations(files, applied).map((file) => file.version)).toEqual([
-      5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27,
+      5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28,
     ]);
-    expect(pendingMigrations(files, [])).toHaveLength(27);
+    expect(pendingMigrations(files, [])).toHaveLength(28);
   });
 });
