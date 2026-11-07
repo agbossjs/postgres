@@ -148,9 +148,9 @@ describe("#526 AC1: the layouts PostgreSQL supports assemble", () => {
   ];
 
   it("leases, fenced effects and outbound calls on PostgreSQL", async () => {
-    expect(PostgresExecutionLeaseRepository.backend).toBe("postgres");
-    expect(PostgresFencedEffectRepository.backend).toBe("postgres");
-    expect(PostgresOutboundCallRepository.backend).toBe("postgres");
+    expect(PostgresExecutionLeaseRepository.store.backend).toBe("postgres");
+    expect(PostgresFencedEffectRepository.store.backend).toBe("postgres");
+    expect(PostgresOutboundCallRepository.store.backend).toBe("postgres");
     expect(await assembled(ALL_FENCING)).toBe(true);
   });
 
@@ -161,7 +161,7 @@ describe("#526 AC1: the layouts PostgreSQL supports assemble", () => {
   });
 
   it("a subclass of the PostgreSQL lease store inherits its backend (the process tests' layout)", async () => {
-    expect(HeldPostgresExecutionLeaseRepository.backend).toBe("postgres");
+    expect(HeldPostgresExecutionLeaseRepository.store.backend).toBe("postgres");
     const fencing = [PostgresFencedEffectRepository, PostgresOutboundCallRepository];
     expect(await assembled([HeldPostgresExecutionLeaseRepository, ...fencing])).toBe(true);
   });

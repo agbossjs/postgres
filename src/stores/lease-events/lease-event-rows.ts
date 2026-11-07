@@ -83,7 +83,7 @@ const OutboundCall = z.strictObject({
   step: Step,
   replayedFrom: Origin.optional(),
   supersededBy: z.number().int().optional(),
-  supersededLease: z
+  closedLease: z
     .strictObject({
       rootExecutionId: z.string(),
       leaseExecutionId: z.string(),

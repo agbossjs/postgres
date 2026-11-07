@@ -9,4 +9,5 @@ export const environment: ProcessEnvironment = {
   postgresUrl: secret("AGBOSS_PROCESS_DATABASE_URL"),
   postgresPoolSize: 4,
   meshPeerKey: env("AGBOSS_PROCESS_MESH_PEER_KEY"),
+  idempotencyKey: secret("AGBOSS_PROCESS_IDEMPOTENCY_KEY"),
 };

@@ -7,7 +7,7 @@ import { storeNow } from "./store-time.js";
 /**
  * The fencing checks of the fenced stores (#500, agbossjs/agboss#505, #508) — the fenced effect and
  * the outbound call — inside the caller's transaction, in the order of #500, after the key's name
- * (each store checks it first with the core's `checkedEffectName`, agbossjs/agboss#526): its lease
+ * (each store checks it first with the core's `assertEffectName`, agbossjs/agboss#526): its lease
  * row locked and held (its epoch, not released, not expired), then the scope's mark raised
  * to the token (a higher one refuses the key before any of its rows is read).
  */

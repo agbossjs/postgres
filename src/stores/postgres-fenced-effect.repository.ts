@@ -1,14 +1,12 @@
 import {
   StoreClock,
-  checkedBusinessKey,
-  checkedEffectName,
   FencedEffectRepository,
   FencedEffectSettings,
   FencedEffectStatus,
   Injectable,
   replayedFromOf,
   storedKeyFactsOf,
-  type Class,
+  type StoreDescriptor,
   type EffectKey,
   type FencedEffectOutcome,
   type FencedEffectWork,
@@ -20,8 +18,8 @@ import { PostgresConnection } from "../connection/postgres-connection.js";
 import { checkFence } from "./fence.js";
 import { storeNowOf } from "./store-time.js";
 import { escapedJsonOf, unescapedJson } from "./nul-escape.js";
-import { PostgresExecutionLeaseRepository } from "./postgres-execution-lease.repository.js";
 import { z } from "zod";
+import { assertKeyAtEntry } from "./key-entry.js";
 
 const ResultRow = z.object({ token: z.number(), result: z.string() });
 /** What a business key's row keeps of the key that wrote it, for the core's `replayedFromOf`. */
@@ -126,8 +124,7 @@ function replayOf<TResult>(key: EffectKey, row: unknown): FencedEffectOutcome<TR
 @Injectable({ deps: [PostgresConnection, StoreClock, FencedEffectSettings] })
 export class PostgresFencedEffectRepository extends FencedEffectRepository<PoolClient> {
   /** One transactional backend with the other PostgreSQL stores (agbossjs/agboss#526). */
-  static override readonly backend: string | undefined = "postgres";
-  static override readonly leaseRepository: Class | undefined = PostgresExecutionLeaseRepository;
+  static override readonly store: StoreDescriptor = { backend: "postgres" };
 
   constructor(
     private readonly connection: PostgresConnection,
@@ -145,9 +142,8 @@ export class PostgresFencedEffectRepository extends FencedEffectRepository<PoolC
     key: EffectKey,
     work: FencedEffectWork<PoolClient, TResult>,
   ): Promise<FencedEffectOutcome<TResult>> {
-    checkedEffectName(key.name);
-    // a business key's text (agbossjs/agboss#538): refused by its rule before any statement
-    checkedBusinessKey(key);
+    // the key's name, business key and fingerprint decision (agbossjs/agboss#508, #538, #825)
+    assertKeyAtEntry(key);
     return inPoolTransaction(this.connection.pool, (client) => this.#effect(client, key, work));
   }
 

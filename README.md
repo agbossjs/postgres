@@ -113,7 +113,7 @@ less a 1 s margin. Under `testWith` and the contract suites the test's clock is 
 [PostgresConnection, StoreClock, ApplicationContext] })`, the store's own `deps`.
 
 **One backend.** `PostgresExecutionLeaseRepository`, `PostgresFencedEffectRepository` and
-`PostgresOutboundCallRepository` declare `static backend = "postgres"` (agbossjs/agboss#526): a
+`PostgresOutboundCallRepository` declare `static store = { backend: "postgres" }` (agbossjs/agboss#526, #825): a
 fenced effect or an outbound call checks its lease in its own transaction, so assembly requires its
 store and the application's lease store to declare the same backend. List the three together; a
 mixed layout — PostgreSQL leases with in-memory or SQLite fenced effects or outbound calls, or

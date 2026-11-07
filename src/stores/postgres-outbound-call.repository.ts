@@ -1,19 +1,19 @@
 import {
   StoreClock,
-  checkedBusinessKey,
-  checkedEffectName,
   Injectable,
   OutboundCallRepository,
   OutboundCallStatus,
   pendingOutboundCallOf,
-  type Class,
+  type StoreDescriptor,
   type EffectKey,
   type OutboundCallClaim,
   type OutboundCallFailure,
   type OutboundCallIntent,
   type OutboundCallLease,
   type OutboundCallLeaseState,
+  type OutboundCallPage,
   type OutboundCallRecord,
+  type OutboundCallStatusQuery,
   type OutboundCallState,
 } from "@agboss/core";
 import type { PoolClient } from "pg";
@@ -25,7 +25,12 @@ import { storeNowOf } from "./store-time.js";
 import { escapedText } from "./nul-escape.js";
 import { leaseStateIn } from "./outbound-calls/lease-state.js";
 import { callRecordOf, storedJsonOf, whereOf } from "./outbound-calls/outbound-call-rows.js";
-import { PostgresExecutionLeaseRepository } from "./postgres-execution-lease.repository.js";
+import { z } from "zod";
+import { idOfCursor, pageLimitOf } from "./outbound-call-pages.js";
+import { assertKeyAtEntry } from "./key-entry.js";
+
+/** A row of a page (agbossjs/agboss#825): its id, as text, and its record. */
+const PagedRow = z.object({ id: z.string().regex(/^[1-9][0-9]*$/u), record: z.unknown() });
 
 const SAVE = `INSERT INTO agboss_outbound_calls (scope_key, idempotency_key, name, tenant_id,
     root_execution_id, business_key, status, attempt, attempt_owner, ended_at, record)
@@ -68,8 +73,7 @@ interface AsRead {
 @Injectable({ deps: [PostgresConnection, StoreClock] })
 export class PostgresOutboundCallRepository extends OutboundCallRepository {
   /** One transactional backend with the other PostgreSQL stores (agbossjs/agboss#526). */
-  static override readonly backend: string | undefined = "postgres";
-  static override readonly leaseRepository: Class | undefined = PostgresExecutionLeaseRepository;
+  static override readonly store: StoreDescriptor = { backend: "postgres" };
 
   constructor(
     private readonly connection: PostgresConnection,
@@ -167,16 +171,23 @@ export class PostgresOutboundCallRepository extends OutboundCallRepository {
     return rows.map(callRecordOf);
   }
 
-  async findAllByTenantIdAndStatus(
-    tenantId: string,
-    status: OutboundCallStatus,
-  ): Promise<readonly OutboundCallRecord[]> {
+  /**
+   * A page of a tenant's calls in `status` (agbossjs/agboss#825): keyset on the identity `id` — a row keeps its id
+   * while it lives, an id is never reused — on the index `(tenant_id, status, id)`; the cursor is
+   * the page's last id, as text (a `bigint`).
+   */
+  async findAllByTenantIdAndStatus(query: OutboundCallStatusQuery): Promise<OutboundCallPage> {
+    const { tenantId, status, after } = query;
+    const limit = pageLimitOf(query.limit);
     const rows = await rowsOf(
       this.connection.pool,
-      "SELECT record FROM agboss_outbound_calls WHERE tenant_id = $1 AND status = $2 ORDER BY id",
-      [tenantId, status],
+      "SELECT id::text AS id, record FROM agboss_outbound_calls WHERE tenant_id = $1 AND status = $2 AND id > $3::bigint ORDER BY id LIMIT $4",
+      [tenantId, status, after === undefined ? "0" : idOfCursor(after), limit + 1],
     );
-    return rows.map(callRecordOf);
+    const page = rows.slice(0, limit).map((row) => PagedRow.parse(row));
+    const calls = page.map((row) => callRecordOf(row));
+    const last = page.at(-1);
+    return last === undefined || rows.length <= limit ? { calls } : { calls, next: last.id };
   }
 
   async deleteByEndedAtBefore(cutoff: Date): Promise<void> {
@@ -231,9 +242,8 @@ export class PostgresOutboundCallRepository extends OutboundCallRepository {
     key: EffectKey,
     work: (client: PoolClient, now: Date) => Promise<TValue>,
   ): Promise<TValue> {
-    checkedEffectName(key.name);
-    // a business key's text (agbossjs/agboss#538): refused by its rule before any statement
-    checkedBusinessKey(key);
+    // the key's name, business key and fingerprint decision (agbossjs/agboss#508, #538, #825)
+    assertKeyAtEntry(key);
     return inPoolTransaction(this.connection.pool, async (client) => {
       const now = await checkFence(client, key, storeNowOf(this.clock));
       return work(client, now);

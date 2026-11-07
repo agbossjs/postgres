@@ -10,7 +10,7 @@
 import {
   ExecutionLeaseEventKind,
   OutboundCallEventOutcome,
-  OutboundCallOutcomeStatus,
+  OutboundCallSendStatus,
   OutboundCallStatus,
   type ExecutionLeaseEventRecord,
 } from "@agboss/core";
@@ -100,7 +100,7 @@ describe("an outbound charge across processes (#482 AC1 + agbossjs/agboss#505)",
     expect(eventsOf(b, "charging")).toEqual([]);
     expect(eventsOf(b, "reconciling")).toHaveLength(1);
     expect(eventsOf(b, "charged")).toEqual([
-      expect.objectContaining({ status: OutboundCallOutcomeStatus.Reconciled }),
+      expect.objectContaining({ status: OutboundCallSendStatus.Reconciled }),
     ]);
     const settled = await intents();
     expect(settled).toEqual([
@@ -163,19 +163,19 @@ describe("an outbound charge across processes (#482 AC1 + agbossjs/agboss#505)",
     expect(eventsOf(b, "charged")).toEqual([
       expect.objectContaining({
         rootExecutionId: second.executionId,
-        status: OutboundCallOutcomeStatus.Reconciled,
+        status: OutboundCallSendStatus.Reconciled,
       }),
       expect.objectContaining({
         rootExecutionId: first,
-        status: OutboundCallOutcomeStatus.Replayed,
+        status: OutboundCallSendStatus.Replayed,
       }),
     ]);
     const calls = await logOf(b, "default", second.executionId);
     expect(calls).toContainEqual(
       expect.objectContaining({
         kind: ExecutionLeaseEventKind.OutboundCall,
-        outcome: OutboundCallEventOutcome.LeaseSuperseded,
-        supersededLease: { rootExecutionId: first, leaseExecutionId: first, token: 1 },
+        outcome: OutboundCallEventOutcome.LeaseClosed,
+        closedLease: { rootExecutionId: first, leaseExecutionId: first, token: 1 },
       }),
     );
     // the tree whose lease B's check closed: its next take names A at the token it held

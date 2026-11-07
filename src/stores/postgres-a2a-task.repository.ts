@@ -11,6 +11,7 @@ import {
   type A2ATaskSave,
   type A2ATaskStatus,
   type NewA2ATask,
+  type StoreDescriptor,
 } from "@agboss/core";
 import { PostgresConnection } from "../connection/postgres-connection.js";
 import { changesOf, rowsOf } from "../connection/query.js";
@@ -50,7 +51,7 @@ import { escapedJsonOf } from "./nul-escape.js";
  */
 @Injectable({ deps: [PostgresConnection] })
 export class PostgresA2ATaskRepository extends A2ATaskRepository {
-  static override readonly backend: string | undefined = "postgres";
+  static override readonly store: StoreDescriptor = { backend: "postgres" };
 
   constructor(private readonly connection: PostgresConnection) {
     super();
