@@ -29,6 +29,7 @@ describe("migration 0019 keeps the ids of every execution that made an outbound 
       "0025_records_by_run.sql": null,
       "0026_a2a_tasks.sql": null,
       "0027_outbound_call_outcome_names.sql": null,
+      "0028_a2a_task_mesh_body_hash.sql": null,
     });
     await migrateWith({ url }, migrationsIn(before));
     await onSchema(
@@ -57,7 +58,7 @@ describe("migration 0019 keeps the ids of every execution that made an outbound 
     );
 
     expect(report.applied.map((migration) => migration.version)).toEqual([
-      18, 19, 20, 21, 22, 23, 24, 25, 26, 27,
+      18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28,
     ]);
     const { rows } = await onSchema(
       url,

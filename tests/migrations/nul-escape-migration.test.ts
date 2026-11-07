@@ -36,6 +36,7 @@ describe("AC4: migration 0013 keeps the rows written before it", () => {
           "0025_records_by_run.sql": null,
           "0026_a2a_tasks.sql": null,
           "0027_outbound_call_outcome_names.sql": null,
+          "0028_a2a_task_mesh_body_hash.sql": null,
         }),
       ),
     );
