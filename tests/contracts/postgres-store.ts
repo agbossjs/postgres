@@ -1,4 +1,4 @@
-import type { ConformanceStore, StoreSeam } from "@agboss/core/testing/contracts";
+import type { ContractTarget, StoreInstanceContext } from "@agboss/core/testing/contracts";
 import { PostgresConnection } from "../../src/index.js";
 import type { TestDatabase } from "../support/database.js";
 
@@ -16,14 +16,14 @@ export type OnClose = (close: () => Promise<void> | void) => void;
 /** How a test builds one instance's store on that instance's connection. */
 export type PostgresStoreFactory<TStore> = (
   connection: PostgresConnection,
-  seam: StoreSeam,
+  seam: StoreInstanceContext,
   onClose: OnClose,
 ) => TStore | Promise<TStore>;
 
 export function postgresStore<TStore extends object>(
   database: TestDatabase,
   make: PostgresStoreFactory<TStore>,
-): ConformanceStore<TStore> {
+): Omit<ContractTarget<TStore>, "name"> {
   const closers = new WeakMap<TStore, (() => Promise<void> | void)[]>();
   return {
     instance: async (seam) => {

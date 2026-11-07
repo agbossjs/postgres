@@ -1,5 +1,10 @@
 import { FencedEffectSettings, RandomIdGenerator } from "@agboss/core";
-import { storeConformance, type FencedEffectStores } from "@agboss/core/testing/contracts";
+import {
+  storeConformance,
+  type FencedEffectTarget,
+  StoreCapability,
+} from "@agboss/core/testing/contracts";
+import { minutes } from "@agboss/core/units";
 import type { PoolClient } from "pg";
 import { beforeAll } from "vitest";
 import {
@@ -41,7 +46,7 @@ beforeAll(async () => {
 /** The fenced-effect set: the effect and lease stores, and the work's business rows. */
 const fencedEffects = postgresStore(
   database,
-  async (connection, seam, onClose): Promise<FencedEffectStores<PoolClient>> => {
+  async (connection, seam, onClose): Promise<FencedEffectTarget<PoolClient>> => {
     // the reads of "another connection" on one already open: sent at once, when called
     const reader = await connection.pool.connect();
     onClose(() => {
@@ -73,7 +78,7 @@ storeConformance<PoolClient>({
   name: "PostgreSQL",
   // agbossjs/agboss#533, #590: the interleaving explorer — every schedule of two instances 4 steps
   // deep, 50 seeded walks of three; a search out of its time limit fails with what it explored
-  interleavings: { depth: 4, walks: 50, timeLimit: 900_000 },
+  interleavings: { depth: 4, walks: 50, timeLimit: minutes(15) },
   reset: async () => {
     await truncateAll(database.url());
   },
@@ -84,11 +89,15 @@ storeConformance<PoolClient>({
       database,
       (connection) => new PostgresCheckpointSaver(connection),
     ),
-    childExecutionQueue: postgresStore(
-      database,
-      (connection, seam) =>
-        new PostgresChildExecutionQueueRepository(connection, seam.clock, seam.application),
-    ),
+    // agbossjs/agboss#831: the queue has a watch (LISTEN / a change stream / pub/sub): declared
+    childExecutionQueue: {
+      ...postgresStore(
+        database,
+        (connection, seam) =>
+          new PostgresChildExecutionQueueRepository(connection, seam.clock, seam.application),
+      ),
+      capabilities: [StoreCapability.WatchQueued],
+    },
     costLedger: postgresStore(
       database,
       (connection) => new PostgresCostLedgerRepository(connection),

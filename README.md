@@ -453,7 +453,9 @@ Each test file works in a schema of its own (`t_<random>`), dropped after it.
   every pod lists. Every run is on the real clock (agbossjs/agboss#607): PostgreSQL decides a
   lease's expiry by `clock_timestamp()`, so a faster pod clock would test another lease than the
   core's (`tests/faults/postgres-target.ts` says why); CI splits the scenarios over three parallel
-  jobs instead (`AGBOSS_FAULT_SHARD=k/3`). What it proves:
+  jobs instead (`AGBOSS_FAULT_SHARD=k/3`, which the suite reads: `shard: "env"`). After the
+  scenarios the suite runs the core's sabotages (agbossjs/agboss#831): the fixture's payment
+  integration broken on purpose, each case passing only when it charges twice on PostgreSQL. What it proves:
   [Guarantees across processes](https://github.com/agbossjs/agboss/wiki/Guarantees-across-processes).
 - **Migrations** (`tests/migrations/`) — AC5: a second run changes nothing (a schema dump compared),
   concurrent runs serialize, a changed file fails, too new / too old fail at start; leases written

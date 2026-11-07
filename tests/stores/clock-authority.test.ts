@@ -74,8 +74,8 @@ const SKEWS: readonly (readonly [string, ClockSkew, "ahead" | "behind" | "drift"
   ["a lease behind", ClockSkew.behind(by(1)), "behind"],
   ["10 leases ahead", ClockSkew.ahead(by(10)), "ahead"],
   ["10 leases behind", ClockSkew.behind(by(10)), "behind"],
-  ["1 % fast", ClockSkew.drift(0.01), "drift"],
-  ["1 % slow", ClockSkew.drift(-0.01), "drift"],
+  ["1 % fast", ClockSkew.drifting(0.01), "drift"],
+  ["1 % slow", ClockSkew.drifting(-0.01), "drift"],
 ];
 
 const remainingOf = (lease: ExecutionLease | undefined) => lease?.remaining ?? 0;

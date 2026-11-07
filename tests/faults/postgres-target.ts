@@ -1,5 +1,5 @@
 import { fileURLToPath } from "node:url";
-import { FAULT_SCENARIOS, type FaultSuiteOptions } from "@agboss/core/testing/faults";
+import type { FaultSuiteOptions } from "@agboss/core/testing/faults";
 import { afterAll } from "vitest";
 import { migratePostgres } from "../../src/index.js";
 import { createSchema, dropSchema, onSchema } from "../support/database.js";
@@ -24,30 +24,6 @@ export const POSTGRES_FAULT_STORES = fileURLToPath(
   new URL("./postgres.fault-stores.ts", import.meta.url),
 );
 
-/** One shard of the scenarios: `k/n` (1 ≤ k ≤ n), every `n`-th from the `k`-th, in the suite's order. */
-export interface FaultShard {
-  readonly index: number;
-  readonly count: number;
-}
-
-/** The shard `text` names (`AGBOSS_FAULT_SHARD`); `undefined` for none, a `RangeError` when malformed. */
-export function faultShardOf(text: string | undefined): FaultShard | undefined {
-  if (text === undefined || text === "") return undefined;
-  const match = /^([1-9]\d*)\/([1-9]\d*)$/.exec(text);
-  const [index, count] = [Number(match?.[1]), Number(match?.[2])];
-  if (match === null || index > count)
-    throw new RangeError(`AGBOSS_FAULT_SHARD is "${text}": expected k/n with 1 ≤ k ≤ n`);
-  return { index, count };
-}
-
-/** The ids of the scenarios of `shard` (every scenario without one). */
-export function scenariosOf(shard: FaultShard | undefined): readonly string[] | undefined {
-  if (shard === undefined) return undefined;
-  return FAULT_SCENARIOS.filter((_, at) => at % shard.count === shard.index - 1).map(
-    (scenario) => scenario.id,
-  );
-}
-
 /** The fault suite's options on fresh schemas of this file's own, on the real clock. */
 export function postgresFaultTarget(): FaultSuiteOptions {
   const schemas: string[] = [];
@@ -57,12 +33,14 @@ export function postgresFaultTarget(): FaultSuiteOptions {
   });
   return {
     name: "PostgreSQL",
-    stores: POSTGRES_FAULT_STORES,
+    storesModule: POSTGRES_FAULT_STORES,
     // the pods and PostgreSQL's `clock_timestamp()` at one rate: the lease and its margin are the
     // core's own (see above); the history is read on the database's clock as the set declares it
     // (`faultStores.storeTime`, agbossjs/agboss#799)
     timeScale: 1,
-    scenarios: scenariosOf(faultShardOf(process.env.AGBOSS_FAULT_SHARD)),
+    // CI's parallel jobs: AGBOSS_FAULT_SHARD=k/n, read by the suite (agbossjs/agboss#831) — the
+    // core's sabotages included, each passing only when it breaks its invariant
+    shard: "env",
     database: {
       get url() {
         return url;
