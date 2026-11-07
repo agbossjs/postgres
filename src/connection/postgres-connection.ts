@@ -33,9 +33,9 @@ const SchemaRow = z.object({ schema: z.string().nullable() });
   // checked at the application's assembly (agbossjs/agboss#511): a contract without postgresUrl
   // fails with [environment.missing-field] before anything starts
   environmentFields: {
-    postgresUrl: EnvironmentField.Secret,
-    postgresPoolSize: EnvironmentField.OptionalInteger,
-    postgresMigrateOnStart: EnvironmentField.OptionalFlag,
+    postgresUrl: EnvironmentField.secret(),
+    postgresPoolSize: EnvironmentField.integer({ optional: true }),
+    postgresMigrateOnStart: EnvironmentField.flag({ optional: true }),
   },
 })
 export class PostgresConnection implements OnInit, OnDestroy {

@@ -47,7 +47,7 @@ let app: App;
 /** A takeover row of `rootExecutionId` in `tenantId`'s lease log. */
 const takeoverOf = (tenantId: string, rootExecutionId: string): LeaseTakeoverRecord => ({
   kind: ExecutionLeaseEventKind.Takeover,
-  // now: the application's recovery sweep removes rows older than its leaseEventRetention
+  // now: the application's recovery sweep removes rows older than its retention.leaseEvents
   occurredAt: new Date().toISOString(),
   tenantId,
   rootExecutionId,

@@ -124,7 +124,7 @@ export class ProcessObserver implements OnExecutionEnd, OnExecutionLeaseTakeover
     SpendExecutionBudget,
   ],
   maxConcurrentSteps: 1,
-  executionRecordRetention: hours(24),
+  retention: { executionRecords: hours(24) },
   exposes: [ProcessA2AExpose],
   mesh: { peers: [{ application: "orders-application", verifyKey: "meshPeerKey" }] },
   providers: [
