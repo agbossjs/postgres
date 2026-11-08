@@ -87,7 +87,7 @@ describe("agbossjs/agboss#810: the mesh's fields of an A2A task on PostgreSQL", 
       [NINE],
     );
 
-    expect((await migratePostgres({ url })).applied.map((file) => file.version)).toEqual([28]);
+    expect((await migratePostgres({ url })).applied.map((file) => file.version)).toEqual([28, 29]);
 
     const old = await tasksOn(url).findById(keyOf("old"));
     expect(old).toMatchObject({ callerPeer: "orders-application", status: { spentUsd: 1 } });

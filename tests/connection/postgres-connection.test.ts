@@ -128,6 +128,7 @@ describe("PostgresConnection.onInit: the schema check at start", () => {
           "0026_a2a_tasks.sql": null,
           "0027_outbound_call_outcome_names.sql": null,
           "0028_a2a_task_mesh_body_hash.sql": null,
+          "0029_execution_lease_token.sql": null,
         }),
       ),
     );

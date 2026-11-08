@@ -66,7 +66,7 @@ describe("agboss-postgres migrate", () => {
     const io = ioOf({ DATABASE_URL: url });
 
     expect(await runCommand(["migrate"], io)).toBe(ExitCode.Ok);
-    expect(io.lines).toHaveLength(29);
+    expect(io.lines).toHaveLength(30);
   });
 
   it("neither --url nor DATABASE_URL: a usage error, exit code 2", async () => {

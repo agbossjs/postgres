@@ -71,7 +71,7 @@ describe("#516 acceptance: a yielded lease on PostgreSQL", () => {
   it("AC4: 1 ms before its expiry a yielded lease still blocks another instance", async () => {
     const clock = new VirtualClock();
     const held = await leasesOn(clock, "instance-1").acquire("default", "root-edge", LEASE);
-    expect(held && (await leasesOn(clock, "instance-1").yield(held))).toBe(true);
+    expect(held && (await leasesOn(clock, "instance-1").yield(held))).toBe(LEASE);
 
     await clock.advance(seconds(29.999));
 
