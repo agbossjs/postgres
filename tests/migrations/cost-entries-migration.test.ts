@@ -53,6 +53,7 @@ describe("migration 0022 adds the ledger's entries", () => {
           "0026_a2a_tasks.sql": null,
           "0027_outbound_call_outcome_names.sql": null,
           "0028_a2a_task_mesh_body_hash.sql": null,
+          "0029_execution_lease_token.sql": null,
         }),
       ),
     );
@@ -72,7 +73,7 @@ describe("migration 0022 adds the ledger's entries", () => {
     await ledger.saveAll([tenantDay], [paid(0.25, "run-1:pay-action:1#0")]);
 
     expect(report.applied.map((migration) => migration.version)).toEqual([
-      22, 23, 24, 25, 26, 27, 28,
+      22, 23, 24, 25, 26, 27, 28, 29,
     ]);
     expect(await ledger.findSpentByCounter(tenantDay)).toBe(2.25);
   });
@@ -91,6 +92,7 @@ describe("migration 0023 dates the ledger's entries", () => {
           "0026_a2a_tasks.sql": null,
           "0027_outbound_call_outcome_names.sql": null,
           "0028_a2a_task_mesh_body_hash.sql": null,
+          "0029_execution_lease_token.sql": null,
         }),
       ),
     );
@@ -104,7 +106,9 @@ describe("migration 0023 dates the ledger's entries", () => {
       [paid(0.25, "pass-a:0", new Date("2026-11-04T08:00:00.000Z"))],
     );
 
-    expect(report.applied.map((migration) => migration.version)).toEqual([23, 24, 25, 26, 27, 28]);
+    expect(report.applied.map((migration) => migration.version)).toEqual([
+      23, 24, 25, 26, 27, 28, 29,
+    ]);
     expect(await before.findSpentByCounter(tenantDay)).toBe(0);
     const rows = await onSchema(
       url,

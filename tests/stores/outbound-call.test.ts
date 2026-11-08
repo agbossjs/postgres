@@ -8,8 +8,10 @@ import {
   type EffectKey,
   type EffectKeyFields,
   type OutboundCallIntent,
+  StoreClock,
+  StoreTimeSource,
 } from "@agboss/core";
-import { VirtualClock, TestStoreClock } from "@agboss/core/testing";
+import { VirtualClock } from "@agboss/core/testing";
 import { hours, seconds } from "@agboss/core/units";
 import { describe, expect, it } from "vitest";
 import {
@@ -36,10 +38,13 @@ function instanceOn(clock: VirtualClock, index: number, poolSize = 2) {
   const connection = connectionTo(database.url(), poolSize);
   const application = new TestApplicationContext({}, `instance-${String(index)}`);
   return {
-    calls: new PostgresOutboundCallRepository(connection, new TestStoreClock(clock)),
+    calls: new PostgresOutboundCallRepository(
+      connection,
+      new StoreClock(StoreTimeSource.Test, clock),
+    ),
     leases: new PostgresExecutionLeaseRepository(
       connection,
-      new TestStoreClock(clock),
+      new StoreClock(StoreTimeSource.Test, clock),
       application,
     ),
   };
@@ -53,7 +58,7 @@ const keyOf = (lease: ExecutionLease, extra: Partial<EffectKeyFields> = {}): Eff
     scopeKey: `${lease.tenantId}:${lease.rootExecutionId}`,
     tenantId: lease.tenantId,
     leaseExecutionId: lease.rootExecutionId,
-    token: lease.leaseEpoch,
+    token: lease.token,
     idempotencyKey: `${lease.rootExecutionId}:charge-action:1`,
     name: "charge",
     ...extra,
@@ -95,7 +100,7 @@ const NO_LEASE: ExecutionLease = {
   tenantId: "default",
   rootExecutionId: "none",
   holderInstanceId: "none",
-  leaseEpoch: 1,
+  token: 1,
   expiresAt: new Date(0),
   remaining: seconds(30),
 };
@@ -161,7 +166,7 @@ describe("PostgresOutboundCallRepository: many connections racing", () => {
       const root = `state-${String(round)}`;
       const lease = await leaseOf(holder, root, seconds(30));
       await clock.advance(seconds(31));
-      const state = { tenantId: "default", leaseExecutionId: root, token: lease.leaseEpoch };
+      const state = { tenantId: "default", leaseExecutionId: root, token: lease.token };
 
       const [isRenewed, ...states] = await Promise.all([
         holder.leases.renew(lease, seconds(30)),
@@ -265,7 +270,7 @@ describe("PostgresOutboundCallRepository: edges", () => {
     await holder.leases.release(lease);
     const taken = await leaseOf(other, "late-release");
 
-    expect(taken.takenOverFrom).toEqual({ holderInstanceId: "instance-0", leaseEpoch: 1 });
+    expect(taken.takenOverFrom).toEqual({ holderInstanceId: "instance-0", token: 1 });
     expect(await leaseOf(holder, "late-release").catch(() => "held")).toBe("held");
     expect(await other.calls.leaseStateOf({ ...state, token: 2 })).toBe(
       OutboundCallLeaseState.Live,
@@ -294,7 +299,7 @@ describe("PostgresOutboundCallRepository: edges", () => {
       tenantId: "default",
       rootExecutionId: "never-taken",
       holderInstanceId: "instance-0",
-      leaseEpoch: 1,
+      token: 1,
       expiresAt: new Date(),
       remaining: seconds(30),
     });
@@ -325,13 +330,13 @@ describe("PostgresOutboundCallRepository: edges", () => {
     const connection = connectionTo("postgres://postgres:pw@127.0.0.1:1/postgres");
     const calls = new PostgresOutboundCallRepository(
       connection,
-      new TestStoreClock(new VirtualClock()),
+      new StoreClock(StoreTimeSource.Test, new VirtualClock()),
     );
     const key = keyOf({
       tenantId: "default",
       rootExecutionId: "x",
       holderInstanceId: "i",
-      leaseEpoch: 1,
+      token: 1,
       expiresAt: new Date(),
       remaining: seconds(30),
     });

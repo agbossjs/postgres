@@ -1,4 +1,5 @@
-import { TestStoreClock, VirtualClock } from "@agboss/core/testing";
+import { StoreClock, StoreTimeSource } from "@agboss/core";
+import { VirtualClock } from "@agboss/core/testing";
 import { describe, expect, it } from "vitest";
 import { migratePostgres, PostgresExecutionLeaseRepository } from "../../src/index.js";
 import { migrationsIn } from "../../src/migrations/files.js";
@@ -30,6 +31,7 @@ describe("migration 0019 keeps the ids of every execution that made an outbound 
       "0026_a2a_tasks.sql": null,
       "0027_outbound_call_outcome_names.sql": null,
       "0028_a2a_task_mesh_body_hash.sql": null,
+      "0029_execution_lease_token.sql": null,
     });
     await migrateWith({ url }, migrationsIn(before));
     await onSchema(
@@ -53,12 +55,12 @@ describe("migration 0019 keeps the ids of every execution that made an outbound 
     const report = await migratePostgres({ url });
     const leases = new PostgresExecutionLeaseRepository(
       connectionTo(url),
-      new TestStoreClock(new VirtualClock()),
+      new StoreClock(StoreTimeSource.Test, new VirtualClock()),
       new TestApplicationContext({}, "instance-1"),
     );
 
     expect(report.applied.map((migration) => migration.version)).toEqual([
-      18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28,
+      18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29,
     ]);
     const { rows } = await onSchema(
       url,
@@ -70,9 +72,7 @@ describe("migration 0019 keeps the ids of every execution that made an outbound 
       { execution_id: "old-root", tenant_id: "acme" },
     ]);
     for (const executionId of ["old-child-3", "old-child-4", "old-root"])
-      expect(await leases.saveExecutionIdIfAbsent({ executionId, tenantId: "globex" })).toBe(false);
-    expect(await leases.saveExecutionIdIfAbsent({ executionId: "new-1", tenantId: "acme" })).toBe(
-      true,
-    );
+      expect(await leases.claimExecutionId({ executionId, tenantId: "globex" })).toBe(false);
+    expect(await leases.claimExecutionId({ executionId: "new-1", tenantId: "acme" })).toBe(true);
   });
 });

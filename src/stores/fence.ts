@@ -8,12 +8,12 @@ import { storeNow } from "./store-time.js";
  * The fencing checks of the fenced stores (#500, agbossjs/agboss#505, #508) — the fenced effect and
  * the outbound call — inside the caller's transaction, in the order of #500, after the key's name
  * (each store checks it first with the core's `assertEffectName`, agbossjs/agboss#526): its lease
- * row locked and held (its epoch, not released, not expired), then the scope's mark raised
+ * row locked and held (its token, not released, not expired), then the scope's mark raised
  * to the token (a higher one refuses the key before any of its rows is read).
  */
 
 /** The key's lease row, locked for the transaction: a renewal, a close or a takeover of it waits. */
-const LOCK_LEASE = `SELECT lease_epoch, expires_at, released FROM agboss_execution_leases
+const LOCK_LEASE = `SELECT token, expires_at, released FROM agboss_execution_leases
   WHERE tenant_id = $1 AND root_execution_id = $2 FOR UPDATE`;
 
 /**
@@ -28,7 +28,7 @@ const RAISE_MARK = `INSERT INTO agboss_fenced_effect_marks AS mark (scope_key, h
     stored_at = EXCLUDED.stored_at
   RETURNING highest_token, ${storeNow(3)} AS now`;
 
-const LeaseRow = z.object({ lease_epoch: z.number(), expires_at: z.date(), released: z.boolean() });
+const LeaseRow = z.object({ token: z.number(), expires_at: z.date(), released: z.boolean() });
 const MarkRow = z.object({ highest_token: z.number(), now: z.date() });
 
 /**
@@ -46,9 +46,8 @@ export async function checkFence(
   const { scopeKey, token } = key;
   const row = await firstRowOf(client, LOCK_LEASE, [key.tenantId, key.leaseExecutionId]);
   const lease = row === undefined ? undefined : LeaseRow.parse(row);
-  const refused = () =>
-    new ExecutionFencedError({ scopeKey, token, observedToken: lease?.lease_epoch });
-  if (lease === undefined || lease.released || lease.lease_epoch !== token) throw refused();
+  const refused = () => new ExecutionFencedError({ scopeKey, token, observedToken: lease?.token });
+  if (lease === undefined || lease.released || lease.token !== token) throw refused();
   const mark = MarkRow.parse(await firstRowOf(client, RAISE_MARK, [scopeKey, token, now]));
   // live while expires_at > now, by the store's time read after the lock (#534, #533)
   if (lease.expires_at.getTime() <= mark.now.getTime()) throw refused();

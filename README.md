@@ -63,7 +63,7 @@ import { AppEnvironment } from "./environments/app.environment.js";
     PostgresCostLedgerRepository, // budgets: every pod's spend in one counter
     PostgresExecutionHistoryRepository, // agboss records export, from any pod
     PostgresExecutionLeaseEventRepository, // the lease log: app.leaseEventsOf
-    PostgresExecutionLeaseRepository, // who moves a tree, fenced by epoch
+    PostgresExecutionLeaseRepository, // who moves a tree, fenced by its token
     PostgresExecutionRecordRepository, // threads, records, scores, summaries
     PostgresExecutionTreeRepository, // a tree's keys (saveIfAbsent)
     PostgresFencedEffectRepository, // with PostgresExecutionLeaseRepository: it reads its leases
@@ -362,33 +362,33 @@ All operations run at `READ COMMITTED`. Losing the connection rejects the operat
 rules then apply — a failed renewal past `confirmedUntil` aborts the execution's signal and hands
 the tree over, so a pod never moves a tree whose lease it could not renew.
 
-| Store         | Operation            | How                                                                                                                                   |
-| ------------- | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| Lease         | `acquire`            | `INSERT … ON CONFLICT DO UPDATE … WHERE NOT finished AND (released OR expires_at <= $now)` → epoch + 1, `takenOverFrom` if expired    |
-| Lease         | `finish`             | `UPDATE … SET released, finished WHERE holder AND lease_epoch`: refused by every later `acquire`; a later `release` keeps it finished |
-| Lease         | `renew` / `release`  | `UPDATE … WHERE holder AND lease_epoch` (a renewal also `expires_at > $now`, #534); 0 rows: lost                                      |
-| Lease         | `yield` / `reclaim`  | `UPDATE … WHERE holder AND lease_epoch AND expires_at > $now`: `yielded = true` / epoch + 1; 0 rows: lost                             |
-| Record        | `completeIfStatus`   | `UPDATE … WHERE status = $expected`                                                                                                   |
-| Tree          | `saveIfAbsent`       | `INSERT … ON CONFLICT DO NOTHING RETURNING`                                                                                           |
-| Child queue   | claim                | `WITH … AS MATERIALIZED (SELECT … FOR UPDATE SKIP LOCKED LIMIT 1) UPDATE … FROM` — chosen once (agbossjs/agboss#720)                  |
-| Child queue   | `saveIfAbsent`       | `WITH saved AS (INSERT … ON CONFLICT DO UPDATE … RETURNING) SELECT pg_notify('agboss_child_queued', current_schema()) FROM saved`     |
-| Child queue   | `watchQueued`        | `LISTEN agboss_child_queued` on a connection of its own (agbossjs/agboss#777): its schema's notifications wake the claimers           |
-| Paused        | `Pending → …`        | `UPDATE … WHERE status = 'pending' RETURNING` (none → `NotPausedError` from the core)                                                 |
-| Fenced effect | `saveResultIfAbsent` | one transaction: lease row `FOR UPDATE`, mark upsert, key lookup, `await work(client)`, insert                                        |
-| Fenced effect | business key         | the same, the key's identity serialized by `pg_advisory_xact_lock` first (no lease row covers two trees)                              |
-| Outbound call | `saveIfAbsent`       | one transaction: lease row `FOR UPDATE`, mark upsert, `INSERT … ON CONFLICT DO NOTHING` (unique by step / key)                        |
-| Outbound call | `mark*`              | the same checks, then one `UPDATE … WHERE status AND attempt AND attempt_owner` as read: a compare-and-set                            |
-| Outbound call | `leaseStateOf`       | one transaction: lease row `FOR UPDATE`; held → Live, expired at the token → closed (`superseded`), else Ended                        |
-| Lease events  | `save`               | append-only `INSERT`; read `ORDER BY occurred_at, id` (one moment: the order saved)                                                   |
-| Cost ledger   | `saveAll`            | one `INSERT … ON CONFLICT DO UPDATE SET spent_usd = spent_usd + $cost` of every counter, in key order                                 |
-| Cost ledger   | `findSpentByCounter` | `SELECT` of the counter's row; no other locking (the core accepts a small overrun on a race, nothing reserved)                        |
-| History       | `save`               | upsert of the root's row (`jsonb` record); reads by tenant, id, thread, period (`LIMIT`/`OFFSET`), oldest first                       |
-| Rate limit    | `acquire`            | one transaction: the key's row `FOR UPDATE`, then sweep expired + `INSERT … WHERE count(valid) < max`                                 |
-| Rate limit    | `renew` / `release`  | `UPDATE … WHERE slot_id AND expires_at > $now` (0 rows: expired) / `DELETE`                                                           |
-| Rate limit    | `addToWindow`        | the key's row `FOR UPDATE`, old buckets forgotten, sum, add to this millisecond's bucket if within the limit                          |
-| Rate limit    | `pauseUntil`         | upsert keeping `GREATEST(paused_until, $until)`: a 429 pause or an open breaker, seen by every pod                                    |
-| Mesh request  | `saveIfAbsent`       | `INSERT … ON CONFLICT DO NOTHING` by (tenant, peer, idempotency key); `deleteCreatedBefore` for the sweep                             |
-| Checkpoints   | —                    | LangGraph's `PostgresSaver` on the shared pool                                                                                        |
+| Store         | Operation            | How                                                                                                                                |
+| ------------- | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| Lease         | `acquire`            | `INSERT … ON CONFLICT DO UPDATE … WHERE NOT finished AND (released OR expires_at <= $now)` → token + 1, `takenOverFrom` if expired |
+| Lease         | `retire`             | `UPDATE … SET released, finished WHERE holder AND token`: refused by every later `acquire`; a later `release` keeps it finished    |
+| Lease         | `renew` / `release`  | `UPDATE … WHERE holder AND token` (a renewal also `expires_at > $now`, #534); 0 rows: lost                                         |
+| Lease         | `yield` / `reclaim`  | `UPDATE … WHERE holder AND token AND expires_at > $now`: `yielded = true` (the time left) / token + 1; 0 rows: lost                |
+| Record        | `completeIfStatus`   | `UPDATE … WHERE status = $expected`                                                                                                |
+| Tree          | `saveIfAbsent`       | `INSERT … ON CONFLICT DO NOTHING RETURNING`                                                                                        |
+| Child queue   | claim                | `WITH … AS MATERIALIZED (SELECT … FOR UPDATE SKIP LOCKED LIMIT 1) UPDATE … FROM` — chosen once (agbossjs/agboss#720)               |
+| Child queue   | `saveIfAbsent`       | `WITH saved AS (INSERT … ON CONFLICT DO UPDATE … RETURNING) SELECT pg_notify('agboss_child_queued', current_schema()) FROM saved`  |
+| Child queue   | `watchQueued`        | `LISTEN agboss_child_queued` on a connection of its own (agbossjs/agboss#777): its schema's notifications wake the claimers        |
+| Paused        | `Pending → …`        | `UPDATE … WHERE status = 'pending' RETURNING` (none → `NotPausedError` from the core)                                              |
+| Fenced effect | `saveResultIfAbsent` | one transaction: lease row `FOR UPDATE`, mark upsert, key lookup, `await work(client)`, insert                                     |
+| Fenced effect | business key         | the same, the key's identity serialized by `pg_advisory_xact_lock` first (no lease row covers two trees)                           |
+| Outbound call | `saveIfAbsent`       | one transaction: lease row `FOR UPDATE`, mark upsert, `INSERT … ON CONFLICT DO NOTHING` (unique by step / key)                     |
+| Outbound call | `mark*`              | the same checks, then one `UPDATE … WHERE status AND attempt AND attempt_owner` as read: a compare-and-set                         |
+| Outbound call | `leaseStateOf`       | one transaction: lease row `FOR UPDATE`; held → Live, expired at the token → closed (`superseded`), else Ended                     |
+| Lease events  | `save`               | append-only `INSERT`; read `ORDER BY occurred_at, id` (one moment: the order saved)                                                |
+| Cost ledger   | `saveAll`            | one `INSERT … ON CONFLICT DO UPDATE SET spent_usd = spent_usd + $cost` of every counter, in key order                              |
+| Cost ledger   | `findSpentByCounter` | `SELECT` of the counter's row; no other locking (the core accepts a small overrun on a race, nothing reserved)                     |
+| History       | `save`               | upsert of the root's row (`jsonb` record); reads by tenant, id, thread, period (`LIMIT`/`OFFSET`), oldest first                    |
+| Rate limit    | `acquire`            | one transaction: the key's row `FOR UPDATE`, then sweep expired + `INSERT … WHERE count(valid) < max`                              |
+| Rate limit    | `renew` / `release`  | `UPDATE … WHERE slot_id AND expires_at > $now` (0 rows: expired) / `DELETE`                                                        |
+| Rate limit    | `addToWindow`        | the key's row `FOR UPDATE`, old buckets forgotten, sum, add to this millisecond's bucket if within the limit                       |
+| Rate limit    | `pauseUntil`         | upsert keeping `GREATEST(paused_until, $until)`: a 429 pause or an open breaker, seen by every pod                                 |
+| Mesh request  | `saveIfAbsent`       | `INSERT … ON CONFLICT DO NOTHING` by (tenant, peer, idempotency key); `deleteCreatedBefore` for the sweep                          |
+| Checkpoints   | —                    | LangGraph's `PostgresSaver` on the shared pool                                                                                     |
 
 ## Tests
 

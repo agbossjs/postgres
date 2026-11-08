@@ -1,8 +1,7 @@
 // agbossjs/agboss#590: the interleaving explorer bites on PostgreSQL — the two deliberately broken
 // lease stores, each run through storeConformance by a fixture of its own (agbossjs/agboss#760: one
 // sabotage per test file, explorer-bites-*.test.ts, each in a vitest of its own).
-import type { ExecutionLease, StoreClock } from "@agboss/core";
-import { TestStoreClock } from "@agboss/core/testing";
+import { StoreClock, StoreTimeSource, type ExecutionLease } from "@agboss/core";
 import { storeConformance } from "@agboss/core/testing/contracts";
 import {
   PostgresExecutionLeaseRepository,
@@ -11,9 +10,9 @@ import {
 import { testDatabase, truncateAll } from "../../support/database.js";
 import { postgresStore } from "../postgres-store.js";
 
-/** A lease store whose `finish` only releases: finished work is taken again (agbossjs/agboss#520). */
-class ReleasingFinishLeases extends PostgresExecutionLeaseRepository {
-  override finish(lease: ExecutionLease): Promise<void> {
+/** A lease store whose `retire` only releases: retired work is taken again (agbossjs/agboss#520). */
+class ReleasingRetireLeases extends PostgresExecutionLeaseRepository {
+  override retire(lease: ExecutionLease): Promise<void> {
     return this.release(lease);
   }
 }
@@ -56,7 +55,7 @@ export const finishReleasesSet = (): void => {
   brokenSet(
     FINISH_RELEASES,
     (connection, storeClock, seam) =>
-      new ReleasingFinishLeases(connection, storeClock, seam.application),
+      new ReleasingRetireLeases(connection, storeClock, seam.application),
   );
 };
 
@@ -67,7 +66,7 @@ export const callerClockSet = (): void => {
     (connection, _storeClock, seam) =>
       new PostgresExecutionLeaseRepository(
         connection,
-        new TestStoreClock(seam.clock),
+        new StoreClock(StoreTimeSource.Test, seam.clock),
         seam.application,
       ),
   );

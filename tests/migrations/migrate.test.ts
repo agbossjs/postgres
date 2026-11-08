@@ -39,6 +39,7 @@ const PACKAGE_MIGRATIONS = [
   "26:a2a_tasks",
   "27:outbound_call_outcome_names",
   "28:a2a_task_mesh_body_hash",
+  "29:execution_lease_token",
 ];
 
 /** The migrations after 0013, left out of a folder: a database migrated by the 0.1.0 package. */
@@ -58,6 +59,7 @@ const AFTER_0013 = {
   "0026_a2a_tasks.sql": null,
   "0027_outbound_call_outcome_names.sql": null,
   "0028_a2a_task_mesh_body_hash.sql": null,
+  "0029_execution_lease_token.sql": null,
 };
 
 const rejectionOf = async (call: Promise<unknown>): Promise<unknown> =>
@@ -77,7 +79,7 @@ describe("migratePostgres (AC5)", () => {
     const second = await migratePostgres({ url });
 
     expect(first.applied.map((m) => `${String(m.version)}:${m.name}`)).toEqual(PACKAGE_MIGRATIONS);
-    expect(first.version).toBe(28);
+    expect(first.version).toBe(29);
     expect(first.checkpointMigrations).toBeGreaterThan(0);
     expect(second).toEqual({ ...first, applied: [], checkpointMigrations: 0 });
     expect(await schemaDumpOf(url)).toBe(dumped);
@@ -134,7 +136,7 @@ describe("migratePostgres (AC5)", () => {
     const reports = await Promise.all([1, 2, 3].map(() => migratePostgres({ url })));
 
     const applied = reports.map((report) => report.applied.length).sort();
-    expect(applied).toEqual([0, 0, 28]);
+    expect(applied).toEqual([0, 0, 29]);
     expect(await historyOf(url)).toEqual(PACKAGE_MIGRATIONS);
   });
 
@@ -160,7 +162,7 @@ describe("migratePostgres (AC5)", () => {
     await holder.end();
 
     expect(doneWhileLocked).toBe(false);
-    expect((await run).applied).toHaveLength(28);
+    expect((await run).applied).toHaveLength(29);
   });
 
   it("a migration changed after it was applied fails the run, and nothing more is applied", async () => {
@@ -208,20 +210,20 @@ describe("migratePostgres (AC5)", () => {
   it("a database a newer package migrated fails the run: PostgresSchemaTooNewError", async () => {
     const url = await freshSchema();
     const newer = migrationsFolder({
-      "0029_later_feature.sql": "CREATE TABLE later (id integer);",
+      "0030_later_feature.sql": "CREATE TABLE later (id integer);",
     });
     await migrateWith({ url }, migrationsIn(newer));
 
     const error = await rejectionOf(migratePostgres({ url }));
 
     expect(error).toBeInstanceOf(PostgresSchemaTooNewError);
-    expect(error).toMatchObject({ code: "postgres.schema-too-new", applied: 29, expected: 28 });
+    expect(error).toMatchObject({ code: "postgres.schema-too-new", applied: 30, expected: 29 });
   });
 
   it("a failing migration is rolled back alone: the ones before it stay applied", async () => {
     const url = await freshSchema();
     const broken = migrationsFolder({
-      "0029_broken.sql": "CREATE TABLE half_made (id integer); SELECT no_such_function();",
+      "0030_broken.sql": "CREATE TABLE half_made (id integer); SELECT no_such_function();",
     });
 
     await expect(migrateWith({ url }, migrationsIn(broken))).rejects.toThrow(/no_such_function/);
@@ -252,6 +254,7 @@ describe("migratePostgres (AC5)", () => {
       { version: 26, name: "a2a_tasks" },
       { version: 27, name: "outbound_call_outcome_names" },
       { version: 28, name: "a2a_task_mesh_body_hash" },
+      { version: 29, name: "execution_lease_token" },
     ]);
     expect(report.checkpointMigrations).toBe(0);
   });

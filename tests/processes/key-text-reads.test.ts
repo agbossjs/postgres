@@ -66,7 +66,7 @@ async function pendingChargeOf(lease: ExecutionLease): Promise<void> {
     scopeKey: `${encodeURIComponent(lease.tenantId)}:${encodeURIComponent(lease.rootExecutionId)}`,
     tenantId: lease.tenantId,
     leaseExecutionId: lease.rootExecutionId,
-    token: lease.leaseEpoch,
+    token: lease.token,
     idempotencyKey: `${lease.rootExecutionId}:charge-action:1`,
     name: "charge",
   });

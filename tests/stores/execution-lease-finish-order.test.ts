@@ -1,5 +1,6 @@
+import { StoreClock, StoreTimeSource } from "@agboss/core";
 import type { ExecutionLease } from "@agboss/core";
-import { VirtualClock, TestStoreClock } from "@agboss/core/testing";
+import { VirtualClock } from "@agboss/core/testing";
 import { seconds } from "@agboss/core/units";
 import pg from "pg";
 import { describe, expect, it } from "vitest";
@@ -23,12 +24,12 @@ import { connectionTo } from "../support/stores.js";
 const database = testDatabase();
 const LEASE = seconds(30);
 
-type Call = "finish" | "release" | "acquire";
+type Call = "retire" | "release" | "acquire";
 
 const leasesOn = (clock: VirtualClock, instanceId: string) =>
   new PostgresExecutionLeaseRepository(
     connectionTo(database.url(), 1),
-    new TestStoreClock(clock),
+    new StoreClock(StoreTimeSource.Test, clock),
     new TestApplicationContext({}, instanceId),
   );
 
@@ -82,7 +83,7 @@ const callOf = (
 async function rowOf(root: string): Promise<unknown> {
   const after = await onSchema(
     database.url(),
-    "SELECT lease_epoch, finished FROM agboss_execution_leases WHERE root_execution_id = $1",
+    "SELECT token, finished FROM agboss_execution_leases WHERE root_execution_id = $1",
     [root],
   );
   return after.rows[0];
@@ -129,62 +130,62 @@ async function raced(root: string, calls: readonly Call[], isExpired: boolean) {
 
 /** The two outcomes a released lease's finish and a new acquire may end in, in either order. */
 const LEGITIMATE = [
-  { isTaken: false, row: { lease_epoch: 1, finished: true } }, // the finish first: refused
-  { isTaken: true, row: { lease_epoch: 2, finished: false } }, // the acquire first: taken
+  { isTaken: false, row: { token: 1, finished: true } }, // the finish first: refused
+  { isTaken: true, row: { token: 2, finished: false } }, // the acquire first: taken
 ];
 
 describe("finish, release and acquire in each order (agbossjs/agboss#520)", () => {
   it("past the lease, the acquire before the finish: taken at epoch 2, and the finish matches nothing", async () => {
-    const { taken, row } = await inOrder("root-a", ["acquire", "finish"], true);
+    const { taken, row } = await inOrder("root-a", ["acquire", "retire"], true);
 
-    expect(taken).toMatchObject({ holderInstanceId: "instance-2", leaseEpoch: 2 });
-    expect(row).toEqual({ lease_epoch: 2, finished: false });
+    expect(taken).toMatchObject({ holderInstanceId: "instance-2", token: 2 });
+    expect(row).toEqual({ token: 2, finished: false });
   });
 
   it("past the lease, the finish before the acquire: refused, finished at epoch 1", async () => {
-    const { taken, row } = await inOrder("root-b", ["finish", "acquire"], true);
+    const { taken, row } = await inOrder("root-b", ["retire", "acquire"], true);
 
     expect(taken).toBeUndefined();
-    expect(row).toEqual({ lease_epoch: 1, finished: true });
+    expect(row).toEqual({ token: 1, finished: true });
   });
 
   it("a valid lease released, then acquired, then finished: taken at epoch 2, not finished", async () => {
-    const { taken, row } = await inOrder("root-c", ["release", "acquire", "finish"], false);
+    const { taken, row } = await inOrder("root-c", ["release", "acquire", "retire"], false);
 
-    expect(taken).toMatchObject({ holderInstanceId: "instance-2", leaseEpoch: 2 });
-    expect(row).toEqual({ lease_epoch: 2, finished: false });
+    expect(taken).toMatchObject({ holderInstanceId: "instance-2", token: 2 });
+    expect(row).toEqual({ token: 2, finished: false });
   });
 
   it("a valid lease released, then finished, then acquired: refused, finished", async () => {
-    const { taken, row } = await inOrder("root-d", ["release", "finish", "acquire"], false);
+    const { taken, row } = await inOrder("root-d", ["release", "retire", "acquire"], false);
 
     expect(taken).toBeUndefined();
-    expect(row).toEqual({ lease_epoch: 1, finished: true });
+    expect(row).toEqual({ token: 1, finished: true });
   });
 
   it("a valid lease finished, then released, then acquired: the release keeps it finished", async () => {
-    const { taken, row } = await inOrder("root-e", ["finish", "release", "acquire"], false);
+    const { taken, row } = await inOrder("root-e", ["retire", "release", "acquire"], false);
 
     expect(taken).toBeUndefined();
-    expect(row).toEqual({ lease_epoch: 1, finished: true });
+    expect(row).toEqual({ token: 1, finished: true });
   });
 });
 
 describe("raced behind one row lock, in whatever order PostgreSQL wakes them (agbossjs/agboss#715)", () => {
   for (const [name, calls, isExpired] of [
-    ["past the lease: a finish and an acquire", ["acquire", "finish"], true],
-    ["past the lease: the finish queued first", ["finish", "acquire"], true],
+    ["past the lease: a finish and an acquire", ["acquire", "retire"], true],
+    ["past the lease: the finish queued first", ["retire", "acquire"], true],
     [
       "a valid lease released, then a finish and an acquire",
-      ["release", "finish", "acquire"],
+      ["release", "retire", "acquire"],
       false,
     ],
     [
       "a valid lease released, then an acquire and a finish",
-      ["release", "acquire", "finish"],
+      ["release", "acquire", "retire"],
       false,
     ],
-    ["a valid lease: a finish, a release and an acquire", ["finish", "release", "acquire"], false],
+    ["a valid lease: a finish, a release and an acquire", ["retire", "release", "acquire"], false],
   ] as const) {
     it(`${name}: given the lease exactly when the tree is not finished`, async () => {
       const root = `race-${name.replaceAll(/[^a-z]+/g, "-")}`;
@@ -193,7 +194,7 @@ describe("raced behind one row lock, in whatever order PostgreSQL wakes them (ag
 
       expect(LEGITIMATE).toContainEqual({ isTaken: taken !== undefined, row });
       if (taken !== undefined)
-        expect(taken).toMatchObject({ holderInstanceId: "instance-2", leaseEpoch: 2 });
+        expect(taken).toMatchObject({ holderInstanceId: "instance-2", token: 2 });
     });
   }
 });

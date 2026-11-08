@@ -9,8 +9,8 @@
  * caller's `now`) gives a live lease to the instance ahead and keeps an expired one from the
  * instance behind.
  */
-import { Clock, DatabaseStoreClock, type ExecutionLease, type StoreClock } from "@agboss/core";
-import { ClockSkew, SkewedClock, TestStoreClock } from "@agboss/core/testing";
+import { Clock, type ExecutionLease, StoreClock, StoreTimeSource } from "@agboss/core";
+import { ClockSkew, SkewedClock } from "@agboss/core/testing";
 import type { Milliseconds } from "@agboss/core/units";
 import { describe, expect, it } from "vitest";
 import { PostgresExecutionLeaseRepository } from "../../src/index.js";
@@ -42,7 +42,9 @@ type Time = "database" | "caller";
 
 const storeOf = (instanceId: string, clock: Clock, time: Time) => {
   const storeClock: StoreClock =
-    time === "database" ? new DatabaseStoreClock(host) : new TestStoreClock(clock);
+    time === "database"
+      ? new StoreClock(StoreTimeSource.Database, host)
+      : new StoreClock(StoreTimeSource.Test, clock);
   return new PostgresExecutionLeaseRepository(
     connectionTo(database.url(), 1),
     storeClock,
@@ -89,7 +91,7 @@ describe("agbossjs/agboss#533 AC4: the database's clock decides, whatever an ins
       expect(remainingOf(held)).toBeGreaterThan(LEASE - 50);
       expect(remainingOf(held)).toBeLessThanOrEqual(LEASE);
       expect(whileLive).toBeUndefined();
-      expect(onceOver).toMatchObject({ holderInstanceId: "instance-2", leaseEpoch: 2 });
+      expect(onceOver).toMatchObject({ holderInstanceId: "instance-2", token: 2 });
     },
   );
 

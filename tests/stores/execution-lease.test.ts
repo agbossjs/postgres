@@ -1,4 +1,5 @@
-import { VirtualClock, TestStoreClock } from "@agboss/core/testing";
+import { StoreClock, StoreTimeSource } from "@agboss/core";
+import { VirtualClock } from "@agboss/core/testing";
 import { seconds } from "@agboss/core/units";
 import { describe, expect, it } from "vitest";
 import { PostgresExecutionLeaseRepository } from "../../src/index.js";
@@ -12,7 +13,7 @@ const database = testDatabase();
 const leasesOn = (clock: VirtualClock, instanceId = "instance-1") =>
   new PostgresExecutionLeaseRepository(
     connectionTo(database.url()),
-    new TestStoreClock(clock),
+    new StoreClock(StoreTimeSource.Test, clock),
     new TestApplicationContext({}, instanceId),
   );
 
@@ -29,7 +30,7 @@ describe("PostgresExecutionLeaseRepository", () => {
       await leasesOn(clock, "instance-2").acquire("default", "root-over", seconds(30)),
     ).toMatchObject({
       holderInstanceId: "instance-2",
-      leaseEpoch: 2,
+      token: 2,
     });
   });
 
@@ -40,17 +41,17 @@ describe("PostgresExecutionLeaseRepository", () => {
     const yielded = await leases.acquire("default", "root-instant-yielded", seconds(30));
     if (held === undefined || yielded === undefined)
       throw new Error("the first takes must succeed");
-    expect(await leases.yield(yielded)).toBe(true);
+    expect(await leases.yield(yielded)).toBeGreaterThan(0);
 
     await clock.advance(seconds(30));
 
     expect(await leases.renew(held, seconds(30))).toBeUndefined();
-    expect(await leases.yield(held)).toBe(false);
+    expect(await leases.yield(held)).toBeUndefined();
     expect(await leases.renew(yielded, seconds(30))).toBeUndefined();
     expect(await leases.reclaim(yielded, seconds(30))).toBeUndefined();
     expect(await leases.acquire("default", "root-instant", seconds(30))).toMatchObject({
-      leaseEpoch: 2,
-      takenOverFrom: { holderInstanceId: "instance-1", leaseEpoch: 1 },
+      token: 2,
+      takenOverFrom: { holderInstanceId: "instance-1", token: 1 },
     });
   });
 
@@ -63,7 +64,7 @@ describe("PostgresExecutionLeaseRepository", () => {
     expect(
       await leasesOn(clock, "instance-2").acquire("default", "root-edge", seconds(30)),
     ).toMatchObject({
-      leaseEpoch: 2,
+      token: 2,
     });
   });
 
@@ -71,14 +72,14 @@ describe("PostgresExecutionLeaseRepository", () => {
     const clock = new VirtualClock();
     const down = new PostgresExecutionLeaseRepository(
       connectionTo("postgres://postgres:pw@127.0.0.1:1/postgres"),
-      new TestStoreClock(clock),
+      new StoreClock(StoreTimeSource.Test, clock),
       new TestApplicationContext({}),
     );
     const lease = {
       tenantId: "default",
       rootExecutionId: "root-down",
       holderInstanceId: "instance-1",
-      leaseEpoch: 1,
+      token: 1,
       expiresAt: clock.now(),
       remaining: seconds(30),
     };
@@ -86,7 +87,7 @@ describe("PostgresExecutionLeaseRepository", () => {
     await expect(down.acquire("default", "root-down", seconds(30))).rejects.toThrow();
     await expect(down.renew(lease, seconds(30))).rejects.toThrow();
     await expect(down.release(lease)).rejects.toThrow();
-    await expect(down.finish(lease)).rejects.toThrow();
+    await expect(down.retire(lease)).rejects.toThrow();
     await expect(down.ping()).rejects.toThrow();
   });
 });

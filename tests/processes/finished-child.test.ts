@@ -20,7 +20,7 @@ const leaseRowOf = async (key: string): Promise<unknown> =>
   (
     await onSchema(
       database.url(),
-      `SELECT holder_instance_id, lease_epoch, released, finished FROM agboss_execution_leases
+      `SELECT holder_instance_id, token, released, finished FROM agboss_execution_leases
        WHERE root_execution_id = $1`,
       [key],
     )
@@ -75,11 +75,11 @@ describe("AC1 (agbossjs/agboss#520): a frozen instance takes no lease of a child
     const done = await batch;
 
     // A's ask, sent after B finished the child, got no lease
-    expect(asked).toMatchObject({ leaseEpoch: null });
+    expect(asked).toMatchObject({ token: null });
     // the child's lease is still B's claim, finished: nobody took it after B
     expect(await leaseRowOf(child)).toEqual({
       holder_instance_id: b.instanceId,
-      lease_epoch: 1,
+      token: 1,
       released: true,
       finished: true,
     });
