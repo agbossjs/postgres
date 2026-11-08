@@ -1,5 +1,5 @@
-import { OutboundCallLeaseState } from "@agboss/core";
-import { VirtualClock, TestStoreClock } from "@agboss/core/testing";
+import { OutboundCallLeaseState, StoreClock, StoreTimeSource } from "@agboss/core";
+import { VirtualClock } from "@agboss/core/testing";
 import { seconds } from "@agboss/core/units";
 import { describe, expect, it } from "vitest";
 import {
@@ -35,12 +35,13 @@ const BEFORE = {
   "0026_a2a_tasks.sql": null,
   "0027_outbound_call_outcome_names.sql": null,
   "0028_a2a_task_mesh_body_hash.sql": null,
+  "0029_execution_lease_token.sql": null,
 };
 
 const leasesOn = (url: string, clock: VirtualClock, instanceId: string) =>
   new PostgresExecutionLeaseRepository(
     connectionTo(url),
-    new TestStoreClock(clock),
+    new StoreClock(StoreTimeSource.Test, clock),
     new TestApplicationContext({}, instanceId),
   );
 
@@ -67,7 +68,7 @@ describe("migrations 0014–0016 keep the leases written before them", () => {
       tenantId: "default",
       rootExecutionId: "root-held",
       holderInstanceId: "instance-1",
-      leaseEpoch: 1,
+      token: 1,
       expiresAt: at(seconds(90)),
       remaining: seconds(30),
     };
@@ -76,7 +77,7 @@ describe("migrations 0014–0016 keep the leases written before them", () => {
     await clock.advance(seconds(31));
 
     expect(report.applied.map((migration) => migration.version)).toEqual([
-      14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28,
+      14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29,
     ]);
     const { rows } = await onSchema(
       url,
@@ -89,14 +90,17 @@ describe("migrations 0014–0016 keep the leases written before them", () => {
     ]);
     const after = leasesOn(url, clock, "instance-2");
     expect(await after.acquire("default", "root-expired", seconds(30))).toMatchObject({
-      leaseEpoch: 2,
-      takenOverFrom: { holderInstanceId: "instance-1", leaseEpoch: 1 },
+      token: 2,
+      takenOverFrom: { holderInstanceId: "instance-1", token: 1 },
     });
     expect(await after.acquire("default", "root-released", seconds(30))).not.toHaveProperty(
       "takenOverFrom",
     );
     expect(await before.renew(held, seconds(30))).toBe(seconds(30));
-    const calls = new PostgresOutboundCallRepository(connectionTo(url), new TestStoreClock(clock));
+    const calls = new PostgresOutboundCallRepository(
+      connectionTo(url),
+      new StoreClock(StoreTimeSource.Test, clock),
+    );
     const state = { tenantId: "default", leaseExecutionId: "root-held", token: 1 };
     expect(await calls.leaseStateOf(state)).toBe(OutboundCallLeaseState.Live);
     await clock.advance(seconds(31));

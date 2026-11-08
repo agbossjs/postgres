@@ -44,8 +44,8 @@ PostgreSQL (`AGBOSS_POSTGRES_TEST_URL`) · api-extractor (`api/postgres.api.md`)
   locking are stated in each store's doc comment. A lease's expiry is decided by the database's
   time (agbossjs/agboss#533): `clock_timestamp()` inside each statement that takes, renews, yields,
   reclaims, fences or closes a lease (`src/stores/store-time.ts`: `COALESCE($n::timestamptz,
-clock_timestamp())`, the parameter the test's clock only when `StoreClock.isDatabaseTime` is
-  false); every take and renewal answers `remaining`. An outbound call's attempt times
+clock_timestamp())`, the parameter the test's clock only when `StoreClock.source` is
+  not `StoreTimeSource.Database`); every take and renewal answers `remaining`. An outbound call's attempt times
   (`attemptStartedAt`, `firstAttemptStartedAt`, `readAt`, agbossjs/agboss#658) are the time the
   fence read (`checkFence` answers it). Other times (records, retention) come from the
   application's clock, as parameters.

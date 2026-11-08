@@ -1,4 +1,5 @@
-import { TestStoreClock, VirtualClock } from "@agboss/core/testing";
+import { StoreClock, StoreTimeSource } from "@agboss/core";
+import { VirtualClock } from "@agboss/core/testing";
 import { describe, expect, it } from "vitest";
 import { migratePostgres, PostgresExecutionLeaseRepository } from "../../src/index.js";
 import { migrationsIn } from "../../src/migrations/files.js";
@@ -31,6 +32,7 @@ describe("migration 0018 keeps the ids of the trees already there", () => {
           "0026_a2a_tasks.sql": null,
           "0027_outbound_call_outcome_names.sql": null,
           "0028_a2a_task_mesh_body_hash.sql": null,
+          "0029_execution_lease_token.sql": null,
         }),
       ),
     );
@@ -49,12 +51,12 @@ describe("migration 0018 keeps the ids of the trees already there", () => {
     const report = await migratePostgres({ url });
     const leases = new PostgresExecutionLeaseRepository(
       connectionTo(url),
-      new TestStoreClock(new VirtualClock()),
+      new StoreClock(StoreTimeSource.Test, new VirtualClock()),
       new TestApplicationContext({}, "instance-1"),
     );
 
     expect(report.applied.map((migration) => migration.version)).toEqual([
-      18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28,
+      18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29,
     ]);
     const { rows } = await onSchema(
       url,
@@ -62,9 +64,7 @@ describe("migration 0018 keeps the ids of the trees already there", () => {
     );
     expect(rows).toEqual([{ execution_id: "root-a" }, { execution_id: "root-b" }]);
     for (const executionId of ["root-a", "root-b"])
-      expect(await leases.saveExecutionIdIfAbsent({ executionId, tenantId: "globex" })).toBe(false);
-    expect(await leases.saveExecutionIdIfAbsent({ executionId: "root-c", tenantId: "acme" })).toBe(
-      true,
-    );
+      expect(await leases.claimExecutionId({ executionId, tenantId: "globex" })).toBe(false);
+    expect(await leases.claimExecutionId({ executionId: "root-c", tenantId: "acme" })).toBe(true);
   });
 });

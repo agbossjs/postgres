@@ -34,8 +34,8 @@ export function reportHolds(instanceId: string): void {
         event.operation !== StoreHoldPoint.LeaseAcquire
       )
         return;
-      const lease = event.output as { leaseEpoch?: number } | null | undefined;
-      emit("acquire-result", { key: event.key, leaseEpoch: lease?.leaseEpoch ?? null });
+      const lease = event.output as { token?: number } | null | undefined;
+      emit("acquire-result", { key: event.key, token: lease?.token ?? null });
     },
   });
 }

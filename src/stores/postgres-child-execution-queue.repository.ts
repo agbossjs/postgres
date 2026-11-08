@@ -6,7 +6,7 @@ import {
   Injectable,
   type ChildExecutionEnd,
   type ChildExecutionQueueWatch,
-  type ChildExecutionQueueDepth,
+  type ChildExecutionQueueCounts,
   type QueuedChildExecution,
 } from "@agboss/core";
 import { z } from "zod";
@@ -205,7 +205,7 @@ export class PostgresChildExecutionQueueRepository extends ChildExecutionQueueRe
     );
   }
 
-  async findQueueDepth(): Promise<ChildExecutionQueueDepth> {
+  async countByStatus(): Promise<ChildExecutionQueueCounts> {
     const { queued, running, oldest } = DepthRow.parse(
       await firstRowOf(this.connection.pool, DEPTH, []),
     );

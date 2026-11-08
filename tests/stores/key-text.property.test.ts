@@ -8,8 +8,10 @@ import {
   type ExecutionLease,
   type EffectKey,
   type OutboundCallIntent,
+  StoreClock,
+  StoreTimeSource,
 } from "@agboss/core";
-import { VirtualClock, TestStoreClock } from "@agboss/core/testing";
+import { VirtualClock } from "@agboss/core/testing";
 import { hours } from "@agboss/core/units";
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
@@ -115,15 +117,18 @@ function instanceOn(clock: VirtualClock, index: number) {
   const connection = connectionTo(database.url(), 2);
   const application = new TestApplicationContext({}, `instance-${String(index)}`);
   return {
-    calls: new PostgresOutboundCallRepository(connection, new TestStoreClock(clock)),
+    calls: new PostgresOutboundCallRepository(
+      connection,
+      new StoreClock(StoreTimeSource.Test, clock),
+    ),
     effects: new PostgresFencedEffectRepository(
       connection,
-      new TestStoreClock(clock),
+      new StoreClock(StoreTimeSource.Test, clock),
       new FencedEffectSettings(),
     ),
     leases: new PostgresExecutionLeaseRepository(
       connection,
-      new TestStoreClock(clock),
+      new StoreClock(StoreTimeSource.Test, clock),
       application,
     ),
   };
@@ -134,7 +139,7 @@ const keyOf = (lease: ExecutionLease, name: string, businessKey: string): Effect
     scopeKey: `${lease.tenantId}:${lease.rootExecutionId}`,
     tenantId: lease.tenantId,
     leaseExecutionId: lease.rootExecutionId,
-    token: lease.leaseEpoch,
+    token: lease.token,
     idempotencyKey: `${lease.rootExecutionId}:charge-action:1`,
     name,
     businessKey,

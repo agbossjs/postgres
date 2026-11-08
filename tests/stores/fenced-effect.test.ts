@@ -6,8 +6,10 @@ import {
   FingerprintPolicy,
   IdempotencyKeyConflictError,
   InvalidFencedEffectNameError,
+  StoreClock,
+  StoreTimeSource,
 } from "@agboss/core";
-import { VirtualClock, TestStoreClock } from "@agboss/core/testing";
+import { VirtualClock } from "@agboss/core/testing";
 import { hours, seconds } from "@agboss/core/units";
 import { beforeAll, describe, expect, it } from "vitest";
 import {
@@ -30,12 +32,12 @@ function storesOn(connection: PostgresConnection, clock = new VirtualClock()) {
   return {
     effects: new PostgresFencedEffectRepository(
       connection,
-      new TestStoreClock(clock),
+      new StoreClock(StoreTimeSource.Test, clock),
       new FencedEffectSettings(),
     ),
     leases: new PostgresExecutionLeaseRepository(
       connection,
-      new TestStoreClock(clock),
+      new StoreClock(StoreTimeSource.Test, clock),
       new TestApplicationContext({}),
     ),
   };
@@ -57,7 +59,7 @@ describe("PostgresFencedEffectRepository", () => {
     const lease = await leases.acquire("default", "root-pool-1", hours(1));
 
     const outcome = await effects.saveResultIfAbsent(
-      keyOf("root-pool-1", lease?.leaseEpoch ?? 0),
+      keyOf("root-pool-1", lease?.token ?? 0),
       async (client) => {
         await client.query("INSERT INTO charges VALUES ('c-1', 10)");
         const { rows } = await client.query<{ total: number }>(
@@ -74,7 +76,7 @@ describe("PostgresFencedEffectRepository", () => {
     const connection = connectionTo(database.url(), 1);
     const { effects, leases } = storesOn(connection);
     const lease = await leases.acquire("default", "root-lost", hours(1));
-    const key = keyOf("root-lost", lease?.leaseEpoch ?? 0);
+    const key = keyOf("root-lost", lease?.token ?? 0);
 
     const lost = effects.saveResultIfAbsent(key, async (client) => {
       await client.query("INSERT INTO charges VALUES ('c-lost', 5)");

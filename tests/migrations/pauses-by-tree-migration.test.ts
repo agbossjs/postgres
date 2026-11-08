@@ -4,8 +4,10 @@ import {
   PauseResolution,
   PauseStatus,
   type PauseRecord,
+  StoreClock,
+  StoreTimeSource,
 } from "@agboss/core";
-import { TestStoreClock, VirtualClock } from "@agboss/core/testing";
+import { VirtualClock } from "@agboss/core/testing";
 import { describe, expect, it } from "vitest";
 import {
   migratePostgres,
@@ -69,6 +71,7 @@ async function schemaWithAnApprovedChildPause(): Promise<string> {
         "0026_a2a_tasks.sql": null,
         "0027_outbound_call_outcome_names.sql": null,
         "0028_a2a_task_mesh_body_hash.sql": null,
+        "0029_execution_lease_token.sql": null,
       }),
     ),
   );
@@ -99,12 +102,12 @@ describe("migration 0020 keeps the ids of every execution that paused, and finds
     const report = await migratePostgres({ url });
     const leases = new PostgresExecutionLeaseRepository(
       connectionTo(url),
-      new TestStoreClock(new VirtualClock()),
+      new StoreClock(StoreTimeSource.Test, new VirtualClock()),
       new TestApplicationContext({}, "instance-1"),
     );
 
     expect(report.applied.map((migration) => migration.version)).toEqual([
-      20, 21, 22, 23, 24, 25, 26, 27, 28,
+      20, 21, 22, 23, 24, 25, 26, 27, 28, 29,
     ]);
     const { rows } = await onSchema(
       url,
@@ -115,10 +118,8 @@ describe("migration 0020 keeps the ids of every execution that paused, and finds
       { execution_id: "old-root", tenant_id: "acme" },
     ]);
     for (const executionId of ["old-child-7", "old-root"])
-      expect(await leases.saveExecutionIdIfAbsent({ executionId, tenantId: "globex" })).toBe(false);
-    expect(await leases.saveExecutionIdIfAbsent({ executionId: "new-1", tenantId: "acme" })).toBe(
-      true,
-    );
+      expect(await leases.claimExecutionId({ executionId, tenantId: "globex" })).toBe(false);
+    expect(await leases.claimExecutionId({ executionId: "new-1", tenantId: "acme" })).toBe(true);
   });
 
   it("#663: an id the kept ids miss, in another tree: a pending pause of its own — the old approval is never found", async () => {
@@ -157,6 +158,7 @@ describe("migration 0020 keeps the ids of every execution that paused, and finds
           "0026_a2a_tasks.sql": null,
           "0027_outbound_call_outcome_names.sql": null,
           "0028_a2a_task_mesh_body_hash.sql": null,
+          "0029_execution_lease_token.sql": null,
         }),
       ),
     );
@@ -182,11 +184,11 @@ describe("migration 0020 keeps the ids of every execution that paused, and finds
     await migratePostgres({ url });
     const leases = new PostgresExecutionLeaseRepository(
       connectionTo(url),
-      new TestStoreClock(new VirtualClock()),
+      new StoreClock(StoreTimeSource.Test, new VirtualClock()),
       new TestApplicationContext({}, "instance-1"),
     );
 
     for (const executionId of [childId, "old\uE000payer"])
-      expect(await leases.saveExecutionIdIfAbsent({ executionId, tenantId: "acme" })).toBe(false);
+      expect(await leases.claimExecutionId({ executionId, tenantId: "acme" })).toBe(false);
   });
 });

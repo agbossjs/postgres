@@ -119,9 +119,9 @@ describe("agbossjs/agboss#591 on PostgreSQL: a repeated execution id never repla
     ]);
     const { rows } = await onSchema(
       database.url(),
-      "SELECT lease_epoch FROM agboss_execution_leases WHERE root_execution_id = 'execution-1'",
+      "SELECT token FROM agboss_execution_leases WHERE root_execution_id = 'execution-1'",
     );
-    expect(rows).toEqual([{ lease_epoch: 1 }]);
+    expect(rows).toEqual([{ token: 1 }]);
     const next = await charge(restarted, "order-B");
     expect(next).toMatchObject({ result: { executionId: "execution-2" } });
     expect((await charges()).map((row) => row.order_id)).toEqual(["order-A", "order-B"]);

@@ -58,6 +58,7 @@ const AFTER_0013 = {
   "0026_a2a_tasks.sql": null,
   "0027_outbound_call_outcome_names.sql": null,
   "0028_a2a_task_mesh_body_hash.sql": null,
+  "0029_execution_lease_token.sql": null,
 };
 
 const rejectionOf = async (call: Promise<unknown>): Promise<unknown> =>
@@ -134,7 +135,7 @@ describe("migratePostgres (AC5)", () => {
     const reports = await Promise.all([1, 2, 3].map(() => migratePostgres({ url })));
 
     const applied = reports.map((report) => report.applied.length).sort();
-    expect(applied).toEqual([0, 0, 28]);
+    expect(applied).toEqual([0, 0, 29]);
     expect(await historyOf(url)).toEqual(PACKAGE_MIGRATIONS);
   });
 
@@ -160,7 +161,7 @@ describe("migratePostgres (AC5)", () => {
     await holder.end();
 
     expect(doneWhileLocked).toBe(false);
-    expect((await run).applied).toHaveLength(28);
+    expect((await run).applied).toHaveLength(29);
   });
 
   it("a migration changed after it was applied fails the run, and nothing more is applied", async () => {

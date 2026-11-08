@@ -23,7 +23,7 @@ import { CheckpointListOptions } from '@langchain/langgraph-checkpoint';
 import { CheckpointMetadata } from '@langchain/langgraph-checkpoint';
 import { CheckpointTuple } from '@langchain/langgraph-checkpoint';
 import { ChildExecutionEnd } from '@agboss/core';
-import { ChildExecutionQueueDepth } from '@agboss/core';
+import { ChildExecutionQueueCounts } from '@agboss/core';
 import { ChildExecutionQueueRepository } from '@agboss/core';
 import { ChildExecutionQueueWatch } from '@agboss/core';
 import { Clock } from '@agboss/core';
@@ -174,11 +174,11 @@ export class PostgresChildExecutionQueueRepository extends ChildExecutionQueueRe
     // (undocumented)
     completeByTenantIdAndExecutionId(tenantId: string, executionId: string, end: ChildExecutionEnd): Promise<boolean>;
     // (undocumented)
+    countByStatus(): Promise<ChildExecutionQueueCounts>;
+    // (undocumented)
     deleteAllByTenantIdAndRootExecutionId(tenantId: string, rootExecutionId: string): Promise<void>;
     // (undocumented)
     findByTenantIdAndExecutionId(tenantId: string, executionId: string): Promise<QueuedChildExecution | undefined>;
-    // (undocumented)
-    findQueueDepth(): Promise<ChildExecutionQueueDepth>;
     // (undocumented)
     ping(): Promise<void>;
     // (undocumented)
@@ -259,22 +259,22 @@ export class PostgresExecutionLeaseEventRepository extends ExecutionLeaseEventRe
 export class PostgresExecutionLeaseRepository extends ExecutionLeaseRepository {
     constructor(connection: PostgresConnection, clock: StoreClock, applicationContext: ApplicationContext);
     // (undocumented)
-    acquire(tenantId: string, rootExecutionId: string, lease: Milliseconds): Promise<ExecutionLease | undefined>;
+    acquire(tenantId: string, rootExecutionId: string, duration: Milliseconds): Promise<ExecutionLease | undefined>;
     // (undocumented)
-    finish(executionLease: ExecutionLease): Promise<void>;
+    claimExecutionId(input: ExecutionIdentity): Promise<boolean>;
     // (undocumented)
     ping(): Promise<void>;
     // (undocumented)
-    reclaim(executionLease: ExecutionLease, lease: Milliseconds): Promise<ExecutionLease | undefined>;
+    reclaim(executionLease: ExecutionLease, duration: Milliseconds): Promise<ExecutionLease | undefined>;
     // (undocumented)
     release(executionLease: ExecutionLease): Promise<void>;
     // (undocumented)
-    renew(held: ExecutionLease, lease: Milliseconds): Promise<Milliseconds | undefined>;
+    renew(held: ExecutionLease, duration: Milliseconds): Promise<Milliseconds | undefined>;
     // (undocumented)
-    saveExecutionIdIfAbsent(input: ExecutionIdentity): Promise<boolean>;
+    retire(executionLease: ExecutionLease): Promise<void>;
     static readonly store: StoreDescriptor;
     // (undocumented)
-    yield(executionLease: ExecutionLease): Promise<boolean>;
+    yield(executionLease: ExecutionLease): Promise<Milliseconds | undefined>;
 }
 
 // @public
@@ -583,7 +583,7 @@ export interface SchemaVersions {
 // src/stores/postgres-child-execution-queue.repository.ts:168:9 - (ae-undocumented) Missing documentation for "claimFirstByStatusQueuedOrderByDepthDesc".
 // src/stores/postgres-child-execution-queue.repository.ts:176:9 - (ae-undocumented) Missing documentation for "completeByTenantIdAndExecutionId".
 // src/stores/postgres-child-execution-queue.repository.ts:197:9 - (ae-undocumented) Missing documentation for "deleteAllByTenantIdAndRootExecutionId".
-// src/stores/postgres-child-execution-queue.repository.ts:208:9 - (ae-undocumented) Missing documentation for "findQueueDepth".
+// src/stores/postgres-child-execution-queue.repository.ts:208:9 - (ae-undocumented) Missing documentation for "countByStatus".
 // src/stores/postgres-cost-ledger.repository.ts:128:3 - (ae-undocumented) Missing documentation for "ping".
 // src/stores/postgres-cost-ledger.repository.ts:132:9 - (ae-undocumented) Missing documentation for "findSpentByCounter".
 // src/stores/postgres-cost-ledger.repository.ts:142:9 - (ae-undocumented) Missing documentation for "saveAll".
@@ -602,14 +602,14 @@ export interface SchemaVersions {
 // src/stores/postgres-execution-lease-event.repository.ts:30:9 - (ae-undocumented) Missing documentation for "save".
 // src/stores/postgres-execution-lease-event.repository.ts:39:9 - (ae-undocumented) Missing documentation for "findAllByTenantIdAndRootExecutionIdOrderByOccurredAt".
 // src/stores/postgres-execution-lease-event.repository.ts:52:9 - (ae-undocumented) Missing documentation for "deleteByOccurredAtBefore".
-// src/stores/postgres-execution-lease.repository.ts:176:3 - (ae-undocumented) Missing documentation for "ping".
-// src/stores/postgres-execution-lease.repository.ts:180:9 - (ae-undocumented) Missing documentation for "saveExecutionIdIfAbsent".
-// src/stores/postgres-execution-lease.repository.ts:186:9 - (ae-undocumented) Missing documentation for "acquire".
-// src/stores/postgres-execution-lease.repository.ts:210:9 - (ae-undocumented) Missing documentation for "renew".
-// src/stores/postgres-execution-lease.repository.ts:218:9 - (ae-undocumented) Missing documentation for "release".
-// src/stores/postgres-execution-lease.repository.ts:222:9 - (ae-undocumented) Missing documentation for "finish".
-// src/stores/postgres-execution-lease.repository.ts:226:9 - (ae-undocumented) Missing documentation for "yield".
-// src/stores/postgres-execution-lease.repository.ts:235:9 - (ae-undocumented) Missing documentation for "reclaim".
+// src/stores/postgres-execution-lease.repository.ts:178:3 - (ae-undocumented) Missing documentation for "ping".
+// src/stores/postgres-execution-lease.repository.ts:182:9 - (ae-undocumented) Missing documentation for "claimExecutionId".
+// src/stores/postgres-execution-lease.repository.ts:188:9 - (ae-undocumented) Missing documentation for "acquire".
+// src/stores/postgres-execution-lease.repository.ts:212:9 - (ae-undocumented) Missing documentation for "renew".
+// src/stores/postgres-execution-lease.repository.ts:220:9 - (ae-undocumented) Missing documentation for "release".
+// src/stores/postgres-execution-lease.repository.ts:224:9 - (ae-undocumented) Missing documentation for "retire".
+// src/stores/postgres-execution-lease.repository.ts:228:9 - (ae-undocumented) Missing documentation for "yield".
+// src/stores/postgres-execution-lease.repository.ts:236:9 - (ae-undocumented) Missing documentation for "reclaim".
 // src/stores/postgres-execution-record.repository.ts:43:3 - (ae-undocumented) Missing documentation for "ping".
 // src/stores/postgres-execution-record.repository.ts:65:9 - (ae-undocumented) Missing documentation for "hasThread".
 // src/stores/postgres-execution-record.repository.ts:68:3 - (ae-undocumented) Missing documentation for "threadOwner".

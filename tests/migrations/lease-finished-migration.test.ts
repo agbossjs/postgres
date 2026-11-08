@@ -1,4 +1,5 @@
-import { VirtualClock, TestStoreClock } from "@agboss/core/testing";
+import { StoreClock, StoreTimeSource } from "@agboss/core";
+import { VirtualClock } from "@agboss/core/testing";
 import { seconds } from "@agboss/core/units";
 import { describe, expect, it } from "vitest";
 import { migratePostgres, PostgresExecutionLeaseRepository } from "../../src/index.js";
@@ -17,7 +18,7 @@ import { connectionTo } from "../support/stores.js";
 const leasesOn = (url: string, clock: VirtualClock, instanceId: string) =>
   new PostgresExecutionLeaseRepository(
     connectionTo(url),
-    new TestStoreClock(clock),
+    new StoreClock(StoreTimeSource.Test, clock),
     new TestApplicationContext({}, instanceId),
   );
 
@@ -26,7 +27,7 @@ const leaseOf = (root: string, expiresAt: Date) => ({
   tenantId: "default",
   rootExecutionId: root,
   holderInstanceId: "instance-1",
-  leaseEpoch: 1,
+  token: 1,
   expiresAt,
   remaining: seconds(30),
 });
@@ -50,6 +51,7 @@ describe("migration 0017 keeps the leases written before it", () => {
           "0026_a2a_tasks.sql": null,
           "0027_outbound_call_outcome_names.sql": null,
           "0028_a2a_task_mesh_body_hash.sql": null,
+          "0029_execution_lease_token.sql": null,
         }),
       ),
     );
@@ -72,7 +74,7 @@ describe("migration 0017 keeps the leases written before it", () => {
     await clock.advance(seconds(31));
 
     expect(report.applied.map((migration) => migration.version)).toEqual([
-      17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28,
+      17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29,
     ]);
     const { rows } = await onSchema(
       url,
@@ -87,24 +89,24 @@ describe("migration 0017 keeps the leases written before it", () => {
     const before = leasesOn(url, clock, "instance-1");
     const after = leasesOn(url, clock, "instance-2");
     expect(await after.acquire("default", "root-expired", seconds(30))).toMatchObject({
-      leaseEpoch: 2,
-      takenOverFrom: { holderInstanceId: "instance-1", leaseEpoch: 1 },
+      token: 2,
+      takenOverFrom: { holderInstanceId: "instance-1", token: 1 },
     });
     expect(await after.acquire("default", "root-released", seconds(30))).toMatchObject({
-      leaseEpoch: 2,
+      token: 2,
     });
     expect(await after.acquire("default", "root-held", seconds(30))).toBeUndefined();
     expect(await before.renew(leaseOf("root-held", at(seconds(59))), seconds(30))).toBe(
       seconds(30),
     );
     expect(await before.reclaim(leaseOf("root-yielded", at(seconds(59))), seconds(30))).toEqual(
-      expect.objectContaining({ leaseEpoch: 2 }),
+      expect.objectContaining({ token: 2 }),
     );
-    await before.finish(leaseOf("root-held", at(seconds(59))));
+    await before.retire(leaseOf("root-held", at(seconds(59))));
     await clock.advance(seconds(60));
     expect(await after.acquire("default", "root-held", seconds(30))).toBeUndefined();
     expect(await after.acquire("default", "root-yielded", seconds(30))).toMatchObject({
-      leaseEpoch: 3,
+      token: 3,
     });
   });
 });
