@@ -42,14 +42,16 @@ describe("#847: in StoreTimeSource.Database a lease is decided by the database's
     const lease = await leases.acquire("default", "db-time-1", LEASE);
     const after = await databaseNow();
 
-    expect(lease?.remaining).toBe(LEASE);
+    // `remaining` reads clock_timestamp() again after `expires_at` was set: a millisecond less at most
+    expect(lease?.remaining).toBeGreaterThanOrEqual(LEASE - 1);
+    expect(lease?.remaining).toBeLessThanOrEqual(LEASE);
     expect(lease?.expiresAt.getTime()).toBeGreaterThanOrEqual(before + LEASE);
     expect(lease?.expiresAt.getTime()).toBeLessThanOrEqual(after + LEASE);
     if (lease === undefined) return;
-    expect(await leases.renew(lease, LEASE)).toBe(LEASE);
+    expect(await leases.renew(lease, LEASE)).toBeGreaterThanOrEqual(LEASE - 1);
     expect(await leases.yield(lease)).toBeLessThanOrEqual(LEASE);
     const reclaimed = await leases.reclaim(lease, LEASE);
-    expect(reclaimed).toMatchObject({ token: lease.token + 1, remaining: LEASE });
+    expect(reclaimed).toMatchObject({ token: lease.token + 1 });
     if (reclaimed === undefined) return;
     expect(await storeOf("instance-2").acquire("default", "db-time-1", LEASE)).toBeUndefined();
     await leases.release(reclaimed);

@@ -40,8 +40,9 @@ describe("the package's migration files", () => {
       "26:a2a_tasks",
       "27:outbound_call_outcome_names",
       "28:a2a_task_mesh_body_hash",
+      "29:execution_lease_token",
     ]);
-    expect(newestVersionOf(files)).toBe(28);
+    expect(newestVersionOf(files)).toBe(29);
     expect(files.every((file) => file.checksum === checksumOf(file.sql))).toBe(true);
   });
 

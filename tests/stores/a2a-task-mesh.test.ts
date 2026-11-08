@@ -70,7 +70,12 @@ describe("agbossjs/agboss#810: the mesh's fields of an A2A task on PostgreSQL", 
     const url = await freshSchema();
     await migrateWith(
       { url },
-      migrationsIn(migrationsFolder({ "0028_a2a_task_mesh_body_hash.sql": null })),
+      migrationsIn(
+        migrationsFolder({
+          "0028_a2a_task_mesh_body_hash.sql": null,
+          "0029_execution_lease_token.sql": null,
+        }),
+      ),
     );
     await onSchema(
       url,

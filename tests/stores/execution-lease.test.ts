@@ -41,12 +41,12 @@ describe("PostgresExecutionLeaseRepository", () => {
     const yielded = await leases.acquire("default", "root-instant-yielded", seconds(30));
     if (held === undefined || yielded === undefined)
       throw new Error("the first takes must succeed");
-    expect(await leases.yield(yielded)).toBe(true);
+    expect(await leases.yield(yielded)).toBeGreaterThan(0);
 
     await clock.advance(seconds(30));
 
     expect(await leases.renew(held, seconds(30))).toBeUndefined();
-    expect(await leases.yield(held)).toBe(false);
+    expect(await leases.yield(held)).toBeUndefined();
     expect(await leases.renew(yielded, seconds(30))).toBeUndefined();
     expect(await leases.reclaim(yielded, seconds(30))).toBeUndefined();
     expect(await leases.acquire("default", "root-instant", seconds(30))).toMatchObject({

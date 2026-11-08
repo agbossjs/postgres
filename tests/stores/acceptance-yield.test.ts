@@ -51,7 +51,7 @@ describe("#516 acceptance: a yielded lease on PostgreSQL", () => {
     const clock = new VirtualClock();
     const first = leasesOn(clock, "instance-1");
     const held = await first.acquire("default", "root-m2", LEASE);
-    expect(held && (await first.yield(held))).toBe(true);
+    expect(held && (await first.yield(held))).toBeGreaterThan(0);
     const before = await rowOf("root-m2");
 
     await clock.advance(seconds(10));
@@ -86,7 +86,7 @@ describe("#516 acceptance: a yielded lease on PostgreSQL", () => {
     const [first, second] = [leasesOn(clock, "instance-1", Store), leasesOn(clock, "instance-2")];
     const root = `root-race-${round}`;
     const held = await first.acquire("default", root, LEASE);
-    expect(held && (await first.yield(held))).toBe(true);
+    expect(held && (await first.yield(held))).toBeGreaterThan(0);
     await clock.advance(seconds(30.001));
 
     const [taken, reclaimed] = await Promise.all([
