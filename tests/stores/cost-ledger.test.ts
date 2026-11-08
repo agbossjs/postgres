@@ -1,4 +1,5 @@
-import { BudgetScope, type CostCounter, type UsageRecord } from "@agboss/core";
+import { randomUUID } from "node:crypto";
+import { BudgetScope, CostSource, type CostCounter, type LedgerEntry } from "@agboss/core";
 import { usd } from "@agboss/core/units";
 import { describe, expect, it } from "vitest";
 import {
@@ -20,15 +21,22 @@ const database = testDatabase();
 
 const ledgerOn = (url = database.url()) => new PostgresCostLedgerRepository(connectionTo(url));
 
-const call = (costUsd: number): UsageRecord => ({
+/** One call's entry of the ledger, under an id of its own (agbossjs/agboss#817). */
+const call = (
+  costUsd: number,
+  ledgerId = `call:${randomUUID()}`,
+  madeAt = new Date("2026-10-18T12:00:00.000Z"),
+): LedgerEntry => ({
   caller: "clerk-agent",
   model: "test/clerk",
   inputTokens: 0,
   outputTokens: 0,
   cacheReadTokens: 0,
   cacheWriteTokens: 0,
-  costUsd,
-  costSource: "api",
+  costUsd: usd(costUsd),
+  costSource: CostSource.Api,
+  ledgerId,
+  madeAt,
 });
 
 const day = (key: string, period = "2026-10-18"): CostCounter => ({
@@ -131,11 +139,12 @@ describe("PostgresCostLedgerRepository: pruning (agbossjs/agboss#771)", () => {
     return url;
   };
 
-  const entry = (index: number): UsageRecord => ({
-    ...call(0.125),
-    ledgerId: `pass-r:${String(index)}`,
-    madeAt: new Date(Date.parse("2026-10-18T08:00:00.000Z") + index * 1000).toISOString(),
-  });
+  const entry = (index: number): LedgerEntry =>
+    call(
+      0.125,
+      `pass-r:${String(index)}`,
+      new Date(Date.parse("2026-10-18T08:00:00.000Z") + index * 1000),
+    );
 
   it("lost answers retried on two instances while a third prunes again and again: each entry once", async () => {
     const url = await migrated();
@@ -149,7 +158,7 @@ describe("PostgresCostLedgerRepository: pruning (agbossjs/agboss#771)", () => {
         (index % 2 === 0 ? first : second).saveAll([day("race")], [record]),
       ),
       ...Array.from({ length: 10 }, (_, step) =>
-        sweeper.deleteEntriesByMadeAtBefore(
+        sweeper.deleteByMadeAtBefore(
           new Date(Date.parse("2026-10-18T08:00:00.000Z") + (step + 1) * 4000),
         ),
       ),
@@ -177,6 +186,6 @@ describe("PostgresCostLedgerRepository: pruning (agbossjs/agboss#771)", () => {
     const counters = await onSchema(url, "SELECT count(*)::int AS n FROM agboss_cost_counters");
     expect(counters.rows).toEqual([{ n: 0 }]);
     // a prune without it removes nothing
-    await ledger.deleteEntriesByMadeAtBefore(new Date("2026-10-18T09:00:00.000Z"));
+    await ledger.deleteByMadeAtBefore(new Date("2026-10-18T09:00:00.000Z"));
   });
 });

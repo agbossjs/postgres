@@ -49,6 +49,7 @@ import { FencedEffectRepository } from '@agboss/core';
 import { FencedEffectSettings } from '@agboss/core';
 import { FencedEffectWork } from '@agboss/core';
 import { IdGenerator } from '@agboss/core';
+import { LedgerEntry } from '@agboss/core';
 import { MeshRequestKey } from '@agboss/core';
 import { MeshRequestRecord } from '@agboss/core';
 import { MeshRequestRepository } from '@agboss/core';
@@ -87,7 +88,6 @@ import { StoreDescriptor } from '@agboss/core';
 import type { Summary } from '@agboss/core';
 import type { Tern } from '@agboss/core';
 import type { TernOutcome } from '@agboss/core';
-import { UsageRecord } from '@agboss/core';
 import { Usd } from '@agboss/core/units';
 import type { VersionScore } from '@agboss/core';
 
@@ -208,7 +208,7 @@ export interface PostgresConnectionSettings {
 export class PostgresCostLedgerRepository extends CostLedgerRepository {
     constructor(connection: PostgresConnection);
     // (undocumented)
-    deleteEntriesByMadeAtBefore(cutoff: Date): Promise<void>;
+    deleteByMadeAtBefore(cutoff: Date): Promise<void>;
     // (undocumented)
     findMaxSpendByAccount(account: BudgetAccount): Promise<Usd | undefined>;
     // (undocumented)
@@ -216,7 +216,7 @@ export class PostgresCostLedgerRepository extends CostLedgerRepository {
     // (undocumented)
     ping(): Promise<void>;
     // (undocumented)
-    saveAll(counters: readonly CostCounter[], records: readonly UsageRecord[]): Promise<void>;
+    saveAll(counters: readonly CostCounter[], entries: readonly LedgerEntry[]): Promise<void>;
     // (undocumented)
     saveMaxSpend(account: BudgetAccount, maxSpend: Usd): Promise<void>;
 }
@@ -584,12 +584,12 @@ export interface SchemaVersions {
 // src/stores/postgres-child-execution-queue.repository.ts:176:9 - (ae-undocumented) Missing documentation for "completeByTenantIdAndExecutionId".
 // src/stores/postgres-child-execution-queue.repository.ts:197:9 - (ae-undocumented) Missing documentation for "deleteAllByTenantIdAndRootExecutionId".
 // src/stores/postgres-child-execution-queue.repository.ts:208:9 - (ae-undocumented) Missing documentation for "findQueueDepth".
-// src/stores/postgres-cost-ledger.repository.ts:131:3 - (ae-undocumented) Missing documentation for "ping".
-// src/stores/postgres-cost-ledger.repository.ts:135:9 - (ae-undocumented) Missing documentation for "findSpentByCounter".
-// src/stores/postgres-cost-ledger.repository.ts:145:9 - (ae-undocumented) Missing documentation for "saveAll".
-// src/stores/postgres-cost-ledger.repository.ts:165:9 - (ae-undocumented) Missing documentation for "deleteEntriesByMadeAtBefore".
-// src/stores/postgres-cost-ledger.repository.ts:169:9 - (ae-undocumented) Missing documentation for "findMaxSpendByAccount".
-// src/stores/postgres-cost-ledger.repository.ts:179:9 - (ae-undocumented) Missing documentation for "saveMaxSpend".
+// src/stores/postgres-cost-ledger.repository.ts:128:3 - (ae-undocumented) Missing documentation for "ping".
+// src/stores/postgres-cost-ledger.repository.ts:132:9 - (ae-undocumented) Missing documentation for "findSpentByCounter".
+// src/stores/postgres-cost-ledger.repository.ts:142:9 - (ae-undocumented) Missing documentation for "saveAll".
+// src/stores/postgres-cost-ledger.repository.ts:163:9 - (ae-undocumented) Missing documentation for "deleteByMadeAtBefore".
+// src/stores/postgres-cost-ledger.repository.ts:170:9 - (ae-undocumented) Missing documentation for "findMaxSpendByAccount".
+// src/stores/postgres-cost-ledger.repository.ts:180:9 - (ae-undocumented) Missing documentation for "saveMaxSpend".
 // src/stores/postgres-execution-history.repository.ts:48:3 - (ae-undocumented) Missing documentation for "ping".
 // src/stores/postgres-execution-history.repository.ts:52:9 - (ae-undocumented) Missing documentation for "save".
 // src/stores/postgres-execution-history.repository.ts:63:9 - (ae-undocumented) Missing documentation for "findByTenantIdAndExecutionId".
