@@ -3,6 +3,7 @@ import { secret } from "@agboss/core";
 import { FaultStoreTime, type FaultStoreSet } from "@agboss/core/testing/faults";
 import type { PoolClient } from "pg";
 import {
+  PostgresA2ATaskRepository,
   PostgresCheckpointSaver,
   PostgresChildExecutionQueueRepository,
   PostgresConnection,
@@ -40,6 +41,7 @@ export const faultStores: FaultStoreSet<PoolClient> = {
   storeTime: FaultStoreTime.Database,
   providers: [
     PostgresConnection,
+    PostgresA2ATaskRepository,
     PostgresCheckpointSaver,
     PostgresChildExecutionQueueRepository,
     PostgresCostLedgerRepository,
