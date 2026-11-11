@@ -3,6 +3,7 @@ import {
   type MigratePostgresOptions,
   type MigrationReport,
 } from "./migrations/migrate.js";
+import { withoutPasswords } from "./redaction.js";
 
 /**
  * `agboss-postgres` — the package's command: `migrate [--url <url>] [--schema <name>]` applies the
@@ -34,12 +35,22 @@ export const USAGE = `usage: agboss-postgres migrate [--schema <name>] [--url <p
 /** The flags `migrate` takes, each with a value. */
 const FLAGS: ReadonlySet<string> = new Set(["--url", "--schema"]);
 
-/** The flags among `rest`, never their values: a URL there would carry its password. */
+/** What a usage error may print of an argument: a plain name only, never a value (allowlist). */
+const COMMAND_NAME = /^[a-z][a-z-]{0,31}$/u;
+const FLAG_NAME = /^--?[a-z][a-z-]{0,31}$/u;
+
+/** The flags among `rest` by name — any other shape as `<flag>` — never their values. */
 const flagNamesOf = (rest: readonly string[]): string =>
   rest
     .filter((arg) => arg.startsWith("-"))
-    .map((arg) => arg.split("=", 1)[0])
+    .map((arg) => (FLAG_NAME.test(arg) ? arg : "<flag>"))
     .join(" ") || "none";
+
+/** An unknown command as a usage error says it: its name when it is a plain one, else nothing. */
+const unknownCommandOf = (command: string | undefined): string =>
+  command !== undefined && COMMAND_NAME.test(command)
+    ? `unknown command: ${command}`
+    : "unknown command";
 
 /** Each `--flag value` of `rest`; a string → a usage problem. */
 function flagsOf(rest: readonly string[]): ReadonlyMap<string, string> | string {
@@ -81,20 +92,13 @@ function reportLines(report: MigrationReport): readonly string[] {
   return lines;
 }
 
-/** `text` with the password of every `scheme://user:password@` in it masked. */
-const withoutPasswords = (text: string): string =>
-  text.replaceAll(/(\w+:\/\/[^:/@\s]*):[^@\s]*@/gu, "$1:***@");
-
 /** Runs the command line `args` (without the program name); its exit code. */
 export async function runCommand(args: readonly string[], io: CommandIo): Promise<ExitCode> {
   if (args[0] === "--help" || args[0] === "-h") {
     io.out(USAGE);
     return ExitCode.Ok;
   }
-  const target =
-    args[0] === "migrate"
-      ? targetOf(args, io.env)
-      : `unknown command: ${args[0]?.split("=", 1)[0] ?? "none"}`;
+  const target = args[0] === "migrate" ? targetOf(args, io.env) : unknownCommandOf(args[0]);
   if (typeof target === "string") {
     io.err(withoutPasswords(`agboss-postgres: ${target}\n${USAGE}`));
     return ExitCode.Usage;

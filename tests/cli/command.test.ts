@@ -168,12 +168,21 @@ describe("agboss-postgres migrate", () => {
     expect(await runCommand(["migrate"], failed)).toBe(ExitCode.Failed);
     expect(await runCommand(["migrate", "--url", secretUrl, "extra"], usage)).toBe(ExitCode.Usage);
 
+    const shapes = [
+      "postgres://u:s3cret-pw@h/db",
+      "mongodb+srv://u:s3cret-pw@h",
+      "--x=s3cret-pw",
+      "-ps3cret-pw",
+    ];
     const malformed = [
-      ["migrate", "--x=postgres://u:s3cret-pw@h/db"],
+      ...shapes.flatMap((shape) => [
+        [shape],
+        ["migrate", shape],
+        ["migrate", "--schema", "a", shape],
+      ]),
       ["migrate", "--url=postgres://u:s3cret-pw@h/db"],
       ["migrate", "--url", secretUrl, "--url", secretUrl],
       ["migrate", "--password", "s3cret-pw"],
-      ["postgres://u:s3cret-pw@h/db"],
     ];
     const others = await Promise.all(
       malformed.map(async (args) => {
