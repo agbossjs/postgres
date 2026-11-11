@@ -38,7 +38,12 @@ async function schemaAt28(): Promise<string> {
   const url = await freshSchema();
   await migrateWith(
     { url },
-    migrationsIn(migrationsFolder({ "0029_execution_lease_token.sql": null })),
+    migrationsIn(
+      migrationsFolder({
+        "0029_execution_lease_token.sql": null,
+        "0030_a2a_direct_messages.sql": null,
+      }),
+    ),
   );
   return url;
 }
@@ -65,7 +70,7 @@ describe("migration 0029 names the lease's fencing token `token`", () => {
     const report = await migratePostgres({ url });
     await clock.advance(seconds(31));
 
-    expect(report.applied.map((migration) => migration.version)).toEqual([29]);
+    expect(report.applied.map((migration) => migration.version)).toEqual([29, 30]);
     const columns = await onSchema(
       url,
       `SELECT column_name FROM information_schema.columns
