@@ -62,7 +62,8 @@ const IN_FLIGHT_UNDER = `${MESSAGE_KEY} AND state = $4 AND attempt_id = $5`;
  * - `completeIfInFlight`, `retakeIfExpired` and `deleteIfInFlight` are one compare-and-set
  *   statement each (`WHERE state = 'in-flight' AND attempt_id = $n`, and `expires_at <= now` for a
  *   retake): of two writers exactly one changes the row; a completed reply never changes.
- * - `deleteByCreatedAtBefore` is one transaction: the oldest rows before the cutoff, then the
+ * - `deleteByCreatedAtBefore` is one transaction: the oldest completed rows before the cutoff —
+ *   never one in flight, a live attempt's (agbossjs/agboss#860 D2) —, then the
  *   claims left without a row, locked `FOR UPDATE` before they are deleted.
  *
  * Times are the caller's (the application's `Clock`), as parameters. Listed in
@@ -127,7 +128,9 @@ export class PostgresA2ADirectMessageRepository extends A2ADirectMessageReposito
   ): Promise<A2ADirectMessageRecord | undefined> {
     const [row] = await rowsOf(
       this.connection.pool,
-      `UPDATE agboss_a2a_direct_messages SET attempt_id = $6, started_at = $7, expires_at = $8
+      // accepted anew (agbossjs/agboss#860 D2): its retention counts from the takeover
+      `UPDATE agboss_a2a_direct_messages
+       SET attempt_id = $6, started_at = $7, expires_at = $8, created_at = $7
        WHERE ${IN_FLIGHT_UNDER} AND expires_at <= $9 RETURNING *`,
       [
         ...messageKeyOf(key),
@@ -175,13 +178,14 @@ export class PostgresA2ADirectMessageRepository extends A2ADirectMessageReposito
         `WITH gone AS (
            DELETE FROM agboss_a2a_direct_messages d USING (
              SELECT tenant_id, owner_id, message_id FROM agboss_a2a_direct_messages
-             WHERE created_at < $1 ORDER BY created_at, tenant_id, owner_id, message_id LIMIT $2
+             WHERE state = $3 AND created_at < $1
+             ORDER BY created_at, tenant_id, owner_id, message_id LIMIT $2
            ) oldest
            WHERE d.tenant_id = oldest.tenant_id AND d.owner_id = oldest.owner_id
              AND d.message_id = oldest.message_id
            RETURNING d.*)
          SELECT * FROM gone ORDER BY created_at, tenant_id, owner_id, message_id`,
-        [cutoff, page],
+        [cutoff, page, A2ADirectMessageState.Completed],
       );
       // the claims of the removed, then at most `limit` of messages gone before (a failed attempt's)
       const removed = rows.map(directMessageOf);
