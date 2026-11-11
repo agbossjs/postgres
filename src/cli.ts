@@ -36,7 +36,10 @@ const FLAGS: ReadonlySet<string> = new Set(["--url", "--schema"]);
 
 /** The flags among `rest`, never their values: a URL there would carry its password. */
 const flagNamesOf = (rest: readonly string[]): string =>
-  rest.filter((arg) => arg.startsWith("-")).join(" ") || "none";
+  rest
+    .filter((arg) => arg.startsWith("-"))
+    .map((arg) => arg.split("=", 1)[0])
+    .join(" ") || "none";
 
 /** Each `--flag value` of `rest`; a string → a usage problem. */
 function flagsOf(rest: readonly string[]): ReadonlyMap<string, string> | string {
@@ -89,9 +92,11 @@ export async function runCommand(args: readonly string[], io: CommandIo): Promis
     return ExitCode.Ok;
   }
   const target =
-    args[0] === "migrate" ? targetOf(args, io.env) : `unknown command: ${args.join(" ")}`;
+    args[0] === "migrate"
+      ? targetOf(args, io.env)
+      : `unknown command: ${args[0]?.split("=", 1)[0] ?? "none"}`;
   if (typeof target === "string") {
-    io.err(`agboss-postgres: ${target}\n${USAGE}`);
+    io.err(withoutPasswords(`agboss-postgres: ${target}\n${USAGE}`));
     return ExitCode.Usage;
   }
   try {

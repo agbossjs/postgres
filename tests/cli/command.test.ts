@@ -168,7 +168,25 @@ describe("agboss-postgres migrate", () => {
     expect(await runCommand(["migrate"], failed)).toBe(ExitCode.Failed);
     expect(await runCommand(["migrate", "--url", secretUrl, "extra"], usage)).toBe(ExitCode.Usage);
 
-    const printed = [...failed.lines, ...failed.errors, ...usage.lines, ...usage.errors].join("\n");
+    const malformed = [
+      ["migrate", "--x=postgres://u:s3cret-pw@h/db"],
+      ["migrate", "--url=postgres://u:s3cret-pw@h/db"],
+      ["migrate", "--url", secretUrl, "--url", secretUrl],
+      ["migrate", "--password", "s3cret-pw"],
+      ["postgres://u:s3cret-pw@h/db"],
+    ];
+    const others = await Promise.all(
+      malformed.map(async (args) => {
+        const io = ioOf();
+        expect(await runCommand(args, io)).toBe(ExitCode.Usage);
+        return [...io.lines, ...io.errors];
+      }),
+    );
+
+    const printed = [
+      ...[...failed.lines, ...failed.errors, ...usage.lines, ...usage.errors],
+      ...others.flat(),
+    ].join("\n");
     expect(printed).toContain("the migration failed");
     expect(printed).not.toContain("s3cret-pw");
   });
