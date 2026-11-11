@@ -281,7 +281,7 @@ of two ways.
 **A command** — before the new version of the application starts:
 
 ```sh
-npx agboss-postgres migrate --url "$POSTGRES_URL" [--schema desk]   # or POSTGRES_URL alone
+npx agboss-postgres migrate --schema desk   # the database: POSTGRES_URL from the environment
 ```
 
 ```text
@@ -295,8 +295,9 @@ applied 6 LangGraph checkpoint migration(s)
 ```
 
 A second run prints `nothing to apply: public is at migration 21`. Exit codes: `0` done, `1` the
-migration failed (the reason on stderr), `2` a usage error. Without `--url` the command reads
-`POSTGRES_URL`; `DATABASE_URL` (the name before agbossjs/agboss#891) is still read when
+migration failed (the reason on stderr, any password in it masked), `2` a usage error. The command
+reads `POSTGRES_URL`; `--url <url>` overrides it, but puts the URL — its password included — in the
+process list and the shell history, so prefer the variable; `DATABASE_URL` (the name before agbossjs/agboss#891) is still read when
 `POSTGRES_URL` is unset, for this release only.
 
 In Kubernetes, the command is a Job run before the Deployment rolls out (a Helm `pre-upgrade` hook,

@@ -16,7 +16,7 @@ export interface SchemaVersions {
 }
 
 /** The command an operator runs to migrate, as an error message names it. */
-export const MIGRATE_COMMAND = 'npx agboss-postgres migrate --url "$POSTGRES_URL"';
+export const MIGRATE_COMMAND = "npx agboss-postgres migrate";
 
 /**
  * The database lacks migrations of this package (none applied, or older ones only) and the
@@ -32,7 +32,7 @@ export class PostgresSchemaMissingError extends AGBossError {
 
   constructor(versions: SchemaVersions) {
     super(
-      `the PostgreSQL schema is at migration ${String(versions.applied)}, this package needs ${String(versions.expected)}: run \`${MIGRATE_COMMAND}\` (add --schema <name> for the application's postgresSchema; or set postgresSchemaSetup: SchemaSetup.MigrateOnStart in the environment)`,
+      `the PostgreSQL schema is at migration ${String(versions.applied)}, this package needs ${String(versions.expected)}: run \`${MIGRATE_COMMAND}\` with POSTGRES_URL set (add --schema <name> for the application's postgresSchema; or set postgresSchemaSetup: SchemaSetup.MigrateOnStart in the environment)`,
     );
     this.applied = versions.applied;
     this.expected = versions.expected;

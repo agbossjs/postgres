@@ -25,13 +25,18 @@ export enum ExitCode {
   Usage = 2,
 }
 
-export const USAGE = `usage: agboss-postgres migrate [--url <postgres-url>] [--schema <name>]
+export const USAGE = `usage: agboss-postgres migrate [--schema <name>] [--url <postgres-url>]
   Applies the @agboss/postgres migrations not yet applied to the schema (created when missing;
-  without --schema: the URL's search_path, public by default). Without --url: POSTGRES_URL
-  (DATABASE_URL is still read when POSTGRES_URL is unset, for this release only).`;
+  without --schema: the URL's search_path, public by default). The database is POSTGRES_URL
+  (DATABASE_URL is still read when POSTGRES_URL is unset, for this release only); --url puts the
+  URL, its password included, in the process list and the shell history — prefer the variable.`;
 
 /** The flags `migrate` takes, each with a value. */
 const FLAGS: ReadonlySet<string> = new Set(["--url", "--schema"]);
+
+/** The flags among `rest`, never their values: a URL there would carry its password. */
+const flagNamesOf = (rest: readonly string[]): string =>
+  rest.filter((arg) => arg.startsWith("-")).join(" ") || "none";
 
 /** Each `--flag value` of `rest`; a string → a usage problem. */
 function flagsOf(rest: readonly string[]): ReadonlyMap<string, string> | string {
@@ -40,7 +45,7 @@ function flagsOf(rest: readonly string[]): ReadonlyMap<string, string> | string 
     const [flag, value] = [rest[at], rest[at + 1]];
     const isKnown = flag !== undefined && FLAGS.has(flag) && !flags.has(flag);
     if (!isKnown || value === undefined || value === "")
-      return `unexpected arguments: ${rest.join(" ")}`;
+      return `unexpected arguments (flags: ${flagNamesOf(rest)})`;
     flags.set(flag, value);
   }
   return flags;
@@ -73,6 +78,10 @@ function reportLines(report: MigrationReport): readonly string[] {
   return lines;
 }
 
+/** `text` with the password of every `scheme://user:password@` in it masked. */
+const withoutPasswords = (text: string): string =>
+  text.replaceAll(/(\w+:\/\/[^:/@\s]*):[^@\s]*@/gu, "$1:***@");
+
 /** Runs the command line `args` (without the program name); its exit code. */
 export async function runCommand(args: readonly string[], io: CommandIo): Promise<ExitCode> {
   if (args[0] === "--help" || args[0] === "-h") {
@@ -89,9 +98,8 @@ export async function runCommand(args: readonly string[], io: CommandIo): Promis
     for (const line of reportLines(await migratePostgres(target))) io.out(line);
     return ExitCode.Ok;
   } catch (error) {
-    io.err(
-      `agboss-postgres: the migration failed — ${error instanceof Error ? error.message : String(error)}`,
-    );
+    const reason = error instanceof Error ? error.message : String(error);
+    io.err(`agboss-postgres: the migration failed — ${withoutPasswords(reason)}`);
     return ExitCode.Failed;
   }
 }

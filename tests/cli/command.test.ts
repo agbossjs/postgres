@@ -159,4 +159,21 @@ describe("agboss-postgres migrate", () => {
     expect(await runCommand(["migrate", "--url", "not a url"], io)).toBe(ExitCode.Failed);
     expect(io.errors[0]).toContain("the migration failed");
   });
+
+  it("agbossjs/agboss#891: no output of the command holds a URL's password", async () => {
+    const secretUrl = "postgres://app:s3cret-pw@127.0.0.1:1/app";
+    const failed = ioOf({ POSTGRES_URL: secretUrl });
+    const usage = ioOf();
+
+    expect(await runCommand(["migrate"], failed)).toBe(ExitCode.Failed);
+    expect(await runCommand(["migrate", "--url", secretUrl, "extra"], usage)).toBe(ExitCode.Usage);
+
+    const printed = [...failed.lines, ...failed.errors, ...usage.lines, ...usage.errors].join("\n");
+    expect(printed).toContain("the migration failed");
+    expect(printed).not.toContain("s3cret-pw");
+  });
+
+  it("agbossjs/agboss#891: the remedy names the command that reads POSTGRES_URL, never a URL on the command line", () => {
+    expect(USAGE).toContain("prefer the variable");
+  });
 });

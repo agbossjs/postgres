@@ -110,7 +110,8 @@ describe("PostgresConnection.onInit: the schema check at start", () => {
 
     expect(error).toBeInstanceOf(PostgresSchemaMissingError);
     expect(error).toMatchObject({ code: "postgres.schema-missing", applied: 0, expected: 30 });
-    expect(String(error)).toContain('npx agboss-postgres migrate --url "$POSTGRES_URL"');
+    expect(String(error)).toContain("run `npx agboss-postgres migrate` with POSTGRES_URL set");
+    expect(String(error)).not.toContain("--url");
     expect(String(error)).toContain("postgresSchemaSetup: SchemaSetup.MigrateOnStart");
   });
 
