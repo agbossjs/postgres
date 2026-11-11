@@ -4,8 +4,9 @@
  * and mesh requests on one database: a whole application on PostgreSQL alone.
  * List the stores in `@Application({ providers })` — all of them `...POSTGRES_STORES`; the
  * environment gives `postgresUrl` (a `Secret`), optionally `postgresPoolSize`, `postgresSchema` and
- * `postgresSchemaSetup`. The schema is migrated explicitly: `agboss-postgres migrate --url <url>
- * [--schema <name>]` (a Kubernetes Job), or `migratePostgres({ url, schema })`.
+ * `postgresSchemaSetup`. The schema is migrated explicitly: `agboss-postgres migrate [--schema
+ * <name>]` with `POSTGRES_URL` set in its environment (a Kubernetes Job), or
+ * `migratePostgres({ url, schema })` — never the URL on a command line.
  */
 export { PostgresConnection } from "./connection/postgres-connection.js";
 export {
