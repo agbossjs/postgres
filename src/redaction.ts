@@ -1,23 +1,31 @@
 /**
- * What the package prints of a text that may hold a connection string (agbossjs/agboss#891), the
- * same function with the same tests as `@agboss/mongodb`'s. Each whitespace-separated token with
- * a `scheme://` and an `@` after it has everything from the first `:` after the scheme up to its
- * LAST `@` masked — the password whatever it holds (`@`, `/`, `:`, `#`, `?`, `%40`), never parsed
- * as a URL, which splits such a password elsewhere; a token holding two URLs, or a port, is masked
- * more, never less. Then every `password=`, `sslpassword=` and `pass=` query parameter.
+ * What a store package prints of a text that may hold a connection string (agbossjs/agboss#891):
+ * each whitespace-separated token with `://` keeps its scheme and user and loses everything between
+ * the user's `:` and the token's LAST `@` — so a password holding `@`, `/`, `:`, `#`, `?` or `%40`
+ * is masked whole (the WHATWG parser splits such a userinfo elsewhere, so it is never relied on; a
+ * URL with an `@` in its path loses more than its password, never less); and every `password=`,
+ * `sslpassword=` and `pass=` query parameter. Byte for byte the same in `@agboss/postgres` and
+ * `@agboss/mongodb`, with the same tests.
  */
 export function withoutPasswords(text: string): string {
   return text.split(/(\s+)/u).map(maskedToken).join("");
 }
 
-/** One token, its passwords masked. */
+const QUERY_PASSWORD = /([?&;](?:ssl)?pass(?:word)?=)[^&;#\s]*/giu;
+
+/** One token: its userinfo's password masked, then its password query parameters. */
 function maskedToken(token: string): string {
-  const scheme = token.indexOf("://");
+  return withoutUserinfoPassword(token).replaceAll(QUERY_PASSWORD, "$1***");
+}
+
+/** `scheme://user:<anything>@rest` → `scheme://user:***@rest`, the `@` the token's last. */
+function withoutUserinfoPassword(token: string): string {
+  const authority = token.indexOf("://");
+  if (authority === -1) return token;
+  const start = authority + 3;
   const at = token.lastIndexOf("@");
-  const colon = scheme === -1 ? -1 : token.indexOf(":", scheme + 3);
-  const userinfoMasked =
-    scheme !== -1 && colon !== -1 && colon < at
-      ? `${token.slice(0, colon + 1)}***${token.slice(at)}`
-      : token;
-  return userinfoMasked.replaceAll(/([?&](?:sslpassword|password|pass)=)[^&#\s]*/giu, "$1***");
+  if (at < start) return token;
+  const colon = token.indexOf(":", start);
+  if (colon === -1 || colon > at) return token;
+  return `${token.slice(0, colon)}:***${token.slice(at)}`;
 }
