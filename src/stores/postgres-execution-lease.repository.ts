@@ -179,10 +179,9 @@ export class PostgresExecutionLeaseRepository extends ExecutionLeaseRepository {
     return this.connection.ping();
   }
 
-  async claimExecutionId({ executionId, tenantId }: ExecutionIdentity): Promise<boolean> {
-    return (
-      (await changesOf(this.connection.pool, SAVE_EXECUTION_ID, [executionId, tenantId])) === 1
-    );
+  async claimExecutionId(identity: ExecutionIdentity): Promise<boolean> {
+    const parameters = [identity.executionId, identity.tenantId];
+    return (await changesOf(this.connection.pool, SAVE_EXECUTION_ID, parameters)) === 1;
   }
 
   async acquire(
@@ -217,32 +216,26 @@ export class PostgresExecutionLeaseRepository extends ExecutionLeaseRepository {
     return renewed === undefined ? undefined : remainingOf(RenewedRow.parse(renewed).remaining);
   }
 
-  async release(executionLease: ExecutionLease): Promise<void> {
-    await changesOf(this.connection.pool, RELEASE, heldBy(executionLease));
+  async release(held: ExecutionLease): Promise<void> {
+    await changesOf(this.connection.pool, RELEASE, heldBy(held));
   }
 
-  async retire(executionLease: ExecutionLease): Promise<void> {
-    await changesOf(this.connection.pool, RETIRE, heldBy(executionLease));
+  async retire(held: ExecutionLease): Promise<void> {
+    await changesOf(this.connection.pool, RETIRE, heldBy(held));
   }
 
-  async yield(executionLease: ExecutionLease): Promise<Milliseconds | undefined> {
-    const yielded = await this.#locked(executionLease, YIELD, [
-      ...heldBy(executionLease),
-      storeNowOf(this.clock),
-    ]);
+  async yield(held: ExecutionLease): Promise<Milliseconds | undefined> {
+    const yielded = await this.#locked(held, YIELD, [...heldBy(held), storeNowOf(this.clock)]);
     return yielded === undefined ? undefined : remainingOf(RenewedRow.parse(yielded).remaining);
   }
 
-  async reclaim(
-    executionLease: ExecutionLease,
-    duration: Milliseconds,
-  ): Promise<ExecutionLease | undefined> {
-    const reclaimed = await this.#locked(executionLease, RECLAIM, [
-      ...[duration, ...heldBy(executionLease)],
+  async reclaim(held: ExecutionLease, duration: Milliseconds): Promise<ExecutionLease | undefined> {
+    const reclaimed = await this.#locked(held, RECLAIM, [
+      ...[duration, ...heldBy(held)],
       storeNowOf(this.clock),
     ]);
     if (reclaimed === undefined) return undefined;
-    const { tenantId, rootExecutionId, holderInstanceId } = executionLease;
+    const { tenantId, rootExecutionId, holderInstanceId } = held;
     const row = ReclaimedRow.parse(reclaimed);
     return {
       ...{ tenantId, rootExecutionId, holderInstanceId, token: row.token },

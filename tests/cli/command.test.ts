@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { ExitCode, runCommand, USAGE, type CommandIo } from "../../src/cli.js";
 import { migrationsIn } from "../../src/migrations/files.js";
 import { migrateWith } from "../../src/migrations/migrate.js";
-import { freshSchema } from "../support/database.js";
+import { dropSchema, freshSchema, newSchemaName, serverUrl } from "../support/database.js";
 import { migrationsFolder } from "../support/migration-folders.js";
 
 /** A command's io: the environment given, its lines kept. */
@@ -62,19 +62,48 @@ describe("agboss-postgres migrate", () => {
     expect([...first.errors, ...second.errors]).toEqual([]);
   });
 
-  it("without --url it migrates DATABASE_URL", async () => {
+  it("agbossjs/agboss#891: without --url it migrates POSTGRES_URL", async () => {
     const url = await freshSchema();
-    const io = ioOf({ DATABASE_URL: url });
+    const io = ioOf({ POSTGRES_URL: url });
 
     expect(await runCommand(["migrate"], io)).toBe(ExitCode.Ok);
     expect(io.lines).toHaveLength(31);
   });
 
-  it("neither --url nor DATABASE_URL: a usage error, exit code 2", async () => {
-    for (const env of [{}, { DATABASE_URL: "" }]) {
+  it("agbossjs/agboss#891: DATABASE_URL is still read for one release, when POSTGRES_URL is unset", async () => {
+    const url = await freshSchema();
+    const io = ioOf({ DATABASE_URL: url });
+
+    expect(await runCommand(["migrate"], io)).toBe(ExitCode.Ok);
+    expect(io.lines).toHaveLength(31);
+    expect(USAGE).toContain("DATABASE_URL is still read when POSTGRES_URL is unset");
+  });
+
+  it("agbossjs/agboss#891: POSTGRES_URL wins over DATABASE_URL, --url over both", async () => {
+    const [postgresUrl, url] = [await freshSchema(), await freshSchema()];
+    const fromEnv = ioOf({ POSTGRES_URL: postgresUrl, DATABASE_URL: "not a url" });
+    const fromFlag = ioOf({ POSTGRES_URL: "not a url", DATABASE_URL: "not a url" });
+
+    expect(await runCommand(["migrate"], fromEnv)).toBe(ExitCode.Ok);
+    expect(await runCommand(["migrate", "--url", url], fromFlag)).toBe(ExitCode.Ok);
+  });
+
+  it("agbossjs/agboss#891: --schema migrates that schema, created when missing", async () => {
+    const schema = newSchemaName();
+    const io = ioOf({ POSTGRES_URL: serverUrl() });
+    try {
+      expect(await runCommand(["migrate", "--schema", schema], io)).toBe(ExitCode.Ok);
+      expect(io.lines[0]).toBe(`applied 0001_execution_leases (${schema})`);
+    } finally {
+      await dropSchema(schema);
+    }
+  });
+
+  it("neither --url nor POSTGRES_URL nor DATABASE_URL: a usage error, exit code 2", async () => {
+    for (const env of [{}, { POSTGRES_URL: "", DATABASE_URL: "" }]) {
       const io = ioOf(env);
       expect(await runCommand(["migrate"], io)).toBe(ExitCode.Usage);
-      expect(io.errors.join("\n")).toContain("no --url and no DATABASE_URL");
+      expect(io.errors.join("\n")).toContain("no --url and no POSTGRES_URL");
       expect(io.errors.join("\n")).toContain(USAGE);
     }
   });
@@ -84,6 +113,9 @@ describe("agboss-postgres migrate", () => {
     [["migrate", "--url", ""]],
     [["migrate", "--uri", "postgres://x"]],
     [["migrate", "--url", "postgres://x", "extra"]],
+    [["migrate", "--url", "postgres://x", "--url", "postgres://y"]],
+    [["migrate", "--schema"]],
+    [["migrate", "--schema", ""]],
   ])("wrong arguments %j: a usage error", async (args) => {
     const io = ioOf();
 
@@ -126,5 +158,50 @@ describe("agboss-postgres migrate", () => {
 
     expect(await runCommand(["migrate", "--url", "not a url"], io)).toBe(ExitCode.Failed);
     expect(io.errors[0]).toContain("the migration failed");
+  });
+
+  it("agbossjs/agboss#891: no output of the command holds a URL's password", async () => {
+    const secretUrl = "postgres://app:s3cret-pw@127.0.0.1:1/app";
+    const failed = ioOf({ POSTGRES_URL: secretUrl });
+    const usage = ioOf();
+
+    expect(await runCommand(["migrate"], failed)).toBe(ExitCode.Failed);
+    expect(await runCommand(["migrate", "--url", secretUrl, "extra"], usage)).toBe(ExitCode.Usage);
+
+    const shapes = [
+      "postgres://u:s3cret-pw@h/db",
+      "mongodb+srv://u:s3cret-pw@h",
+      "--x=s3cret-pw",
+      "-ps3cret-pw",
+      "s3cret-pw",
+    ];
+    const malformed = [
+      ...shapes.flatMap((shape) => [
+        [shape],
+        ["migrate", shape],
+        ["migrate", "--schema", "a", shape],
+      ]),
+      ["migrate", "--url=postgres://u:s3cret-pw@h/db"],
+      ["migrate", "--url", secretUrl, "--url", secretUrl],
+      ["migrate", "--password", "s3cret-pw"],
+    ];
+    const others = await Promise.all(
+      malformed.map(async (args) => {
+        const io = ioOf();
+        expect(await runCommand(args, io)).toBe(ExitCode.Usage);
+        return [...io.lines, ...io.errors];
+      }),
+    );
+
+    const printed = [
+      ...[...failed.lines, ...failed.errors, ...usage.lines, ...usage.errors],
+      ...others.flat(),
+    ].join("\n");
+    expect(printed).toContain("the migration failed");
+    expect(printed).not.toContain("s3cret-pw");
+  });
+
+  it("agbossjs/agboss#891: the remedy names the command that reads POSTGRES_URL, never a URL on the command line", () => {
+    expect(USAGE).toContain("prefer the variable");
   });
 });

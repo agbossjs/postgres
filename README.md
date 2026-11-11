@@ -27,7 +27,21 @@ Peer dependency: `@agboss/core` `^0.1.1` (released together). Dependencies: `pg`
 ## 1. List the stores
 
 Every coordination store has a PostgreSQL implementation. List them in the application's
-`providers`, in place of the in-memory defaults or the SQLite stores:
+`providers`, in place of the in-memory defaults or the SQLite stores — all of them at once with
+`POSTGRES_STORES` (agbossjs/agboss#891; `agboss describe` still names each one):
+
+```ts
+import { POSTGRES_STORES } from "@agboss/postgres";
+
+// @Application({ …, providers: [...POSTGRES_STORES] })
+```
+
+`POSTGRES_DURABLE_STORES` is the same set without the leases, the child queue, the rate limits and
+the two stores that check the lease in their own transaction (fenced effects, outbound calls): what
+goes beside `@agboss/redis`'s coordination stores, the leases' execution ids kept here —
+`providers: [...POSTGRES_DURABLE_STORES, ...REDIS_COORDINATION_STORES, provide(EXECUTION_ID_STORE,
+PostgresExecutionLeaseRepository)]` (no second lease store: the token's class is created under the
+token only). Or one by one:
 
 ```ts
 import { Application } from "@agboss/core";
@@ -204,20 +218,23 @@ const [takeover] = await app.auditLogOf({ tenantId: "default", rootExecutionId }
 
 `PostgresConnection` declares the fields it reads, so the core checks them at assembly:
 
-| Field                    | Type      | Default | What                                                    |
-| ------------------------ | --------- | ------- | ------------------------------------------------------- |
-| `postgresUrl`            | `Secret`  | —       | the database: `postgres://user:password@host:5432/db`   |
-| `postgresPoolSize`       | `number`  | `10`    | the most connections this instance's pool opens         |
-| `postgresMigrateOnStart` | `boolean` | `false` | migrate a database that lacks this package's migrations |
+| Field                 | Type          | Default                                   | What                                                    |
+| --------------------- | ------------- | ----------------------------------------- | ------------------------------------------------------- |
+| `postgresUrl`         | `Secret`      | —                                         | the database: `postgres://user:password@host:5432/db`   |
+| `postgresPoolSize`    | `number`      | `DEFAULT_POOL_SIZE` (`10`)                | the most connections this instance's pool opens         |
+| `postgresSchema`      | `string`      | the URL's `search_path`, `DEFAULT_SCHEMA` | the schema of the stores' tables (one per application)  |
+| `postgresSchemaSetup` | `SchemaSetup` | `SchemaSetup.Check`                       | what the start does with the schema (Migrations, below) |
 
 ```ts
 // environments/app.environment.ts — the contract
 import type { Secret } from "@agboss/core";
+import type { SchemaSetup } from "@agboss/postgres";
 
 export class AppEnvironment {
   postgresUrl!: Secret; // required as soon as one PostgreSQL store is listed
   postgresPoolSize?: number;
-  postgresMigrateOnStart?: boolean;
+  postgresSchema?: string;
+  postgresSchemaSetup?: SchemaSetup;
 }
 ```
 
@@ -227,8 +244,9 @@ import { secret } from "@agboss/core";
 import type { AppEnvironment } from "./app.environment.js";
 
 export const environment: AppEnvironment = {
-  postgresUrl: secret("DATABASE_URL"),
+  postgresUrl: secret("POSTGRES_URL"),
   postgresPoolSize: 20,
+  postgresSchema: "desk",
 };
 ```
 
@@ -237,8 +255,14 @@ A contract without `postgresUrl` fails the application's assembly, before anythi
 AppEnvironment (read by PostgresConnection)`. A value of the wrong kind (a plain string for the URL,
 a pool size of 0) fails the start with `PostgresSettingsError`, naming the field, never the URL.
 
-The tables go to the first existing schema of the connection's `search_path` (`public` by default);
-`?options=-c%20search_path%3Dmy_schema` in the URL picks another.
+**One schema per application** (agbossjs/agboss#891): `postgresSchema` (or
+`PostgresConnectionSettings.schema`) puts every connection of the pool in that schema
+(`options: -c search_path="<schema>"`), so two applications share one database without seeing each
+other's rows; migrate it with `--schema <name>` (it is created when missing). The name is a plain
+lowercase identifier — `a-z`, `0-9`, `_`, at most 63 characters — anything else is refused with
+`PostgresSettingsError` before any SQL (LangGraph's checkpoint saver writes it into its SQL
+unquoted). Unset, the tables go to the first existing schema of the URL's `search_path`
+(`DEFAULT_SCHEMA`, `public`, by default).
 
 Each instance holds one more connection than its pool (agbossjs/agboss#777): the child queue's
 `LISTEN agboss_child_queued`, so a child another pod queues wakes this one at once instead of at its
@@ -257,7 +281,7 @@ of two ways.
 **A command** — before the new version of the application starts:
 
 ```sh
-npx agboss-postgres migrate --url "$DATABASE_URL"   # or DATABASE_URL alone
+npx agboss-postgres migrate --schema desk   # the database: POSTGRES_URL from the environment
 ```
 
 ```text
@@ -271,7 +295,10 @@ applied 6 LangGraph checkpoint migration(s)
 ```
 
 A second run prints `nothing to apply: public is at migration 21`. Exit codes: `0` done, `1` the
-migration failed (the reason on stderr), `2` a usage error.
+migration failed (the reason on stderr, any password in it masked), `2` a usage error. The command
+reads `POSTGRES_URL`; `--url <url>` overrides it, but puts the URL — its password included — in the
+process list and the shell history, so prefer the variable; `DATABASE_URL` (the name before agbossjs/agboss#891) is still read when
+`POSTGRES_URL` is unset, for this release only.
 
 In Kubernetes, the command is a Job run before the Deployment rolls out (a Helm `pre-upgrade` hook,
 an Argo CD `PreSync` hook, or a step of the pipeline):
@@ -294,7 +321,7 @@ spec:
           image: registry.example.com/desk:1.4.0 # the application's own image: same package version
           command: ["npx", "agboss-postgres", "migrate"]
           env:
-            - name: DATABASE_URL
+            - name: POSTGRES_URL
               valueFrom:
                 secretKeyRef: { name: desk-postgres, key: url }
 ```
@@ -304,20 +331,24 @@ spec:
 ```ts
 import { migratePostgres } from "@agboss/postgres";
 
-const report = await migratePostgres({ url, signal });
-// { schema: "public", applied: [{ version: 12, name: "mesh_requests" }], version: 12, checkpointMigrations: 0 }
+const report = await migratePostgres({ url, schema: "desk", signal });
+// { schema: "desk", applied: [{ version: 12, name: "mesh_requests" }], version: 12, checkpointMigrations: 0 }
 ```
 
-**The start flag.** At `onInit`, `PostgresConnection` compares the database with the package:
+**The start's setup** (`postgresSchemaSetup`, the core's `SchemaSetup`, shared with
+`@agboss/mongodb`; agbossjs/agboss#891, was the flag `postgresMigrateOnStart`). At `onInit`,
+`PostgresConnection` compares the database with the package:
 
-| The database is…   | `postgresMigrateOnStart: true` | otherwise                                                     |
-| ------------------ | ------------------------------ | ------------------------------------------------------------- |
-| at this version    | starts                         | starts                                                        |
-| missing or older   | migrates it, then starts       | `PostgresSchemaMissingError`, naming the command and the flag |
-| newer (a rollback) | `PostgresSchemaTooNewError`    | `PostgresSchemaTooNewError`: migrations are never rolled back |
+| The database is…   | `SchemaSetup.MigrateOnStart` | `SchemaSetup.Check` (the default)                                |
+| ------------------ | ---------------------------- | ---------------------------------------------------------------- |
+| at this version    | starts                       | starts                                                           |
+| missing or older   | migrates it, then starts     | `PostgresSchemaMissingError`, naming the command and the setting |
+| newer (a rollback) | `PostgresSchemaTooNewError`  | `PostgresSchemaTooNewError`: migrations are never rolled back    |
 
-The flag suits a single instance or a development database; with several pods, prefer the Job, so
-a pod never waits on another's migration at start (both are safe: they serialize on the lock).
+A start that fails here ends the pool before it rejects: no connection is left open.
+`MigrateOnStart` suits a single instance or a development database; with several pods, prefer the
+Job, so a pod never waits on another's migration at start and needs no right to change the schema
+(both are safe: they serialize on the lock).
 
 - Each migration runs in its own transaction under an advisory lock (per schema), so concurrent
   runs serialize; a second run applies nothing (`applied: []`) and leaves the schema unchanged.

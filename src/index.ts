@@ -2,13 +2,20 @@
  * `@agboss/postgres` (#482, #483): AGBoss's stores on PostgreSQL — several application instances,
  * each its own process with no shared disk, share execution trees, budgets, history, rate limits
  * and mesh requests on one database: a whole application on PostgreSQL alone.
- * List the stores in `@Application({ providers })`; the environment gives `postgresUrl` (a
- * `Secret`), optionally `postgresPoolSize` and `postgresMigrateOnStart`. The schema is migrated
- * explicitly: `agboss-postgres migrate --url <url>` (a Kubernetes Job), or `migratePostgres({ url })`.
+ * List the stores in `@Application({ providers })` — all of them `...POSTGRES_STORES`; the
+ * environment gives `postgresUrl` (a `Secret`), optionally `postgresPoolSize`, `postgresSchema` and
+ * `postgresSchemaSetup`. The schema is migrated explicitly: `agboss-postgres migrate --url <url>
+ * [--schema <name>]` (a Kubernetes Job), or `migratePostgres({ url, schema })`.
  */
 export { PostgresConnection } from "./connection/postgres-connection.js";
-export type { PostgresConnectionSettings } from "./connection/settings.js";
-export { PostgresListener, type PostgresListenerOptions } from "./connection/listener.js";
+export {
+  DEFAULT_POOL_SIZE,
+  DEFAULT_SCHEMA,
+  type PostgresConnectionSettings,
+} from "./connection/settings.js";
+// what the start does with the schema (agbossjs/agboss#891): the core's, shared with @agboss/mongodb
+export { SchemaSetup } from "@agboss/core/stores";
+export { POSTGRES_DURABLE_STORES, POSTGRES_STORES } from "./store-bundles.js";
 export { PostgresExecutionLeaseRepository } from "./stores/postgres-execution-lease.repository.js";
 export { PostgresExecutionTreeRepository } from "./stores/postgres-execution-tree.repository.js";
 export {

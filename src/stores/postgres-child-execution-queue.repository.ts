@@ -10,7 +10,7 @@ import {
   type QueuedChildExecution,
 } from "@agboss/core";
 import { z } from "zod";
-import { PostgresConnection } from "../connection/postgres-connection.js";
+import { listenerOf, PostgresConnection } from "../connection/postgres-connection.js";
 import { changesOf, firstRowOf } from "../connection/query.js";
 
 /** The channel a save that queues a child notifies (agbossjs/agboss#777). */
@@ -144,7 +144,7 @@ export class PostgresChildExecutionQueueRepository extends ChildExecutionQueueRe
 
   /** Wakes `onQueued` whenever any instance queues a child in this schema (agbossjs/agboss#777). */
   override async watchQueued(onQueued: () => void): Promise<ChildExecutionQueueWatch> {
-    const listener = await this.connection.listen({
+    const listener = await listenerOf(this.connection, {
       channel: CHILD_QUEUED_CHANNEL,
       payload: await this.connection.schema(),
       clock: this.clock,

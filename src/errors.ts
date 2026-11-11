@@ -16,12 +16,13 @@ export interface SchemaVersions {
 }
 
 /** The command an operator runs to migrate, as an error message names it. */
-export const MIGRATE_COMMAND = 'npx agboss-postgres migrate --url "$DATABASE_URL"';
+export const MIGRATE_COMMAND = "npx agboss-postgres migrate";
 
 /**
  * The database lacks migrations of this package (none applied, or older ones only) and the
- * environment does not set `postgresMigrateOnStart`: the application does not start. Run the
- * migrations (`agboss-postgres migrate`, a Kubernetes Job) or set the flag.
+ * start's setup is `SchemaSetup.Check` (the default): the application does not start. Run the
+ * migrations (`agboss-postgres migrate`, a Kubernetes Job) or set `postgresSchemaSetup:
+ * SchemaSetup.MigrateOnStart`.
  */
 export class PostgresSchemaMissingError extends AGBossError {
   static override readonly code = "postgres.schema-missing" as const;
@@ -31,7 +32,7 @@ export class PostgresSchemaMissingError extends AGBossError {
 
   constructor(versions: SchemaVersions) {
     super(
-      `the PostgreSQL schema is at migration ${String(versions.applied)}, this package needs ${String(versions.expected)}: run \`${MIGRATE_COMMAND}\` (or set postgresMigrateOnStart: true in the environment)`,
+      `the PostgreSQL schema is at migration ${String(versions.applied)}, this package needs ${String(versions.expected)}: run \`${MIGRATE_COMMAND}\` with POSTGRES_URL set (add --schema <name> for the application's postgresSchema; or set postgresSchemaSetup: SchemaSetup.MigrateOnStart in the environment)`,
     );
     this.applied = versions.applied;
     this.expected = versions.expected;
@@ -86,7 +87,8 @@ export class PostgresMigrationChangedError extends AGBossError {
 
 /**
  * The environment does not give what a PostgreSQL store needs: `postgresUrl` (a `Secret`), and
- * when set, `postgresPoolSize` (a whole number from 1) and `postgresMigrateOnStart` (a flag).
+ * when set, `postgresPoolSize` (a whole number from 1), `postgresSchema` (a schema name: not empty,
+ * no NUL, at most 63 bytes) and `postgresSchemaSetup` (a `SchemaSetup`).
  */
 export class PostgresSettingsError extends AGBossError {
   static override readonly code = "postgres.settings-invalid" as const;

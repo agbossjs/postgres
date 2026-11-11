@@ -26,7 +26,7 @@ PostgreSQL (`AGBOSS_POSTGRES_TEST_URL`) · api-extractor (`api/postgres.api.md`)
   `scripts/check-test-run.mjs` (agbossjs/agboss#630): every file `test-run.json` /
   `test-run.faults.json` declares — the store contracts' and the fault suite's included — ran a test,
   each group at least its `minFiles`, else the run fails naming what did not run.
-- `npx agboss-postgres migrate --url <url>` — the migrations (after `npm run build`).
+- `npx agboss-postgres migrate --url <url> [--schema <name>]` — the migrations (after `npm run build`).
 - `FC_SEED=<seed>[,<seed>…] npm run test:key-text-seeds` — the key-text properties at those seeds
   (agbossjs/agboss#624; CI runs main's failing seed and 20 drawn ones after `check`).
 
@@ -34,7 +34,7 @@ PostgreSQL (`AGBOSS_POSTGRES_TEST_URL`) · api-extractor (`api/postgres.api.md`)
 
 - `src/connection/` — `PostgresConnection` (DI token, `deps: [ApplicationContext]`, or
   `new PostgresConnection({ url })` in a script/test), its settings from the environment
-  (`postgresUrl: Secret`, `postgresPoolSize`, `postgresMigrateOnStart`), the query helpers (rows
+  (`postgresUrl: Secret`, `postgresPoolSize`, `postgresSchema`, `postgresSchemaSetup`), the query helpers (rows
   as `unknown`, validated by each store) and the transaction helper (a pool of one never deadlocks).
 - `src/migrations/` — `migrations/NNNN_<name>.sql` read and checksummed, the history table, the
   advisory-locked run (`migratePostgres`), the start check (`PostgresSchemaMissingError` /
@@ -57,7 +57,7 @@ clock_timestamp())`, the parameter the test's clock only when `StoreClock.source
 
 ## Rules
 
-- Import only `@agboss/core` public entries (`@agboss/core`, `/units`, `/testing`,
+- Import only `@agboss/core` public entries (`@agboss/core`, `/stores`, `/units`, `/testing`,
   `/testing/contracts`, `/eslint`); never `/internal`. When the core lacks a public seam a store
   needs, stop and report it on the issue.
 - The core's limits: 200 lines per file, 50 per function, complexity 10; no `eslint-disable`,

@@ -1,4 +1,4 @@
-import { Application, type Class } from "@agboss/core";
+import { Application, type Class, type Provider } from "@agboss/core";
 import { PostgresConnection } from "../../src/index.js";
 import { OfflineClerkModelProvider } from "./approval.workflow.js";
 import { ChargeWorkflow } from "./charge.workflow.js";
@@ -15,7 +15,7 @@ import {
  * environment, with an offline model provider (no key to read). It lists `PostgresConnection` only because the charge action injects it itself:
  * the stores no longer need it listed (#526 AC8).
  */
-export function storeLayoutOf(providers: readonly Class[]): Class {
+export function storeLayoutOf(providers: readonly Provider[]): Class {
   @Application({
     name: "store-layout-application",
     version: "1.0.0",
