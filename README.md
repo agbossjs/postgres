@@ -11,7 +11,7 @@ again blindly, when the pod that sent it dies or freezes mid-call.
 Each of these is proven by two real `node` processes on one database (see [Tests](#tests)).
 
 > Status: leases, records, trees, pauses, the child queue, checkpoints, the fenced effect (#500)
-> and its business keys (#508), the lease log (#501), the cost ledger, the execution history, rate
+> and its business keys (#508), the audit log (#501), the cost ledger, the execution history, rate
 > limits, mesh requests (#483) and the calls that leave the system (#505, #508): an application
 > runs on PostgreSQL alone.
 
@@ -38,7 +38,7 @@ import {
   PostgresChildExecutionQueueRepository,
   PostgresCostLedgerRepository,
   PostgresExecutionHistoryRepository,
-  PostgresExecutionLeaseEventRepository,
+  PostgresExecutionAuditLogRepository,
   PostgresExecutionLeaseRepository,
   PostgresExecutionRecordRepository,
   PostgresExecutionTreeRepository,
@@ -62,7 +62,7 @@ import { AppEnvironment } from "./environments/app.environment.js";
     PostgresChildExecutionQueueRepository, // ChildPlacement.AnyInstance children
     PostgresCostLedgerRepository, // budgets: every pod's spend in one counter
     PostgresExecutionHistoryRepository, // agboss records export, from any pod
-    PostgresExecutionLeaseEventRepository, // the lease log: app.leaseEventsOf
+    PostgresExecutionAuditLogRepository, // the audit log: app.auditLogOf
     PostgresExecutionLeaseRepository, // who moves a tree, fenced by its token
     PostgresExecutionRecordRepository, // threads, records, scores, summaries
     PostgresExecutionTreeRepository, // a tree's keys (saveIfAbsent)
@@ -86,7 +86,7 @@ export class DeskApplication {}
 | `PostgresCheckpointSaver`               | LangGraph `BaseCheckpointSaver`      | `checkpoints`, `checkpoint_blobs`, `checkpoint_writes`                                               |
 | `PostgresFencedEffectRepository`        | `FencedEffectRepository<PoolClient>` | `agboss_fenced_effect_marks`, `…_results`, `…_business_results`                                      |
 | `PostgresOutboundCallRepository`        | `OutboundCallRepository`             | `agboss_outbound_calls` (and the leases' `superseded`, `0014`)                                       |
-| `PostgresExecutionLeaseEventRepository` | `ExecutionLeaseEventRepository`      | `agboss_execution_lease_events`                                                                      |
+| `PostgresExecutionAuditLogRepository`   | `ExecutionAuditLogRepository`        | `agboss_execution_lease_events`                                                                      |
 | `PostgresCostLedgerRepository`          | `CostLedgerRepository`               | `agboss_cost_counters`, `agboss_cost_max_spend`, `agboss_cost_entries`, `agboss_cost_entries_pruned` |
 | `PostgresExecutionHistoryRepository`    | `ExecutionHistoryRepository`         | `agboss_execution_history`                                                                           |
 | `PostgresRateLimitRepository`           | `RateLimitRepository`                | `agboss_rate_limit_keys`, `…_slots`, `…_window_buckets`, `…_pauses`                                  |
@@ -120,7 +120,7 @@ mixed layout — PostgreSQL leases with in-memory or SQLite fenced effects or ou
 PostgreSQL fencing stores with any other lease store — fails with
 `[application.store-backend-mismatch]`, naming both stores and both backends. A subclass inherits
 `"postgres"`; one on another database declares `"postgres:<database>"` on all three. Rate limits,
-the child queue, the lease log and the other stores are not constrained. To write a store of your
+the child queue, the audit log and the other stores are not constrained. To write a store of your
 own, on another database, see the Wiki's
 [Your own store](https://github.com/agbossjs/agboss/wiki/Your-own-store).
 
@@ -173,7 +173,7 @@ pending intent found under another execution's lease asks `leaseStateOf`: a live
 flight (`OutboundCallInFlightError`); an expired one is closed by that check, in
 the same transaction — released and marked `superseded`, so its holder can neither renew it nor
 write under it again, and the next take of its tree names it (`takenOverFrom`) — and the call is
-reconciled (`lease-superseded` in the lease log, with the closed lease).
+reconciled (`lease-superseded` in the audit log, with the closed lease).
 
 **An attempt's times are the database's** (agbossjs/agboss#658): `saveIfAbsent` writes the first
 attempt's `attemptStartedAt` and `firstAttemptStartedAt`, `markPending` each next `attemptStartedAt`,
@@ -183,11 +183,11 @@ So `lookup.attemptStartedAt` and `lookup.keyAge`, and a `NotSentTrust.KeyReplay`
 mean the same on every pod and after a takeover. No migration: they live in the record's `jsonb`; an
 intent written before has none, so its key's age is unknown and a `KeyReplay` refuses its replay.
 
-The lease log keeps who took a tree over and from whom — `app.leaseEventsOf({ tenantId,
+The audit log keeps who took a tree over and from whom — `app.auditLogOf({ tenantId,
 rootExecutionId })` reads it on any instance, oldest first:
 
 ```ts
-const [takeover] = await app.leaseEventsOf({ tenantId: "default", rootExecutionId });
+const [takeover] = await app.auditLogOf({ tenantId: "default", rootExecutionId });
 // { kind: "takeover", reason: "recovered", holderInstanceId: "<B>",
 //   previousHolderInstanceId: "<A>", previousToken: 1, token: 2, … }
 ```
@@ -348,7 +348,7 @@ a pod never waits on another's migration at start (both are safe: they serialize
 PostgreSQL keeps no NUL character (U+0000): `text` refuses it and `jsonb` refuses the escape
 `\u0000`. A model's or a tool's answer may hold one, and a store gives back what the framework hands
 it (agbossjs/agboss#521, the NUL case of each contract suite). So every framework string kept in
-`jsonb` (records' route and steps, tree values, pauses, lease events, history, mesh answers) or as
+`jsonb` (records' route and steps, tree values, pauses, audit events, history, mesh answers) or as
 free text (a record's task, answer and stop reason, a summary, an outbound call's record and the
 idempotency key and attempt owner it is matched by) is escaped on the way in and back on
 the way out — U+0000 → U+E000 `0`, U+E000 → U+E000 U+E000 (`src/stores/nul-escape.ts`); nothing else
@@ -418,7 +418,7 @@ Each test file works in a schema of its own (`t_<random>`), dropped after it.
   on stdin and stdout. The processes share nothing but the database; a step that must stay busy
   waits at a gate in its own process's memory, opened by the test.
   - `takeover.test.ts` (AC1): A is killed with SIGKILL mid-step; B, started afterwards, takes the
-    tree over and finishes it — the finished step is not run again — and `app.leaseEventsOf` on B
+    tree over and finishes it — the finished step is not run again — and `app.auditLogOf` on B
     shows the takeover with A as the previous holder. It uses the real `Clock` and the core's lease,
     30 s and not a setting, so it waits for B's second recovery sweep: about 30 s.
   - `child-queue.test.ts` (AC2): five `AnyInstance` children, one step slot per instance: A and B
@@ -427,7 +427,7 @@ Each test file works in a schema of its own (`t_<random>`), dropped after it.
     runs; the ask is held in A's lease store by the core's published store hold points
     (`withHoldPoints(PostgresExecutionLeaseRepository)`, `@agboss/core/testing/faults`), A is frozen (SIGSTOP), B answers the child and finishes
     its lease, A is thawed (SIGCONT) and its ask goes on: A gets no lease, the child's row stays B's,
-    finished, and the lease log has no takeover of it (a few seconds).
+    finished, and the audit log has no takeover of it (a few seconds).
   - `pause-resume.test.ts` (AC3): a pause made on A is answered on B; the tool runs on B, once
     (a few seconds).
   - `shared-budget.test.ts` (#483 AC1): a $5 call on A and one on B spend the tenant's $10 day;

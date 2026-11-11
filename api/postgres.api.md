@@ -31,13 +31,13 @@ import type { ConfigSnapshot } from '@agboss/core';
 import { CostCounter } from '@agboss/core';
 import { CostLedgerRepository } from '@agboss/core';
 import { EffectKey } from '@agboss/core';
+import { ExecutionAuditEventRecord } from '@agboss/core';
+import { ExecutionAuditLogRepository } from '@agboss/core';
 import { ExecutionHistoryPage } from '@agboss/core';
 import { ExecutionHistoryRecord } from '@agboss/core';
 import { ExecutionHistoryRepository } from '@agboss/core';
 import { ExecutionIdentity } from '@agboss/core';
 import { ExecutionLease } from '@agboss/core';
-import { ExecutionLeaseEventRecord } from '@agboss/core';
-import { ExecutionLeaseEventRepository } from '@agboss/core';
 import { ExecutionLeaseRepository } from '@agboss/core';
 import { ExecutionRecordRepository } from '@agboss/core';
 import { ExecutionRecordStatus } from '@agboss/core';
@@ -222,6 +222,19 @@ export class PostgresCostLedgerRepository extends CostLedgerRepository {
 }
 
 // @public
+export class PostgresExecutionAuditLogRepository extends ExecutionAuditLogRepository {
+    constructor(connection: PostgresConnection);
+    // (undocumented)
+    deleteByOccurredAtBefore(cutoff: Date): Promise<void>;
+    // (undocumented)
+    findAllByTenantIdAndRootExecutionIdOrderByOccurredAt(tenantId: string, rootExecutionId: string): Promise<readonly ExecutionAuditEventRecord[]>;
+    // (undocumented)
+    ping(): Promise<void>;
+    // (undocumented)
+    save(record: ExecutionAuditEventRecord): Promise<void>;
+}
+
+// @public
 export class PostgresExecutionHistoryRepository extends ExecutionHistoryRepository {
     constructor(connection: PostgresConnection);
     // (undocumented)
@@ -240,19 +253,6 @@ export class PostgresExecutionHistoryRepository extends ExecutionHistoryReposito
     ping(): Promise<void>;
     // (undocumented)
     save(record: ExecutionHistoryRecord): Promise<void>;
-}
-
-// @public
-export class PostgresExecutionLeaseEventRepository extends ExecutionLeaseEventRepository {
-    constructor(connection: PostgresConnection);
-    // (undocumented)
-    deleteByOccurredAtBefore(cutoff: Date): Promise<void>;
-    // (undocumented)
-    findAllByTenantIdAndRootExecutionIdOrderByOccurredAt(tenantId: string, rootExecutionId: string): Promise<readonly ExecutionLeaseEventRecord[]>;
-    // (undocumented)
-    ping(): Promise<void>;
-    // (undocumented)
-    save(record: ExecutionLeaseEventRecord): Promise<void>;
 }
 
 // @public
@@ -590,6 +590,10 @@ export interface SchemaVersions {
 // src/stores/postgres-cost-ledger.repository.ts:163:9 - (ae-undocumented) Missing documentation for "deleteByMadeAtBefore".
 // src/stores/postgres-cost-ledger.repository.ts:170:9 - (ae-undocumented) Missing documentation for "findMaxSpendByAccount".
 // src/stores/postgres-cost-ledger.repository.ts:180:9 - (ae-undocumented) Missing documentation for "saveMaxSpend".
+// src/stores/postgres-execution-audit-log.repository.ts:26:3 - (ae-undocumented) Missing documentation for "ping".
+// src/stores/postgres-execution-audit-log.repository.ts:30:9 - (ae-undocumented) Missing documentation for "save".
+// src/stores/postgres-execution-audit-log.repository.ts:39:9 - (ae-undocumented) Missing documentation for "findAllByTenantIdAndRootExecutionIdOrderByOccurredAt".
+// src/stores/postgres-execution-audit-log.repository.ts:52:9 - (ae-undocumented) Missing documentation for "deleteByOccurredAtBefore".
 // src/stores/postgres-execution-history.repository.ts:48:3 - (ae-undocumented) Missing documentation for "ping".
 // src/stores/postgres-execution-history.repository.ts:52:9 - (ae-undocumented) Missing documentation for "save".
 // src/stores/postgres-execution-history.repository.ts:63:9 - (ae-undocumented) Missing documentation for "findByTenantIdAndExecutionId".
@@ -598,10 +602,6 @@ export interface SchemaVersions {
 // src/stores/postgres-execution-history.repository.ts:85:3 - (ae-undocumented) Missing documentation for "findAllByTenantIdAndStartedAtBetween".
 // src/stores/postgres-execution-history.repository.ts:98:3 - (ae-undocumented) Missing documentation for "findAllByStartedAtBetween".
 // src/stores/postgres-execution-history.repository.ts:106:9 - (ae-undocumented) Missing documentation for "deleteByEndedAtBefore".
-// src/stores/postgres-execution-lease-event.repository.ts:26:3 - (ae-undocumented) Missing documentation for "ping".
-// src/stores/postgres-execution-lease-event.repository.ts:30:9 - (ae-undocumented) Missing documentation for "save".
-// src/stores/postgres-execution-lease-event.repository.ts:39:9 - (ae-undocumented) Missing documentation for "findAllByTenantIdAndRootExecutionIdOrderByOccurredAt".
-// src/stores/postgres-execution-lease-event.repository.ts:52:9 - (ae-undocumented) Missing documentation for "deleteByOccurredAtBefore".
 // src/stores/postgres-execution-lease.repository.ts:178:3 - (ae-undocumented) Missing documentation for "ping".
 // src/stores/postgres-execution-lease.repository.ts:182:9 - (ae-undocumented) Missing documentation for "claimExecutionId".
 // src/stores/postgres-execution-lease.repository.ts:188:9 - (ae-undocumented) Missing documentation for "acquire".

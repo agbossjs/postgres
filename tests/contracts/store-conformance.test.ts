@@ -13,7 +13,7 @@ import {
   PostgresChildExecutionQueueRepository,
   PostgresCostLedgerRepository,
   PostgresExecutionHistoryRepository,
-  PostgresExecutionLeaseEventRepository,
+  PostgresExecutionAuditLogRepository,
   PostgresExecutionLeaseRepository,
   PostgresExecutionRecordRepository,
   PostgresExecutionTreeRepository,
@@ -111,9 +111,9 @@ storeConformance<PoolClient>({
       (connection, seam) =>
         new PostgresExecutionLeaseRepository(connection, seam.storeClock, seam.application),
     ),
-    executionLeaseEvent: postgresStore(
+    executionAuditLog: postgresStore(
       database,
-      (connection) => new PostgresExecutionLeaseEventRepository(connection),
+      (connection) => new PostgresExecutionAuditLogRepository(connection),
     ),
     executionRecord: postgresStore(
       database,

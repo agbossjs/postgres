@@ -8,11 +8,11 @@
  * fixed 30 s lease; no real duration is asserted (agbossjs/agboss#523).
  */
 import {
-  ExecutionLeaseEventKind,
+  ExecutionAuditEventKind,
   OutboundCallEventOutcome,
   OutboundCallSendStatus,
   OutboundCallStatus,
-  type ExecutionLeaseEventRecord,
+  type ExecutionAuditEventRecord,
 } from "@agboss/core";
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { onSchema, testDatabase } from "../support/database.js";
@@ -56,12 +56,12 @@ async function intents(): Promise<Record<string, unknown>[]> {
   return rows.map((row: { record: Record<string, unknown> }) => row.record);
 }
 
-/** The lease log of a tree, read through `instance`. */
+/** The audit log of a tree, read through `instance`. */
 const logOf = async (instance: Instance, tenantId: string, rootExecutionId: string) =>
-  (await instance.send("lease-events", {
+  (await instance.send("audit-log", {
     tenantId,
     rootExecutionId,
-  })) as ExecutionLeaseEventRecord[];
+  })) as ExecutionAuditEventRecord[];
 
 /**
  * Until `offset` past the end of `root`'s lease (A frozen renews it no more): negative, before it.
@@ -120,13 +120,13 @@ describe("an outbound charge across processes (#482 AC1 + agbossjs/agboss#505)",
     const log = await logOf(b, String(end.tenantId), root);
     expect(log).toContainEqual(
       expect.objectContaining({
-        kind: ExecutionLeaseEventKind.Takeover,
+        kind: ExecutionAuditEventKind.Takeover,
         previousHolderInstanceId: a.instanceId,
       }),
     );
     expect(log).toContainEqual(
       expect.objectContaining({
-        kind: ExecutionLeaseEventKind.OutboundCall,
+        kind: ExecutionAuditEventKind.OutboundCall,
         outcome: OutboundCallEventOutcome.Reconciled,
         holderInstanceId: b.instanceId,
       }),
@@ -173,14 +173,14 @@ describe("an outbound charge across processes (#482 AC1 + agbossjs/agboss#505)",
     const calls = await logOf(b, "default", second.executionId);
     expect(calls).toContainEqual(
       expect.objectContaining({
-        kind: ExecutionLeaseEventKind.OutboundCall,
+        kind: ExecutionAuditEventKind.OutboundCall,
         outcome: OutboundCallEventOutcome.LeaseClosed,
         closedLease: { rootExecutionId: first, leaseExecutionId: first, token: 1 },
       }),
     );
     // the tree whose lease B's check closed: its next take names A at the token it held
     const takeover = (await logOf(b, "default", first)).find(
-      (row) => row.kind === ExecutionLeaseEventKind.Takeover,
+      (row) => row.kind === ExecutionAuditEventKind.Takeover,
     );
     expect(takeover).toMatchObject({
       holderInstanceId: b.instanceId,

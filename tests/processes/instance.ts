@@ -103,8 +103,8 @@ async function answerOf(app: App, command: Command): Promise<unknown> {
           { ownerId: OWNER },
         ),
       );
-    case "lease-events":
-      return app.leaseEventsOf({
+    case "audit-log":
+      return app.auditLogOf({
         tenantId: String(command.tenantId),
         rootExecutionId: String(command.rootExecutionId),
       });

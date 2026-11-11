@@ -1,5 +1,5 @@
 import {
-  ExecutionLeaseEventKind,
+  ExecutionAuditEventKind,
   FencedEffectEventOutcome,
   HandOverReason,
   HandOverSite,
@@ -12,24 +12,24 @@ import {
   type StepHandedOverRecord,
 } from "@agboss/core";
 import { describe, expect, it } from "vitest";
-import { PostgresExecutionLeaseEventRepository } from "../../src/index.js";
+import { PostgresExecutionAuditLogRepository } from "../../src/index.js";
 import { onSchema, testDatabase } from "../support/database.js";
 import { connectionTo } from "../support/stores.js";
 
 /**
- * The lease log's edges beyond the contract: every kind and every optional field round-trips (an
+ * The audit log's edges beyond the contract: every kind and every optional field round-trips (an
  * absent one stays absent), rows are found by tenant and root only, a row that is not a record is
  * refused, and a lost connection rejects every operation.
  */
 const database = testDatabase();
 
 const eventsOn = (url = database.url()) =>
-  new PostgresExecutionLeaseEventRepository(connectionTo(url));
+  new PostgresExecutionAuditLogRepository(connectionTo(url));
 
 const step = { nodeId: "charge-action", visitNumber: 2, idempotencyKey: "root-e:charge:2" };
 
 const takeover = (root: string, at: string): LeaseTakeoverRecord => ({
-  kind: ExecutionLeaseEventKind.Takeover,
+  kind: ExecutionAuditEventKind.Takeover,
   occurredAt: at,
   tenantId: "acme",
   rootExecutionId: root,
@@ -41,7 +41,7 @@ const takeover = (root: string, at: string): LeaseTakeoverRecord => ({
 });
 
 const fenced = (root: string): FencedEffectRecord => ({
-  kind: ExecutionLeaseEventKind.FencedEffect,
+  kind: ExecutionAuditEventKind.FencedEffect,
   occurredAt: "2026-01-05T09:00:00.250Z",
   tenantId: "acme",
   rootExecutionId: root,
@@ -56,7 +56,7 @@ const fenced = (root: string): FencedEffectRecord => ({
 });
 
 const handedOver = (root: string): StepHandedOverRecord => ({
-  kind: ExecutionLeaseEventKind.HandedOver,
+  kind: ExecutionAuditEventKind.HandedOver,
   occurredAt: "2026-01-05T09:00:00.500Z",
   tenantId: "acme",
   rootExecutionId: root,
@@ -69,7 +69,7 @@ const handedOver = (root: string): StepHandedOverRecord => ({
   step,
 });
 
-describe("PostgresExecutionLeaseEventRepository", () => {
+describe("PostgresExecutionAuditLogRepository", () => {
   it("every kind round-trips with its own fields; an absent optional field stays absent, milliseconds kept", async () => {
     const events = eventsOn();
     const rows = [
@@ -135,7 +135,7 @@ describe("PostgresExecutionLeaseEventRepository", () => {
     ).rejects.toThrow();
   });
 
-  it("a lost connection rejects ping, save, the read and the sweep: the core logs lease-event.failed", async () => {
+  it("a lost connection rejects ping, save, the read and the sweep: the core logs audit-log.failed", async () => {
     const down = eventsOn("postgres://postgres:pw@127.0.0.1:1/postgres");
 
     await expect(down.ping()).rejects.toThrow();
@@ -150,7 +150,7 @@ describe("PostgresExecutionLeaseEventRepository", () => {
     const events = eventsOn();
     const origin = { executionId: "root-other", nodeId: "charge-action", visitNumber: 3 };
     const call = (outcome: OutboundCallEventOutcome, at: string): OutboundCallEventRecord => ({
-      kind: ExecutionLeaseEventKind.OutboundCall,
+      kind: ExecutionAuditEventKind.OutboundCall,
       occurredAt: at,
       tenantId: "acme",
       rootExecutionId: "root-508",

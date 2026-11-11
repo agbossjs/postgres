@@ -31,7 +31,7 @@ export { PostgresPausedExecutionRepository } from "./stores/postgres-paused-exec
 export { PostgresChildExecutionQueueRepository } from "./stores/postgres-child-execution-queue.repository.js";
 export { PostgresCheckpointSaver } from "./stores/postgres-checkpoint-saver.js";
 export { PostgresFencedEffectRepository } from "./stores/postgres-fenced-effect.repository.js";
-export { PostgresExecutionLeaseEventRepository } from "./stores/postgres-execution-lease-event.repository.js";
+export { PostgresExecutionAuditLogRepository } from "./stores/postgres-execution-audit-log.repository.js";
 export { PostgresCostLedgerRepository } from "./stores/postgres-cost-ledger.repository.js";
 export { PostgresExecutionHistoryRepository } from "./stores/postgres-execution-history.repository.js";
 export { PostgresRateLimitRepository } from "./stores/postgres-rate-limit.repository.js";
