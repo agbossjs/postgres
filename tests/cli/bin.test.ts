@@ -18,7 +18,7 @@ describe("the agboss-postgres bin (a Kubernetes Job)", () => {
 
     const first = await run("node", [BIN, "migrate", "--url", url]);
     const second = await run("node", [BIN, "migrate"], {
-      env: { ...process.env, DATABASE_URL: url },
+      env: { ...process.env, POSTGRES_URL: url },
     });
     const usage = await run("node", [BIN, "migrate", "--url"]).then(
       () => undefined,

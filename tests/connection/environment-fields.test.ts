@@ -96,7 +96,7 @@ describe("agbossjs/agboss#511 AC3: postgresUrl is checked at assembly", () => {
     ]);
   });
 
-  it("AC3: postgresPoolSize and postgresMigrateOnStart are optional: absent, no violation", async () => {
+  it("AC3: postgresPoolSize, postgresSchema and postgresSchemaSetup are optional: absent, no violation", async () => {
     expect(await environmentViolationsOf(PostgresApplication)).toEqual([]);
   });
 });

@@ -15,6 +15,21 @@ own process, no shared disk — share every store on one database.
 
 ### Changed
 
+- **One schema per application, one setup enum, the store bundles** (#891, API review G11) —
+  `PostgresConnectionSettings.schema` / the environment's `postgresSchema` put every connection in
+  that schema (`DEFAULT_SCHEMA = "public"` when neither it nor the URL's `search_path` says
+  otherwise; a plain lowercase identifier, else `PostgresSettingsError`), and
+  `migratePostgres({ url, schema })` / `agboss-postgres migrate --schema <name>` create and migrate
+  it — the migration files unchanged, so their checksums are. `schemaSetup: SchemaSetup` (the core's,
+  re-exported; default `SchemaSetup.Check`) / `postgresSchemaSetup` replace `migrateOnStart` /
+  `postgresMigrateOnStart`. The command and the docs read `POSTGRES_URL` (`DATABASE_URL` still
+  read when it is unset, for this release only). `POSTGRES_STORES` (every store) and
+  `POSTGRES_DURABLE_STORES` (without the leases, the child queue, the rate limits, the fenced
+  effects and the outbound calls: beside `@agboss/redis`'s `REDIS_COORDINATION_STORES` and
+  `provide(EXECUTION_ID_STORE, PostgresExecutionLeaseRepository)`). `DEFAULT_POOL_SIZE` exported.
+  A start whose schema check fails ends the pool. `PostgresListener` / `PostgresListenerOptions`
+  and `PostgresConnection.listen()` are no longer public (the child queue's own plumbing). The lease
+  store's parameters are `held` / `identity` throughout.
 - **The core's #890 (API review G8)** — the stores import what they are written with from
   `@agboss/core/stores` (the boundary rows `OutboundCallIntent`, …, and the core's store helpers
   `assertEffectName`, `replayedFromOf`, `assertLedgerEntries`, `idGeneratorNameOf`, …);

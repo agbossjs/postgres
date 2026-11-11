@@ -18,7 +18,9 @@ import {
   SqliteExecutionLeaseRepository,
   SqliteFencedEffectRepository,
   SqliteOutboundCallRepository,
-  type Class,
+  EXECUTION_ID_STORE,
+  provide,
+  type Provider,
 } from "@agboss/core";
 import { generateKeyPairSync } from "node:crypto";
 import { beforeAll, describe, expect, it } from "vitest";
@@ -26,12 +28,13 @@ import {
   PostgresExecutionLeaseRepository,
   PostgresFencedEffectRepository,
   PostgresOutboundCallRepository,
+  POSTGRES_DURABLE_STORES,
+  POSTGRES_STORES,
 } from "../../src/index.js";
+import { CoordinationLeases } from "../fixtures/coordination-leases.js";
 import { testDatabase } from "../support/database.js";
 import { HeldPostgresExecutionLeaseRepository } from "../fixtures/held-stores.js";
 import { storeLayoutOf } from "../fixtures/store-layout.application.js";
-
-type Provider = Class;
 
 const database = testDatabase();
 
@@ -170,5 +173,54 @@ describe("#526 AC1: the layouts PostgreSQL supports assemble", () => {
     expect(await backendViolationsOf([...ALL_FENCING, SqliteExecutionAuditLogRepository])).toEqual(
       [],
     );
+  });
+});
+
+describe("agbossjs/agboss#891 AC3: the store bundles in providers", () => {
+  const durableIds = provide(EXECUTION_ID_STORE, PostgresExecutionLeaseRepository);
+
+  it("AC3: POSTGRES_STORES is every store of the package, each once", () => {
+    expect(new Set(POSTGRES_STORES).size).toBe(POSTGRES_STORES.length);
+    expect(POSTGRES_STORES.map((store) => store.name)).toEqual(
+      expect.arrayContaining([PG_LEASES, PG_EFFECTS, PG_CALLS, "PostgresCheckpointSaver"]),
+    );
+    expect(POSTGRES_STORES).toHaveLength(14);
+  });
+
+  it("AC3: POSTGRES_DURABLE_STORES leaves out the coordination and the lease-fencing stores", () => {
+    const left = POSTGRES_STORES.filter(
+      (store) => !(POSTGRES_DURABLE_STORES as readonly unknown[]).includes(store),
+    );
+
+    expect(left.map((store) => store.name).sort()).toEqual(
+      [
+        "PostgresChildExecutionQueueRepository",
+        PG_LEASES,
+        PG_EFFECTS,
+        PG_CALLS,
+        "PostgresRateLimitRepository",
+      ].sort(),
+    );
+  });
+
+  it("AC3: ...POSTGRES_STORES assembles and starts — a whole application on PostgreSQL", async () => {
+    expect(await assembled([...POSTGRES_STORES])).toBe(true);
+  });
+
+  it("AC3: ...POSTGRES_DURABLE_STORES beside coordination leases and provide(EXECUTION_ID_STORE, …): no ambiguity, no mismatch", async () => {
+    const providers = [...POSTGRES_DURABLE_STORES, CoordinationLeases, durableIds];
+
+    expect(await assembled(providers)).toBe(true);
+  });
+
+  it("AC2/AC3: a PostgreSQL fencing store beside the coordination leases is refused — its write checks a lease the leases' backend does not share", async () => {
+    const providers = [...POSTGRES_DURABLE_STORES, CoordinationLeases, durableIds];
+
+    expect(await backendViolationsOf([...providers, PostgresFencedEffectRepository])).toEqual([
+      mismatch(PG_EFFECTS, "postgres", "CoordinationLeases", "redis"),
+    ]);
+    expect(await backendViolationsOf([...providers, PostgresOutboundCallRepository])).toEqual([
+      mismatch(PG_CALLS, "postgres", "CoordinationLeases", "redis"),
+    ]);
   });
 });

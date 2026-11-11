@@ -4,6 +4,7 @@ import {
   PostgresConnection,
   PostgresSchemaMissingError,
   PostgresSchemaTooNewError,
+  SchemaSetup,
 } from "../../src/index.js";
 import { migrationsIn } from "../../src/migrations/files.js";
 import { migrateWith } from "../../src/migrations/migrate.js";
@@ -100,7 +101,7 @@ describe("PostgresConnection.onInit: the schema check at start", () => {
     });
   });
 
-  it("a database without the migrations fails with PostgresSchemaMissingError, naming the command", async () => {
+  it("AC1: SchemaSetup.Check (the default) refuses a database without the migrations — PostgresSchemaMissingError, naming the command", async () => {
     const url = await freshSchema();
 
     const error = await withConnection(new PostgresConnection({ url }), (connection) =>
@@ -109,8 +110,8 @@ describe("PostgresConnection.onInit: the schema check at start", () => {
 
     expect(error).toBeInstanceOf(PostgresSchemaMissingError);
     expect(error).toMatchObject({ code: "postgres.schema-missing", applied: 0, expected: 30 });
-    expect(String(error)).toContain('npx agboss-postgres migrate --url "$DATABASE_URL"');
-    expect(String(error)).toContain("postgresMigrateOnStart");
+    expect(String(error)).toContain('npx agboss-postgres migrate --url "$POSTGRES_URL"');
+    expect(String(error)).toContain("postgresSchemaSetup: SchemaSetup.MigrateOnStart");
   });
 
   it("an older schema fails too, with the versions", async () => {
@@ -141,11 +142,11 @@ describe("PostgresConnection.onInit: the schema check at start", () => {
     expect(error).toMatchObject({ applied: 19, expected: 30 });
   });
 
-  it("postgresMigrateOnStart: a missing schema is migrated at start", async () => {
+  it("AC1: SchemaSetup.MigrateOnStart (postgresSchemaSetup): a missing schema is migrated at start", async () => {
     const url = await freshSchema();
     const application = new TestApplicationContext({
       postgresUrl: revealing(url),
-      postgresMigrateOnStart: true,
+      postgresSchemaSetup: SchemaSetup.MigrateOnStart,
     });
 
     await withConnection(new PostgresConnection(application), (connection) => connection.onInit());
@@ -153,11 +154,10 @@ describe("PostgresConnection.onInit: the schema check at start", () => {
     expect(await historyOf(url)).toHaveLength(30);
   });
 
-  it("postgresMigrateOnStart: two instances starting at once migrate it once", async () => {
+  it("AC1: SchemaSetup.MigrateOnStart: two instances starting at once migrate it once", async () => {
     const url = await freshSchema();
-    const instances = [1, 2].map(
-      () => new PostgresConnection({ url, migrateOnStart: true, poolSize: 1 }),
-    );
+    const schemaSetup = SchemaSetup.MigrateOnStart;
+    const instances = [1, 2].map(() => new PostgresConnection({ url, schemaSetup, poolSize: 1 }));
 
     await Promise.all(instances.map((connection) => connection.onInit()));
     await Promise.all(instances.map((connection) => connection.onDestroy()));
@@ -165,22 +165,32 @@ describe("PostgresConnection.onInit: the schema check at start", () => {
     expect(await historyOf(url)).toHaveLength(30);
   });
 
-  it("a schema a newer package migrated fails with PostgresSchemaTooNewError, flag or not", async () => {
+  it("AC1: a schema a newer package migrated fails with PostgresSchemaTooNewError, under either setup", async () => {
     const url = await freshSchema();
     await migrateWith(
       { url },
       migrationsIn(migrationsFolder({ "0031_later.sql": "CREATE TABLE later (id integer);" })),
     );
 
-    for (const migrateOnStart of [false, true]) {
+    for (const schemaSetup of [SchemaSetup.Check, SchemaSetup.MigrateOnStart]) {
       const error = await withConnection(
-        new PostgresConnection({ url, migrateOnStart }),
+        new PostgresConnection({ url, schemaSetup }),
         (connection) => rejectionOf(connection.onInit()),
       );
       expect(error).toBeInstanceOf(PostgresSchemaTooNewError);
       expect(error).toMatchObject({ applied: 31, expected: 30 });
       expect(String(error)).toContain("the migrations are not rolled back");
     }
+  });
+
+  it("AC4: a start whose check fails ends the pool — no connection left open", async () => {
+    const url = await freshSchema();
+    const connection = new PostgresConnection({ url });
+
+    await expect(connection.onInit()).rejects.toBeInstanceOf(PostgresSchemaMissingError);
+
+    expect(connection.pool.ended).toBe(true);
+    expect(connection.pool.totalCount).toBe(0);
   });
 
   it("an unreachable database fails the start", async () => {

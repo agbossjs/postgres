@@ -9,11 +9,20 @@ import {
   pendingMigrations,
 } from "./history.js";
 import { inTransaction } from "../connection/transaction.js";
+import { checkedSchemaOf, quotedIdentifier, searchPathOptionOf } from "../connection/settings.js";
 
-/** What `migratePostgres` takes: the database, and a signal that stops the run between migrations. */
+/**
+ * What `migratePostgres` takes: the database, the schema, and a signal that stops the run between
+ * migrations.
+ */
 export interface MigratePostgresOptions {
-  /** `postgres://user:password@host:5432/database` (its `search_path` names the schema). */
+  /** `postgres://user:password@host:5432/database`. */
   readonly url: string;
+  /**
+   * The schema to migrate (agbossjs/agboss#891), created when missing — the application's
+   * `postgresSchema`. Unset → the URL's `search_path` (`DEFAULT_SCHEMA` by default), which must exist.
+   */
+  readonly schema?: string;
   /** Aborted → the run stops before its next migration (one already begun commits or rolls back). */
   readonly signal?: AbortSignal;
 }
@@ -26,7 +35,7 @@ export interface AppliedMigrationReport {
 
 /** What one run did: a second run on the same database reports `applied: []`. */
 export interface MigrationReport {
-  /** The schema migrated: the first existing one of the connection's `search_path`. */
+  /** The schema migrated: `schema`, else the first existing one of the URL's `search_path`. */
   readonly schema: string;
   /** The package's migrations this run applied, in order. */
   readonly applied: readonly AppliedMigrationReport[];
@@ -63,21 +72,41 @@ export async function migrateWith(
   files: readonly MigrationFile[],
 ): Promise<MigrationReport> {
   options.signal?.throwIfAborted();
-  // two connections: the lock's session, and the one LangGraph's setup takes from the pool
-  const pool = new pg.Pool({ connectionString: options.url, max: 2 });
+  const schema = checkedSchemaOf(options.schema);
+  // two connections: the lock's session, and the one LangGraph's setup takes from the pool — both
+  // in `schema` (its search_path) when one is given
+  const pool = new pg.Pool({
+    connectionString: options.url,
+    max: 2,
+    ...(schema === undefined ? {} : { options: searchPathOptionOf(schema) }),
+  });
   try {
     const client = await pool.connect();
     // a dropped session rejects its statement in flight; the pool is ended below either way
     const onLost = (): undefined => undefined;
     client.on("error", onLost);
     try {
-      return await underLock(client, () => migrateLocked(pool, client, files, options.signal));
+      if (schema !== undefined) await createSchema(client, schema);
+      const run = { pool, client, files, schema, signal: options.signal };
+      return await underLock(client, () => migrateLocked(run));
     } finally {
       client.off("error", onLost);
       client.release();
     }
   } finally {
     await pool.end();
+  }
+}
+
+/** PostgreSQL's codes when a concurrent `CREATE SCHEMA IF NOT EXISTS` made it first. */
+const SCHEMA_RACE_CODES: ReadonlySet<unknown> = new Set(["23505", "42P06"]);
+
+/** `schema` made unless it exists — another run creating it at the same moment is fine. */
+async function createSchema(client: pg.PoolClient, schema: string): Promise<void> {
+  try {
+    await client.query(`CREATE SCHEMA IF NOT EXISTS ${quotedIdentifier(schema)}`);
+  } catch (error) {
+    if (!(error instanceof Error && SCHEMA_RACE_CODES.has(Reflect.get(error, "code")))) throw error;
   }
 }
 
@@ -105,20 +134,32 @@ async function underLock<TResult>(
   return result;
 }
 
-async function migrateLocked(
-  pool: pg.Pool,
-  client: pg.PoolClient,
-  files: readonly MigrationFile[],
-  signal: AbortSignal | undefined,
-): Promise<MigrationReport> {
+/** One run: its pool and lock session, the files, the schema it was given, its signal. */
+interface MigrationRun {
+  readonly pool: pg.Pool;
+  readonly client: pg.PoolClient;
+  readonly files: readonly MigrationFile[];
+  readonly schema: string | undefined;
+  readonly signal: AbortSignal | undefined;
+}
+
+async function migrateLocked(run: MigrationRun): Promise<MigrationReport> {
+  const { pool, client, files, signal } = run;
   signal?.throwIfAborted();
   const schema = await currentSchemaOf(client);
+  // the file's statements run in the schema whatever they set themselves (#891): the files are
+  // unchanged, so their checksums are
+  const setSearchPath =
+    run.schema === undefined
+      ? undefined
+      : `SET LOCAL search_path TO ${quotedIdentifier(run.schema)}`;
   await client.query(HISTORY_TABLE);
   const pending = pendingMigrations(files, await appliedMigrationsOf(client));
   const applied: AppliedMigrationReport[] = [];
   for (const file of pending) {
     signal?.throwIfAborted();
     await inTransaction(client, async () => {
+      if (setSearchPath !== undefined) await client.query(setSearchPath);
       await client.query(file.sql);
       await client.query(
         "INSERT INTO agboss_schema_migrations (version, name, checksum) VALUES ($1, $2, $3)",

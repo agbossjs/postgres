@@ -12,21 +12,43 @@ import { once } from "./once.js";
 import { PostgresListener, type PostgresListenerOptions } from "./listener.js";
 import { checkSchema } from "../migrations/schema-check.js";
 import {
+  checkedSchemaOf,
   DEFAULT_POOL_SIZE,
+  searchPathOptionOf,
   settingsOfEnvironment,
   type PostgresConnectionSettings,
 } from "./settings.js";
+import { SchemaSetup } from "@agboss/core/stores";
 
 const SchemaRow = z.object({ schema: z.string().nullable() });
+
+/** Each connection's URL, for `listenerOf` — the package's own plumbing, not the class's surface. */
+const URLS = new WeakMap<object, string>();
+
+/**
+ * A `LISTEN` on `channel` over a connection of its own, outside `connection`'s pool
+ * (agbossjs/agboss#777): what a store's watch is made of — the package's plumbing, not exported
+ * (agbossjs/agboss#891). Rejects when its first connection fails.
+ */
+export function listenerOf(
+  connection: PostgresConnection,
+  options: Omit<PostgresListenerOptions, "url">,
+): Promise<PostgresListener> {
+  const url = URLS.get(connection);
+  if (url === undefined) throw new Error("a PostgresConnection made outside its constructor");
+  return PostgresListener.open({ ...options, url });
+}
 
 /**
  * The PostgreSQL database of one application instance: one `pg.Pool` (`postgresPoolSize`
  * connections, default 10) on the environment's `postgresUrl`, shared by every PostgreSQL store the
  * application lists — two instances open two pools to one database. Created by the container
  * (`deps: [ApplicationContext]`), or by a script or a test from its settings
- * (`new PostgresConnection({ url })`). At `onInit` it checks the schema (`postgresMigrateOnStart`
- * migrates it); at `onDestroy`, after its stores, it ends the pool. The DI token a subclass of a
- * PostgreSQL store names in its `deps`.
+ * (`new PostgresConnection({ url })`). Every connection of the pool works in the settings' `schema`
+ * (`postgresSchema`; its `search_path`, agbossjs/agboss#891), else in the URL's `search_path`. At
+ * `onInit` it checks the schema (`SchemaSetup.MigrateOnStart` migrates it first) and, when the check
+ * fails, ends the pool; at `onDestroy`, after its stores, it ends the pool. The DI token a subclass
+ * of a PostgreSQL store names in its `deps`.
  */
 @Injectable({
   deps: [ApplicationContext],
@@ -35,7 +57,8 @@ const SchemaRow = z.object({ schema: z.string().nullable() });
   environmentFields: {
     postgresUrl: EnvironmentField.secret(),
     postgresPoolSize: EnvironmentField.integer({ optional: true }),
-    postgresMigrateOnStart: EnvironmentField.flag({ optional: true }),
+    postgresSchema: EnvironmentField.text({ optional: true }),
+    postgresSchemaSetup: EnvironmentField.text({ optional: true }),
   },
 })
 export class PostgresConnection implements OnInit, OnDestroy {
@@ -47,9 +70,12 @@ export class PostgresConnection implements OnInit, OnDestroy {
   constructor(source: ApplicationContext | PostgresConnectionSettings) {
     this.#settings =
       source instanceof ApplicationContext ? settingsOfEnvironment(source.environment) : source;
+    URLS.set(this, this.#settings.url);
+    const schema = checkedSchemaOf(this.#settings.schema);
     this.pool = new pg.Pool({
       connectionString: this.#settings.url,
       max: this.#settings.poolSize ?? DEFAULT_POOL_SIZE,
+      ...(schema === undefined ? {} : { options: searchPathOptionOf(schema) }),
     });
     // an idle connection that fails leaves the pool by itself; the next statement opens a new one,
     // and an operation in flight rejects with its own error — nothing to do here but not crash
@@ -58,16 +84,8 @@ export class PostgresConnection implements OnInit, OnDestroy {
   }
 
   /**
-   * A `LISTEN` on `channel` over a connection of its own, outside the pool (agbossjs/agboss#777):
-   * what a store's watch is made of. Rejects when its first connection fails.
-   */
-  listen(options: Omit<PostgresListenerOptions, "url">): Promise<PostgresListener> {
-    return PostgresListener.open({ ...options, url: this.#settings.url });
-  }
-
-  /**
-   * The schema the stores' tables are in — the first existing one of the connection's
-   * `search_path` (`public` by default), read on the first call.
+   * The schema the stores' tables are in — the settings' `schema`, else the first existing one of
+   * the URL's `search_path` (`DEFAULT_SCHEMA` by default), read on the first call.
    */
   schema(): Promise<string> {
     return this.#schema();
@@ -80,16 +98,23 @@ export class PostgresConnection implements OnInit, OnDestroy {
 
   /**
    * The schema check at start: the database at this package's migrations; missing or older ones
-   * migrated now with `postgresMigrateOnStart`, else `PostgresSchemaMissingError`; a newer schema
-   * → `PostgresSchemaTooNewError`.
+   * migrated now under `SchemaSetup.MigrateOnStart`, else `PostgresSchemaMissingError`; a newer
+   * schema → `PostgresSchemaTooNewError`. A check that fails ends the pool first (agbossjs/agboss#891):
+   * a start that failed leaves no connection open.
    */
   async onInit(): Promise<void> {
-    await checkSchema({
-      url: this.#settings.url,
-      pool: this.pool,
-      migrateOnStart: this.#settings.migrateOnStart ?? false,
-      files: migrationsIn(),
-    });
+    try {
+      await checkSchema({
+        url: this.#settings.url,
+        schema: this.#settings.schema,
+        pool: this.pool,
+        schemaSetup: this.#settings.schemaSetup ?? SchemaSetup.Check,
+        files: migrationsIn(),
+      });
+    } catch (error) {
+      await this.onDestroy().catch(() => undefined);
+      throw error;
+    }
   }
 
   /** Ends the pool when the instance stops (its stores are destroyed first: they depend on it). */
