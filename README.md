@@ -379,7 +379,7 @@ the tree over, so a pod never moves a tree whose lease it could not renew.
 | Outbound call | `saveIfAbsent`       | one transaction: lease row `FOR UPDATE`, mark upsert, `INSERT … ON CONFLICT DO NOTHING` (unique by step / key)                     |
 | Outbound call | `mark*`              | the same checks, then one `UPDATE … WHERE status AND attempt AND attempt_owner` as read: a compare-and-set                         |
 | Outbound call | `leaseStateOf`       | one transaction: lease row `FOR UPDATE`; held → Live, expired at the token → closed (`superseded`), else Ended                     |
-| Lease events  | `save`               | append-only `INSERT`; read `ORDER BY occurred_at, id` (one moment: the order saved)                                                |
+| Audit log     | `save`               | append-only `INSERT`; read `ORDER BY occurred_at, id` (one moment: the order saved)                                                |
 | Cost ledger   | `saveAll`            | one `INSERT … ON CONFLICT DO UPDATE SET spent_usd = spent_usd + $cost` of every counter, in key order                              |
 | Cost ledger   | `findSpentByCounter` | `SELECT` of the counter's row; no other locking (the core accepts a small overrun on a race, nothing reserved)                     |
 | History       | `save`               | upsert of the root's row (`jsonb` record); reads by tenant, id, thread, period (`LIMIT`/`OFFSET`), oldest first                    |
