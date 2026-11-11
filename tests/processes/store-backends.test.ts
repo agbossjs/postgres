@@ -184,7 +184,7 @@ describe("agbossjs/agboss#891 AC3: the store bundles in providers", () => {
     expect(POSTGRES_STORES.map((store) => store.name)).toEqual(
       expect.arrayContaining([PG_LEASES, PG_EFFECTS, PG_CALLS, "PostgresCheckpointSaver"]),
     );
-    expect(POSTGRES_STORES).toHaveLength(14);
+    expect(POSTGRES_STORES).toHaveLength(15);
   });
 
   it("AC3: POSTGRES_DURABLE_STORES leaves out the coordination and the lease-fencing stores", () => {

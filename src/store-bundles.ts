@@ -1,3 +1,4 @@
+import { PostgresA2ADirectMessageRepository } from "./stores/postgres-a2a-direct-message.repository.js";
 import { PostgresA2ATaskRepository } from "./stores/postgres-a2a-task.repository.js";
 import { PostgresCheckpointSaver } from "./stores/postgres-checkpoint-saver.js";
 import { PostgresChildExecutionQueueRepository } from "./stores/postgres-child-execution-queue.repository.js";
@@ -31,6 +32,7 @@ export const POSTGRES_DURABLE_STORES = [
   PostgresExecutionHistoryRepository,
   PostgresMeshRequestRepository,
   PostgresA2ATaskRepository,
+  PostgresA2ADirectMessageRepository,
 ] as const;
 
 /**

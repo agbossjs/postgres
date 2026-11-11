@@ -91,6 +91,7 @@ import { QueuedChildExecution } from '@agboss/core';
 import { RateLimitLease } from '@agboss/core';
 import { RateLimitRepository } from '@agboss/core';
 import type { RunnableConfig } from '@langchain/core/runnables';
+import { SchemaSetup } from '@agboss/core/stores';
 import { StoreClock } from '@agboss/core';
 import { StoreDescriptor } from '@agboss/core';
 import { StoreDescriptor as StoreDescriptor_2 } from '@agboss/core/stores';
@@ -117,10 +118,17 @@ export interface ChangedMigration {
 }
 
 // @public
+export const DEFAULT_POOL_SIZE = 10;
+
+// @public
+export const DEFAULT_SCHEMA = "public";
+
+// @public
 export function migratePostgres(options: MigratePostgresOptions): Promise<MigrationReport>;
 
 // @public
 export interface MigratePostgresOptions {
+    readonly schema?: string;
     readonly signal?: AbortSignal;
     readonly url: string;
 }
@@ -132,6 +140,12 @@ export interface MigrationReport {
     readonly schema: string;
     readonly version: number;
 }
+
+// @public
+export const POSTGRES_DURABLE_STORES: readonly [typeof PostgresExecutionTreeRepository, typeof PostgresExecutionRecordRepository, typeof PostgresPausedExecutionRepository, typeof PostgresCheckpointSaver, typeof PostgresExecutionAuditLogRepository, typeof PostgresCostLedgerRepository, typeof PostgresExecutionHistoryRepository, typeof PostgresMeshRequestRepository, typeof PostgresA2ATaskRepository, typeof PostgresA2ADirectMessageRepository];
+
+// @public
+export const POSTGRES_STORES: readonly [typeof PostgresExecutionLeaseRepository, typeof PostgresChildExecutionQueueRepository, typeof PostgresRateLimitRepository, typeof PostgresFencedEffectRepository, typeof PostgresOutboundCallRepository, typeof PostgresExecutionTreeRepository, typeof PostgresExecutionRecordRepository, typeof PostgresPausedExecutionRepository, typeof PostgresCheckpointSaver, typeof PostgresExecutionAuditLogRepository, typeof PostgresCostLedgerRepository, typeof PostgresExecutionHistoryRepository, typeof PostgresMeshRequestRepository, typeof PostgresA2ATaskRepository, typeof PostgresA2ADirectMessageRepository];
 
 // @public
 export class PostgresA2ADirectMessageRepository extends A2ADirectMessageRepository {
@@ -221,7 +235,6 @@ export class PostgresChildExecutionQueueRepository extends ChildExecutionQueueRe
 // @public
 export class PostgresConnection implements OnInit, OnDestroy {
     constructor(source: ApplicationContext | PostgresConnectionSettings);
-    listen(options: Omit<PostgresListenerOptions, "url">): Promise<PostgresListener>;
     onDestroy(): Promise<void>;
     onInit(): Promise<void>;
     ping(): Promise<void>;
@@ -231,8 +244,9 @@ export class PostgresConnection implements OnInit, OnDestroy {
 
 // @public
 export interface PostgresConnectionSettings {
-    readonly migrateOnStart?: boolean;
     readonly poolSize?: number;
+    readonly schema?: string;
+    readonly schemaSetup?: SchemaSetup;
     readonly url: string;
 }
 
@@ -293,20 +307,20 @@ export class PostgresExecutionLeaseRepository extends ExecutionLeaseRepository {
     // (undocumented)
     acquire(tenantId: string, rootExecutionId: string, duration: Milliseconds): Promise<ExecutionLease | undefined>;
     // (undocumented)
-    claimExecutionId(input: ExecutionIdentity): Promise<boolean>;
+    claimExecutionId(identity: ExecutionIdentity): Promise<boolean>;
     // (undocumented)
     ping(): Promise<void>;
     // (undocumented)
-    reclaim(executionLease: ExecutionLease, duration: Milliseconds): Promise<ExecutionLease | undefined>;
+    reclaim(held: ExecutionLease, duration: Milliseconds): Promise<ExecutionLease | undefined>;
     // (undocumented)
-    release(executionLease: ExecutionLease): Promise<void>;
+    release(held: ExecutionLease): Promise<void>;
     // (undocumented)
     renew(held: ExecutionLease, duration: Milliseconds): Promise<Milliseconds | undefined>;
     // (undocumented)
-    retire(executionLease: ExecutionLease): Promise<void>;
+    retire(held: ExecutionLease): Promise<void>;
     static readonly store: StoreDescriptor;
     // (undocumented)
-    yield(executionLease: ExecutionLease): Promise<Milliseconds | undefined>;
+    yield(held: ExecutionLease): Promise<Milliseconds | undefined>;
 }
 
 // @public
@@ -403,23 +417,6 @@ export class PostgresLedgerMarkMissingError extends AGBossError {
     static readonly code: "postgres.ledger-mark-missing";
     // (undocumented)
     name: string;
-}
-
-// @public
-export class PostgresListener {
-    close(): Promise<void>;
-    static open(options: PostgresListenerOptions): Promise<PostgresListener>;
-}
-
-// @public
-export interface PostgresListenerOptions {
-    readonly channel: string;
-    // (undocumented)
-    readonly clock: Clock;
-    // (undocumented)
-    readonly onNotify: () => void;
-    readonly payload: string;
-    readonly url: string;
 }
 
 // @public
@@ -563,6 +560,8 @@ export class PostgresSettingsError extends AGBossError {
     name: string;
 }
 
+export { SchemaSetup }
+
 // @public
 export interface SchemaVersions {
     readonly applied: number;
@@ -571,28 +570,26 @@ export interface SchemaVersions {
 
 // Warnings were encountered during analysis:
 //
-// src/connection/listener.ts:22:3 - (ae-undocumented) Missing documentation for "clock".
-// src/connection/listener.ts:23:3 - (ae-undocumented) Missing documentation for "onNotify".
-// src/errors.ts:27:3 - (ae-undocumented) Missing documentation for "code".
-// src/errors.ts:28:12 - (ae-undocumented) Missing documentation for "name".
-// src/errors.ts:29:3 - (ae-undocumented) Missing documentation for "applied".
-// src/errors.ts:30:3 - (ae-undocumented) Missing documentation for "expected".
-// src/errors.ts:47:3 - (ae-undocumented) Missing documentation for "code".
-// src/errors.ts:48:12 - (ae-undocumented) Missing documentation for "name".
-// src/errors.ts:49:3 - (ae-undocumented) Missing documentation for "applied".
-// src/errors.ts:50:3 - (ae-undocumented) Missing documentation for "expected".
-// src/errors.ts:63:3 - (ae-undocumented) Missing documentation for "version".
-// src/errors.ts:64:3 - (ae-undocumented) Missing documentation for "name".
-// src/errors.ts:73:3 - (ae-undocumented) Missing documentation for "code".
-// src/errors.ts:74:12 - (ae-undocumented) Missing documentation for "name".
-// src/errors.ts:75:3 - (ae-undocumented) Missing documentation for "version".
-// src/errors.ts:76:3 - (ae-undocumented) Missing documentation for "migration".
-// src/errors.ts:92:3 - (ae-undocumented) Missing documentation for "code".
-// src/errors.ts:93:12 - (ae-undocumented) Missing documentation for "name".
-// src/errors.ts:103:3 - (ae-undocumented) Missing documentation for "code".
-// src/errors.ts:104:12 - (ae-undocumented) Missing documentation for "name".
-// src/migrations/migrate.ts:23:3 - (ae-undocumented) Missing documentation for "version".
-// src/migrations/migrate.ts:24:3 - (ae-undocumented) Missing documentation for "name".
+// src/errors.ts:28:3 - (ae-undocumented) Missing documentation for "code".
+// src/errors.ts:29:12 - (ae-undocumented) Missing documentation for "name".
+// src/errors.ts:30:3 - (ae-undocumented) Missing documentation for "applied".
+// src/errors.ts:31:3 - (ae-undocumented) Missing documentation for "expected".
+// src/errors.ts:48:3 - (ae-undocumented) Missing documentation for "code".
+// src/errors.ts:49:12 - (ae-undocumented) Missing documentation for "name".
+// src/errors.ts:50:3 - (ae-undocumented) Missing documentation for "applied".
+// src/errors.ts:51:3 - (ae-undocumented) Missing documentation for "expected".
+// src/errors.ts:64:3 - (ae-undocumented) Missing documentation for "version".
+// src/errors.ts:65:3 - (ae-undocumented) Missing documentation for "name".
+// src/errors.ts:74:3 - (ae-undocumented) Missing documentation for "code".
+// src/errors.ts:75:12 - (ae-undocumented) Missing documentation for "name".
+// src/errors.ts:76:3 - (ae-undocumented) Missing documentation for "version".
+// src/errors.ts:77:3 - (ae-undocumented) Missing documentation for "migration".
+// src/errors.ts:94:3 - (ae-undocumented) Missing documentation for "code".
+// src/errors.ts:95:12 - (ae-undocumented) Missing documentation for "name".
+// src/errors.ts:105:3 - (ae-undocumented) Missing documentation for "code".
+// src/errors.ts:106:12 - (ae-undocumented) Missing documentation for "name".
+// src/migrations/migrate.ts:32:3 - (ae-undocumented) Missing documentation for "version".
+// src/migrations/migrate.ts:33:3 - (ae-undocumented) Missing documentation for "name".
 // src/stores/postgres-a2a-direct-message.repository.ts:73:3 - (ae-undocumented) Missing documentation for "store".
 // src/stores/postgres-a2a-direct-message.repository.ts:79:3 - (ae-undocumented) Missing documentation for "ping".
 // src/stores/postgres-a2a-direct-message.repository.ts:83:3 - (ae-undocumented) Missing documentation for "saveIfAbsent".
@@ -644,12 +641,12 @@ export interface SchemaVersions {
 // src/stores/postgres-execution-history.repository.ts:106:9 - (ae-undocumented) Missing documentation for "deleteByEndedAtBefore".
 // src/stores/postgres-execution-lease.repository.ts:178:3 - (ae-undocumented) Missing documentation for "ping".
 // src/stores/postgres-execution-lease.repository.ts:182:9 - (ae-undocumented) Missing documentation for "claimExecutionId".
-// src/stores/postgres-execution-lease.repository.ts:188:9 - (ae-undocumented) Missing documentation for "acquire".
-// src/stores/postgres-execution-lease.repository.ts:212:9 - (ae-undocumented) Missing documentation for "renew".
-// src/stores/postgres-execution-lease.repository.ts:220:9 - (ae-undocumented) Missing documentation for "release".
-// src/stores/postgres-execution-lease.repository.ts:224:9 - (ae-undocumented) Missing documentation for "retire".
-// src/stores/postgres-execution-lease.repository.ts:228:9 - (ae-undocumented) Missing documentation for "yield".
-// src/stores/postgres-execution-lease.repository.ts:236:9 - (ae-undocumented) Missing documentation for "reclaim".
+// src/stores/postgres-execution-lease.repository.ts:187:9 - (ae-undocumented) Missing documentation for "acquire".
+// src/stores/postgres-execution-lease.repository.ts:211:9 - (ae-undocumented) Missing documentation for "renew".
+// src/stores/postgres-execution-lease.repository.ts:219:9 - (ae-undocumented) Missing documentation for "release".
+// src/stores/postgres-execution-lease.repository.ts:223:9 - (ae-undocumented) Missing documentation for "retire".
+// src/stores/postgres-execution-lease.repository.ts:227:9 - (ae-undocumented) Missing documentation for "yield".
+// src/stores/postgres-execution-lease.repository.ts:232:9 - (ae-undocumented) Missing documentation for "reclaim".
 // src/stores/postgres-execution-record.repository.ts:51:3 - (ae-undocumented) Missing documentation for "ping".
 // src/stores/postgres-execution-record.repository.ts:76:9 - (ae-undocumented) Missing documentation for "hasThread".
 // src/stores/postgres-execution-record.repository.ts:79:3 - (ae-undocumented) Missing documentation for "threadOwner".
