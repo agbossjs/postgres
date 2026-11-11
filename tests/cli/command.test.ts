@@ -173,6 +173,7 @@ describe("agboss-postgres migrate", () => {
       "mongodb+srv://u:s3cret-pw@h",
       "--x=s3cret-pw",
       "-ps3cret-pw",
+      "s3cret-pw",
     ];
     const malformed = [
       ...shapes.flatMap((shape) => [

@@ -35,22 +35,15 @@ export const USAGE = `usage: agboss-postgres migrate [--schema <name>] [--url <p
 /** The flags `migrate` takes, each with a value. */
 const FLAGS: ReadonlySet<string> = new Set(["--url", "--schema"]);
 
-/** What a usage error may print of an argument: a plain name only, never a value (allowlist). */
-const COMMAND_NAME = /^[a-z][a-z-]{0,31}$/u;
-const FLAG_NAME = /^--?[a-z][a-z-]{0,31}$/u;
-
-/** The flags among `rest` by name — any other shape as `<flag>` — never their values. */
+/** The flags among `rest`: a known one by its name, any other as `<flag>` — never a value. */
 const flagNamesOf = (rest: readonly string[]): string =>
   rest
     .filter((arg) => arg.startsWith("-"))
-    .map((arg) => (FLAG_NAME.test(arg) ? arg : "<flag>"))
+    .map((arg) => (FLAGS.has(arg) ? arg : "<flag>"))
     .join(" ") || "none";
 
-/** An unknown command as a usage error says it: its name when it is a plain one, else nothing. */
-const unknownCommandOf = (command: string | undefined): string =>
-  command !== undefined && COMMAND_NAME.test(command)
-    ? `unknown command: ${command}`
-    : "unknown command";
+/** An unknown command, never echoed: it may be a URL or a secret typed in the wrong place. */
+const UNKNOWN_COMMAND = "unknown command (the commands: migrate)";
 
 /** Each `--flag value` of `rest`; a string → a usage problem. */
 function flagsOf(rest: readonly string[]): ReadonlyMap<string, string> | string {
@@ -98,7 +91,7 @@ export async function runCommand(args: readonly string[], io: CommandIo): Promis
     io.out(USAGE);
     return ExitCode.Ok;
   }
-  const target = args[0] === "migrate" ? targetOf(args, io.env) : unknownCommandOf(args[0]);
+  const target = args[0] === "migrate" ? targetOf(args, io.env) : UNKNOWN_COMMAND;
   if (typeof target === "string") {
     io.err(withoutPasswords(`agboss-postgres: ${target}\n${USAGE}`));
     return ExitCode.Usage;

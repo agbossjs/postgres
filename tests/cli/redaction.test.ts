@@ -13,6 +13,11 @@ describe("agbossjs/agboss#891: withoutPasswords — no password of a connection 
     ],
     ["postgres://h/db?user=u&password=secret&x=1", "postgres://h/db?user=u&password=***&x=1"],
     ["postgres://h/db?sslpassword=secret", "postgres://h/db?sslpassword=***"],
+    ["postgres://u:p@ss@h1:5432,h2:5432/db", "postgres://u:***@h1:5432,h2:5432/db"],
+    [
+      "mongodb://u:p@ss@h1:27017,h2:27017/db?replicaSet=rs0",
+      "mongodb://u:***@h1:27017,h2:27017/db?replicaSet=rs0",
+    ],
     [
       "failed: connect postgres://u:secret@h/db (refused)",
       "failed: connect postgres://u:***@h/db (refused)",
