@@ -22,6 +22,9 @@ describe("agbossjs/agboss#891: withoutPasswords — no password of a connection 
     ["postgres://h/db?user=u&password=secret&x=1", "postgres://h/db?user=u&password=***&x=1"],
     ["postgres://h/db?sslpassword=secret", "postgres://h/db?sslpassword=***"],
     ["mongodb://h/db?pass=secret", "mongodb://h/db?pass=***"],
+    ["postgres://h/db?password=ab#cd", "postgres://h/db?password=***"],
+    ["postgres://h/db?sslpassword=ab#cd&x=1", "postgres://h/db?sslpassword=***&x=1"],
+    ["mongodb://h/db?w=1&pass=ab;cd#ef", "mongodb://h/db?w=1&pass=***"],
     [
       "failed: connect postgres://u:secret@h/db (refused)",
       "failed: connect postgres://u:***@h/db (refused)",
@@ -32,7 +35,9 @@ describe("agbossjs/agboss#891: withoutPasswords — no password of a connection 
     ],
   ])("%s", (text, masked) => {
     expect(withoutPasswords(text)).toBe(masked);
-    expect(withoutPasswords(text)).not.toMatch(/secret|p@ss|p\/ss|12\/ss|p:ss|p%40ss|p#ss|p\?ss/u);
+    expect(withoutPasswords(text)).not.toMatch(
+      /secret|p@ss|p\/ss|12\/ss|p:ss|p%40ss|p#ss|p\?ss|cd/u,
+    );
   });
 
   it("a text with no connection string is kept as it is", () => {
@@ -55,7 +60,11 @@ describe("agbossjs/agboss#891: withoutPasswords — no password of a connection 
       const length = 8 + (next() % 16);
       const password = Array.from({ length }, () => printable[next() % printable.length]).join("");
       const text = `failed on mongodb://app:${password}@h1:27017,h2:27017/agboss?replicaSet=rs0 now`;
+      // a query parameter's password ends at the next "&" (that is how a URL is read)
+      const value = password.replaceAll("&", "");
+      const query = `failed on mongodb://h1,h2/agboss?replicaSet=rs0&password=${value} now`;
       if (withoutPasswords(text).includes(password)) leaks.push(password);
+      if (value.length >= 8 && withoutPasswords(query).includes(value)) leaks.push(value);
     }
 
     expect(leaks).toEqual([]);

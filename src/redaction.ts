@@ -4,14 +4,14 @@
  * the user's `:` and the token's LAST `@` — so a password holding `@`, `/`, `:`, `#`, `?` or `%40`
  * is masked whole (the WHATWG parser splits such a userinfo elsewhere, so it is never relied on; a
  * URL with an `@` in its path loses more than its password, never less); and every `password=`,
- * `sslpassword=` and `pass=` query parameter. Byte for byte the same in `@agboss/postgres` and
+ * `sslpassword=` and `pass=` query parameter, up to the next `&` (a `#` or `;` in it masked too). Byte for byte the same in `@agboss/postgres` and
  * `@agboss/mongodb`, with the same tests.
  */
 export function withoutPasswords(text: string): string {
   return text.split(/(\s+)/u).map(maskedToken).join("");
 }
 
-const QUERY_PASSWORD = /([?&;](?:ssl)?pass(?:word)?=)[^&;#\s]*/giu;
+const QUERY_PASSWORD = /([?&;](?:ssl)?pass(?:word)?=)[^&\s]*/giu;
 
 /** One token: its userinfo's password masked, then its password query parameters. */
 function maskedToken(token: string): string {
