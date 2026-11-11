@@ -6,7 +6,7 @@ import {
   type A2AMessageRecord,
   type NewA2ADirectMessage,
 } from "@agboss/core";
-import { DIRECT_MESSAGE_CLAIM, directMessageClaimOf } from "@agboss/core/a2a";
+import { DIRECT_MESSAGE_CLAIM, directMessageClaimOf } from "@agboss/core/stores";
 import { changesOf, firstRowOf, rowsOf, type Queryable } from "../../connection/query.js";
 import {
   MESSAGE_COLUMNS,
@@ -112,18 +112,20 @@ export async function savedDirectOnce(
 }
 
 /**
- * Frees the ids the direct messages claimed before `cutoff` whose row is gone, in the sweep's
- * transaction: the claims locked `FOR UPDATE` first — a `saveIfAbsent` holding one is waited for —
+ * Frees at most `limit` ids the direct messages claimed before `cutoff` whose row is gone (a
+ * failed attempt's), oldest first, in the sweep's
+ * transaction (bounded work): the claims locked `FOR UPDATE` first — a `saveIfAbsent` holding one is waited for —
  * then deleted by a second statement, whose snapshot sees every row those saves kept.
  */
-export async function freedClaims(database: Queryable, cutoff: Date): Promise<void> {
+export async function freedClaims(database: Queryable, cutoff: Date, limit: number): Promise<void> {
   const orphan = `m.task_id = $1 AND m.saved_at < $2 AND NOT EXISTS (
     SELECT 1 FROM agboss_a2a_direct_messages d WHERE d.tenant_id = m.tenant_id
       AND d.owner_id = m.owner_id AND d.message_id = m.message_id)`;
   const locked = await rowsOf(
     database,
-    `SELECT ${MESSAGE_COLUMNS} FROM agboss_a2a_messages m WHERE ${orphan} FOR UPDATE OF m`,
-    [DIRECT_MESSAGE_CLAIM, cutoff],
+    `SELECT ${MESSAGE_COLUMNS} FROM agboss_a2a_messages m WHERE ${orphan}
+     ORDER BY m.saved_at, m.tenant_id, m.owner_id, m.message_id LIMIT $3 FOR UPDATE OF m`,
+    [DIRECT_MESSAGE_CLAIM, cutoff, limit],
   );
   if (locked.length === 0) return;
   const keys = locked.map(messageOf);

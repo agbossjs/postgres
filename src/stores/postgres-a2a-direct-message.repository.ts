@@ -10,6 +10,7 @@ import {
   type NewA2ADirectMessage,
   type StoreDescriptor,
 } from "@agboss/core";
+import { DIRECT_MESSAGE_CLAIM } from "@agboss/core/stores";
 import { PostgresConnection } from "../connection/postgres-connection.js";
 import { changesOf, rowsOf } from "../connection/query.js";
 import { inPoolTransaction } from "../connection/transaction.js";
@@ -182,9 +183,25 @@ export class PostgresA2ADirectMessageRepository extends A2ADirectMessageReposito
          SELECT * FROM gone ORDER BY created_at, tenant_id, owner_id, message_id`,
         [cutoff, page],
       );
-      // the claims of the removed, and those whose message went before (a failed attempt's)
-      await freedClaims(client, cutoff);
-      return rows.map(directMessageOf);
+      // the claims of the removed, then at most `limit` of messages gone before (a failed attempt's)
+      const removed = rows.map(directMessageOf);
+      await changesOf(
+        client,
+        `DELETE FROM agboss_a2a_messages m
+         USING unnest($2::text[], $3::text[], $4::text[]) AS k (tenant_id, owner_id, message_id)
+         WHERE m.tenant_id = k.tenant_id AND m.owner_id = k.owner_id
+           AND m.message_id = k.message_id AND m.task_id = $1 AND NOT EXISTS (
+             SELECT 1 FROM agboss_a2a_direct_messages d WHERE d.tenant_id = m.tenant_id
+               AND d.owner_id = m.owner_id AND d.message_id = m.message_id)`,
+        [
+          DIRECT_MESSAGE_CLAIM,
+          removed.map((message) => message.tenantId),
+          removed.map((message) => message.ownerId ?? ""),
+          removed.map((message) => message.messageId),
+        ],
+      );
+      await freedClaims(client, cutoff, page);
+      return removed;
     });
   }
 }
