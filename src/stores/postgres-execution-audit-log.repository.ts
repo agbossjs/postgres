@@ -1,24 +1,24 @@
 import {
-  ExecutionLeaseEventRepository,
+  ExecutionAuditLogRepository,
   Injectable,
-  type ExecutionLeaseEventRecord,
+  type ExecutionAuditEventRecord,
 } from "@agboss/core";
 import { PostgresConnection } from "../connection/postgres-connection.js";
 import { changesOf, rowsOf } from "../connection/query.js";
-import { leaseEventOf } from "./lease-events/lease-event-rows.js";
+import { auditEventOf } from "./audit-log/audit-event-rows.js";
 import { escapedJsonOf } from "./nul-escape.js";
 
 /**
- * `ExecutionLeaseEventRepository` on PostgreSQL (#501, #482): the append-only lease log, one row
+ * `ExecutionAuditLogRepository` on PostgreSQL (#501, #482): the append-only audit log, one row
  * per takeover, hand-over, fenced effect call or outbound call move (agbossjs/agboss#505) — its
  * record as `jsonb` beside the columns it is found by. `save` is one `INSERT` (rows are never changed); a tree's rows are read oldest first by
  * `occurred_at`, rows of one moment by their identity `id`, which is the order they were committed
  * in whichever instance saved them. The sweep's `deleteByOccurredAtBefore` is one `DELETE` on the
  * `Clock`'s cutoff, passed as a parameter. Every statement runs alone at `READ COMMITTED`. Listed
- * in `@Application({ providers })` with `postgresUrl`; `app.leaseEventsOf` reads it.
+ * in `@Application({ providers })` with `postgresUrl`; `app.auditLogOf` reads it.
  */
 @Injectable({ deps: [PostgresConnection] })
-export class PostgresExecutionLeaseEventRepository extends ExecutionLeaseEventRepository {
+export class PostgresExecutionAuditLogRepository extends ExecutionAuditLogRepository {
   constructor(private readonly connection: PostgresConnection) {
     super();
   }
@@ -27,7 +27,7 @@ export class PostgresExecutionLeaseEventRepository extends ExecutionLeaseEventRe
     return this.connection.ping();
   }
 
-  async save(record: ExecutionLeaseEventRecord): Promise<void> {
+  async save(record: ExecutionAuditEventRecord): Promise<void> {
     await changesOf(
       this.connection.pool,
       `INSERT INTO agboss_execution_lease_events (tenant_id, root_execution_id, occurred_at, record)
@@ -39,14 +39,14 @@ export class PostgresExecutionLeaseEventRepository extends ExecutionLeaseEventRe
   async findAllByTenantIdAndRootExecutionIdOrderByOccurredAt(
     tenantId: string,
     rootExecutionId: string,
-  ): Promise<readonly ExecutionLeaseEventRecord[]> {
+  ): Promise<readonly ExecutionAuditEventRecord[]> {
     const rows = await rowsOf(
       this.connection.pool,
       `SELECT record FROM agboss_execution_lease_events
        WHERE tenant_id = $1 AND root_execution_id = $2 ORDER BY occurred_at, id`,
       [tenantId, rootExecutionId],
     );
-    return rows.map(leaseEventOf);
+    return rows.map(auditEventOf);
   }
 
   async deleteByOccurredAtBefore(cutoff: Date): Promise<void> {

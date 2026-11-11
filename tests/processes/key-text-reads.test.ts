@@ -1,15 +1,15 @@
 /**
  * agbossjs/agboss#568 (#575) and #580 on PostgreSQL: the operator's reads take a tenant id and a root execution id
  * as keys' text. `pg` writes a JS string as UTF-8, so a lone surrogate reaches the database as
- * U+FFFD: on the stores alone `t\uD800` reads tenant `t�`'s pending charge, lease log and calls,
- * and `r\uD800` root `r�`'s lease log. Through the application every such read is refused with
+ * U+FFFD: on the stores alone `t\uD800` reads tenant `t�`'s pending charge, audit log and calls,
+ * and `r\uD800` root `r�`'s audit log. Through the application every such read is refused with
  * `dto.invalid` naming the field and the rule, never the id, before the database is asked; an
  * accepted id reads its own rows as before. Built with the public `createApp` on the test's schema.
  */
 import {
   createApp,
   DtoValidationError,
-  ExecutionLeaseEventKind,
+  ExecutionAuditEventKind,
   LeaseTakeoverReason,
   OutboundCallStatus,
   type App,
@@ -20,7 +20,7 @@ import { seconds } from "@agboss/core/units";
 import { generateKeyPairSync } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
-  PostgresExecutionLeaseEventRepository,
+  PostgresExecutionAuditLogRepository,
   PostgresExecutionLeaseRepository,
   PostgresFencedEffectRepository,
   PostgresOutboundCallRepository,
@@ -39,15 +39,15 @@ const POSTGRES_STORES = [
   PostgresExecutionLeaseRepository,
   PostgresFencedEffectRepository,
   PostgresOutboundCallRepository,
-  PostgresExecutionLeaseEventRepository,
+  PostgresExecutionAuditLogRepository,
 ];
 
 let app: App;
 
-/** A takeover row of `rootExecutionId` in `tenantId`'s lease log. */
+/** A takeover row of `rootExecutionId` in `tenantId`'s audit log. */
 const takeoverOf = (tenantId: string, rootExecutionId: string): LeaseTakeoverRecord => ({
-  kind: ExecutionLeaseEventKind.Takeover,
-  // now: the application's recovery sweep removes rows older than its retention.leaseEvents
+  kind: ExecutionAuditEventKind.Takeover,
+  // now: the application's recovery sweep removes rows older than its retention.auditLog
   occurredAt: new Date().toISOString(),
   tenantId,
   rootExecutionId,
@@ -87,7 +87,7 @@ async function pendingChargeOf(lease: ExecutionLease): Promise<void> {
 /** Every read of an operator, under `tenantId` and `rootExecutionId`. */
 const readsOf = (tenantId: string, rootExecutionId: string) =>
   [
-    ["leaseEventsOf", () => app.leaseEventsOf({ tenantId, rootExecutionId })],
+    ["auditLogOf", () => app.auditLogOf({ tenantId, rootExecutionId })],
     ["outboundCallsOf", () => app.outboundCallsOf({ tenantId, rootExecutionId })],
     ["pendingOutboundCallsOf", () => app.pendingOutboundCallsOf({ tenantId })],
   ] as const;
@@ -109,7 +109,7 @@ beforeAll(async () => {
     .acquire(TENANT, "r1", seconds(30));
   if (lease === undefined) throw new Error("the tenant's lease was not granted");
   await pendingChargeOf(lease);
-  const log = app.resolve(PostgresExecutionLeaseEventRepository);
+  const log = app.resolve(PostgresExecutionAuditLogRepository);
   await log.save(takeoverOf(TENANT, "r1"));
   await log.save(takeoverOf("default", ROOT));
 });
@@ -121,7 +121,7 @@ afterAll(async () => {
 describe("agbossjs/agboss#568, #580 on PostgreSQL: a key's text at the operator's reads", () => {
   it("the stores alone merge t\\uD800 into t\\uFFFD and r\\uD800 into r\\uFFFD — what the reads keep out", async () => {
     const calls = app.resolve(PostgresOutboundCallRepository);
-    const log = app.resolve(PostgresExecutionLeaseEventRepository);
+    const log = app.resolve(PostgresExecutionAuditLogRepository);
 
     const status = OutboundCallStatus.Pending;
     expect(
@@ -140,8 +140,8 @@ describe("agbossjs/agboss#568, #580 on PostgreSQL: a key's text at the operator'
       expect.objectContaining({ status: OutboundCallStatus.Pending }),
     ]);
     expect(await app.outboundCallsOf({ tenantId: TENANT, rootExecutionId: "r1" })).toHaveLength(1);
-    expect(await app.leaseEventsOf({ tenantId: TENANT, rootExecutionId: "r1" })).toHaveLength(1);
-    expect(await app.leaseEventsOf({ tenantId: "default", rootExecutionId: ROOT })).toHaveLength(1);
+    expect(await app.auditLogOf({ tenantId: TENANT, rootExecutionId: "r1" })).toHaveLength(1);
+    expect(await app.auditLogOf({ tenantId: "default", rootExecutionId: ROOT })).toHaveLength(1);
   });
 
   it.for(["t\uD800", "t\uDFFF"])(
@@ -159,7 +159,7 @@ describe("agbossjs/agboss#568, #580 on PostgreSQL: a key's text at the operator'
   );
 
   it.for(["r\uD800", "r\uDFFF"])(
-    "a lone surrogate root execution id (%j) never reads r\\uFFFD's lease log: refused, rootExecutionId named",
+    "a lone surrogate root execution id (%j) never reads r\\uFFFD's audit log: refused, rootExecutionId named",
     async (rootExecutionId) => {
       for (const [read, made] of readsOf("default", rootExecutionId).slice(0, 2)) {
         const error = await rejectionOf(made);

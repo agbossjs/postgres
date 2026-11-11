@@ -2,17 +2,17 @@
  * AC1 (agbossjs/agboss#482): two application instances, each its own `node` process with its own
  * pool and no shared disk, on one PostgreSQL. A is killed (SIGKILL) in the middle of a run; B,
  * started afterwards, takes the tree over once A's lease ran out and finishes it from its last
- * checkpoint — and the lease log (`app.leaseEventsOf`) names A as the holder it took over from.
+ * checkpoint — and the audit log (`app.auditLogOf`) names A as the holder it took over from.
  * The real `Clock` and the core's fixed 30 s lease (Q58: not a setting): B's sweep at its start
  * finds the lease still held, the next one, a lease length later, takes it — about 30 s. No real
  * duration is asserted (agbossjs/agboss#523): that B took an expired lease, not a held one, is the
- * lease log's (the previous holder and token) and the lease contract suite's (a held lease is
+ * audit log's (the previous holder and token) and the lease contract suite's (a held lease is
  * never taken); "never hangs" is the wait's own bound, 75 s.
  */
 import {
-  ExecutionLeaseEventKind,
+  ExecutionAuditEventKind,
   LeaseTakeoverReason,
-  type ExecutionLeaseEventRecord,
+  type ExecutionAuditEventRecord,
 } from "@agboss/core";
 import { describe, expect, it } from "vitest";
 import { onSchema, testDatabase } from "../support/database.js";
@@ -21,7 +21,7 @@ import { eventsOf, launch } from "./instances.js";
 const database = testDatabase();
 
 describe("AC1: a tree whose process was killed is taken over by another process", () => {
-  it("AC1: B finishes the tree A was killed in; the lease log names A as the previous holder", async () => {
+  it("AC1: B finishes the tree A was killed in; the audit log names A as the previous holder", async () => {
     const a = await launch(database.url());
     void a.send("execute", { workflow: "takeover", input: { name: "order-7" } });
     const holding = await a.next((event) => event.event === "holding");
@@ -49,12 +49,12 @@ describe("AC1: a tree whose process was killed is taken over by another process"
     expect(records.rows).toHaveLength(1);
     expect(records.rows[0]).not.toEqual({ status: "running" });
 
-    const rows = (await b.send("lease-events", {
+    const rows = (await b.send("audit-log", {
       tenantId,
       rootExecutionId: root,
-    })) as ExecutionLeaseEventRecord[];
+    })) as ExecutionAuditEventRecord[];
 
-    const takeovers = rows.filter((row) => row.kind === ExecutionLeaseEventKind.Takeover);
+    const takeovers = rows.filter((row) => row.kind === ExecutionAuditEventKind.Takeover);
     expect(takeovers).toEqual([
       expect.objectContaining({
         tenantId,
@@ -68,7 +68,7 @@ describe("AC1: a tree whose process was killed is taken over by another process"
     const [takeover] = takeovers;
     // B took the tree over after A was killed: an order of two moments, never a duration
     expect(Date.parse(takeover?.occurredAt ?? "")).toBeGreaterThanOrEqual(killedAt);
-    expect(takeover?.kind === ExecutionLeaseEventKind.Takeover && takeover.previousToken).toBe(
+    expect(takeover?.kind === ExecutionAuditEventKind.Takeover && takeover.previousToken).toBe(
       (takeover?.token ?? 0) - 1,
     );
     // the observer heard of it too, after the row was written

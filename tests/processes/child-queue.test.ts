@@ -8,13 +8,13 @@
  * While A's parent waits for its remote children it yields its lease in the store — still A's,
  * renewed on (agbossjs/agboss#516) — so B's recovery sweep at its start, with its one slot free,
  * finds the root held and takes nothing over: A's execute gets the finished output, A ends the
- * tree, and the lease log has no takeover of the root (before #516 the yield was a release, and B
+ * tree, and the audit log has no takeover of the root (before #516 the yield was a release, and B
  * took the root over in 15 of 16 runs under load).
  */
 import {
-  ExecutionLeaseEventKind,
+  ExecutionAuditEventKind,
   LeaseTakeoverReason,
-  type ExecutionLeaseEventRecord,
+  type ExecutionAuditEventRecord,
 } from "@agboss/core";
 import { describe, expect, it } from "vitest";
 import { onSchema, testDatabase } from "../support/database.js";
@@ -96,19 +96,19 @@ describe("AC2: AnyInstance children across two processes", () => {
     ]);
     expect(rootEndsOf(a, root)).toHaveLength(1);
     // no instance took the root's lease over: only A's own reclaims after each wait
-    const rows = (await b.send("lease-events", {
+    const rows = (await b.send("audit-log", {
       tenantId: String(first.tenantId),
       rootExecutionId: root,
-    })) as ExecutionLeaseEventRecord[];
+    })) as ExecutionAuditEventRecord[];
     const rootTakes = rows.filter(
-      (row) => row.kind === ExecutionLeaseEventKind.Takeover && row.executionId === root,
+      (row) => row.kind === ExecutionAuditEventKind.Takeover && row.executionId === root,
     );
     expect(rootTakes.length).toBeGreaterThan(0);
     expect(
       new Set(
         rootTakes.map((row) => `${row.holderInstanceId} ${"reason" in row ? row.reason : ""}`),
       ),
-    ).toEqual(new Set([`${a.instanceId} ${LeaseTakeoverReason.Reacquired}`]));
+    ).toEqual(new Set([`${a.instanceId} ${LeaseTakeoverReason.Reclaimed}`]));
     // the tree joined its children: none is left in the queue to be claimed again
     expect(await queueOf(root)).toEqual([]);
   }, 120_000);

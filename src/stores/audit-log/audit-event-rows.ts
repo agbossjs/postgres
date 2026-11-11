@@ -1,19 +1,19 @@
 import {
-  ExecutionLeaseEventKind,
+  ExecutionAuditEventKind,
   FencedEffectEventOutcome,
   HandOverReason,
   HandOverSite,
   LeaseTakeoverReason,
   OutboundCallEventOutcome,
   OutboundCallStatus,
-  type ExecutionLeaseEventRecord,
+  type ExecutionAuditEventRecord,
 } from "@agboss/core";
 import { z } from "zod";
 import { unescapedJson } from "../nul-escape.js";
 
 /**
  * A row of `agboss_execution_lease_events` read back: its `record` column is the record `save`
- * wrote, checked against the four kinds of the lease log (#501; outbound calls, agbossjs/agboss#505; business keys and
+ * wrote, checked against the four kinds of the audit log (#501; outbound calls, agbossjs/agboss#505; business keys and
  * superseded calls and leases, #508) —
  * rows are never trusted.
  */
@@ -44,7 +44,7 @@ const base = {
 
 const Takeover = z.strictObject({
   ...base,
-  kind: z.literal(ExecutionLeaseEventKind.Takeover),
+  kind: z.literal(ExecutionAuditEventKind.Takeover),
   reason: z.enum(LeaseTakeoverReason),
   previousHolderInstanceId: z.string().optional(),
   previousToken: z.number().int().optional(),
@@ -53,7 +53,7 @@ const Takeover = z.strictObject({
 
 const HandedOver = z.strictObject({
   ...base,
-  kind: z.literal(ExecutionLeaseEventKind.HandedOver),
+  kind: z.literal(ExecutionAuditEventKind.HandedOver),
   reason: z.enum(HandOverReason),
   site: z.enum(HandOverSite),
   step: Step,
@@ -62,7 +62,7 @@ const HandedOver = z.strictObject({
 
 const FencedEffect = z.strictObject({
   ...base,
-  kind: z.literal(ExecutionLeaseEventKind.FencedEffect),
+  kind: z.literal(ExecutionAuditEventKind.FencedEffect),
   name: z.string(),
   outcome: z.enum(FencedEffectEventOutcome),
   step: Step,
@@ -73,7 +73,7 @@ const FencedEffect = z.strictObject({
 
 const OutboundCall = z.strictObject({
   ...base,
-  kind: z.literal(ExecutionLeaseEventKind.OutboundCall),
+  kind: z.literal(ExecutionAuditEventKind.OutboundCall),
   name: z.string(),
   target: z.string(),
   operation: z.string(),
@@ -97,5 +97,5 @@ const Record = z.discriminatedUnion("kind", [Takeover, HandedOver, FencedEffect,
 const EventRow = z.object({ record: z.unknown() });
 
 /** The record of a row (`SELECT record …`). */
-export const leaseEventOf = (row: unknown): ExecutionLeaseEventRecord =>
+export const auditEventOf = (row: unknown): ExecutionAuditEventRecord =>
   Record.parse(unescapedJson(EventRow.parse(row).record));

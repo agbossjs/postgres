@@ -5,7 +5,7 @@
  * the reverse — fails with `[application.store-backend-mismatch]`, naming both stores and both
  * backends, every violation at once. The all-PostgreSQL layout assembles, and so do PostgreSQL
  * leases with the in-memory rate limits and child queue (the core's defaults, unlisted) or a SQLite
- * lease log: no atomic step spans them. Built with the public `createApp`, on the test's own
+ * audit log: no atomic step spans them. Built with the public `createApp`, on the test's own
  * schema (`tests/fixtures/store-layout.application.ts`); an application that assembles is closed
  * again.
  */
@@ -14,7 +14,7 @@ import {
   GraphRuleError,
   InMemoryFencedEffectRepository,
   InMemoryOutboundCallRepository,
-  SqliteExecutionLeaseEventRepository,
+  SqliteExecutionAuditLogRepository,
   SqliteExecutionLeaseRepository,
   SqliteFencedEffectRepository,
   SqliteOutboundCallRepository,
@@ -166,9 +166,9 @@ describe("#526 AC1: the layouts PostgreSQL supports assemble", () => {
     expect(await assembled([HeldPostgresExecutionLeaseRepository, ...fencing])).toBe(true);
   });
 
-  it("PostgreSQL leases with a lease log of another backend: not constrained", async () => {
-    expect(
-      await backendViolationsOf([...ALL_FENCING, SqliteExecutionLeaseEventRepository]),
-    ).toEqual([]);
+  it("PostgreSQL leases with a audit log of another backend: not constrained", async () => {
+    expect(await backendViolationsOf([...ALL_FENCING, SqliteExecutionAuditLogRepository])).toEqual(
+      [],
+    );
   });
 });

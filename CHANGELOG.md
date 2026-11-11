@@ -15,6 +15,11 @@ own process, no shared disk — share every store on one database.
 
 ### Changed
 
+- **The core's #889, the execution audit log** — `PostgresExecutionLeaseEventRepository` is
+  `PostgresExecutionAuditLogRepository` (the contract `ExecutionAuditLogRepository`, its records
+  `ExecutionAuditEventRecord`); the table keeps its name, `agboss_execution_lease_events`, and no
+  migration runs. A record kept before #889 (pre-release builds only) keeps its copy of the log as
+  `leaseEvents`; one kept from now on carries it as `auditLog`.
 - **The core's #825** — every store declares one `static store = { backend: "postgres" }`, the A2A
   task store too; a fencing store checks a key's name, business key and fingerprint decision at its
   entry (`FingerprintRequiredError` before any statement); `findAllByTenantIdAndStatus({ tenantId,

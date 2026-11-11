@@ -33,7 +33,7 @@ function brokenSet(name: string, leasesOf: LeasesOf): void {
     reset: async () => {
       await truncateAll(database.url());
     },
-    without: ["fencedEffect", "executionLeaseEvent"],
+    without: ["fencedEffect", "executionAuditLog"],
     interleavings: { depth: 4, walks: 20, walkDepth: 20 },
     stores: {
       executionLease: postgresStore(database, (connection, seam) =>

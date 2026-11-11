@@ -14,7 +14,7 @@
  * more ahead took A's live lease at its first sweep (A's run then failed with a lost lease), and B
  * behind took a frozen A's tree only once its own clock passed the expiry — ten leases late.
  */
-import { ExecutionLeaseEventKind, type ExecutionLeaseEventRecord } from "@agboss/core";
+import { ExecutionAuditEventKind, type ExecutionAuditEventRecord } from "@agboss/core";
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { onSchema, testDatabase } from "../support/database.js";
 import { eventsOf, launch, type Instance } from "./instances.js";
@@ -49,11 +49,11 @@ async function attempts(): Promise<number> {
 
 const takeoversOf = async (instance: Instance, rootExecutionId: string) =>
   (
-    (await instance.send("lease-events", {
+    (await instance.send("audit-log", {
       tenantId: "default",
       rootExecutionId,
-    })) as ExecutionLeaseEventRecord[]
-  ).filter((row) => row.kind === ExecutionLeaseEventKind.Takeover);
+    })) as ExecutionAuditEventRecord[]
+  ).filter((row) => row.kind === ExecutionAuditEventKind.Takeover);
 
 const sleep = (ms: number): Promise<void> =>
   new Promise((resolve) => {

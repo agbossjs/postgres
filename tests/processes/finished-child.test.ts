@@ -5,10 +5,10 @@
  * stale): the ask is held in A's store
  * (`hold-acquire`), A is frozen (SIGSTOP), B answers the child and finishes its lease, A is thawed
  * (SIGCONT) and its ask goes on. The store refuses it in the `acquire` statement itself: no lease of
- * the finished child is A's, and the lease log has no takeover of it. Against a `finish` that is a
+ * the finished child is A's, and the audit log has no takeover of it. Against a `finish` that is a
  * plain `release` the ask took the child's lease at epoch 2 (the test fails: it bites).
  */
-import { ExecutionLeaseEventKind, type ExecutionLeaseEventRecord } from "@agboss/core";
+import { ExecutionAuditEventKind, type ExecutionAuditEventRecord } from "@agboss/core";
 import { describe, expect, it } from "vitest";
 import { onSchema, testDatabase } from "../support/database.js";
 import { eventsOf, launch } from "./instances.js";
@@ -83,14 +83,14 @@ describe("AC1 (agbossjs/agboss#520): a frozen instance takes no lease of a child
       released: true,
       finished: true,
     });
-    // the lease log has no takeover of the finished child, and no observer heard of one
-    const rows = (await b.send("lease-events", {
+    // the audit log has no takeover of the finished child, and no observer heard of one
+    const rows = (await b.send("audit-log", {
       tenantId,
       rootExecutionId: root,
-    })) as ExecutionLeaseEventRecord[];
+    })) as ExecutionAuditEventRecord[];
     expect(
       rows.filter(
-        (row) => row.kind === ExecutionLeaseEventKind.Takeover && row.executionId === child,
+        (row) => row.kind === ExecutionAuditEventKind.Takeover && row.executionId === child,
       ),
     ).toEqual([]);
     expect(
