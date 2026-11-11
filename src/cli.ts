@@ -30,16 +30,20 @@ export const USAGE = `usage: agboss-postgres migrate [--schema <name>] [--url <p
   Applies the @agboss/postgres migrations not yet applied to the schema (created when missing;
   without --schema: the URL's search_path, public by default). The database is POSTGRES_URL
   (DATABASE_URL is still read when POSTGRES_URL is unset, for this release only); --url puts the
-  URL, its password included, in the process list and the shell history — prefer the variable.`;
+  URL, its password included, in the process list and the shell history — prefer the variable.
+  The flags: --schema, --url, --help (-h).`;
 
 /** The flags `migrate` takes, each with a value. */
 const FLAGS: ReadonlySet<string> = new Set(["--url", "--schema"]);
+
+/** Every flag a usage error may name: the command's own, never what was typed. */
+const PRINTABLE_FLAGS: ReadonlySet<string> = new Set([...FLAGS, "--help", "-h"]);
 
 /** The flags among `rest`: a known one by its name, any other as `<flag>` — never a value. */
 const flagNamesOf = (rest: readonly string[]): string =>
   rest
     .filter((arg) => arg.startsWith("-"))
-    .map((arg) => (FLAGS.has(arg) ? arg : "<flag>"))
+    .map((arg) => (PRINTABLE_FLAGS.has(arg) ? arg : "<flag>"))
     .join(" ") || "none";
 
 /** An unknown command, never echoed: it may be a URL or a secret typed in the wrong place. */
