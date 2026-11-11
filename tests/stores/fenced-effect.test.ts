@@ -4,7 +4,7 @@ import {
   FencedEffectSettings,
   FencedEffectStatus,
   FingerprintPolicy,
-  IdempotencyKeyConflictError,
+  BusinessKeyConflictError,
   InvalidFencedEffectNameError,
   StoreClock,
   StoreTimeSource,
@@ -58,7 +58,7 @@ describe("PostgresFencedEffectRepository", () => {
     const { effects, leases } = storesOn(connectionTo(database.url(), 1));
     const lease = await leases.acquire("default", "root-pool-1", hours(1));
 
-    const outcome = await effects.saveResultIfAbsent(
+    const outcome = await effects.runOnce(
       keyOf("root-pool-1", lease?.token ?? 0),
       async (client) => {
         await client.query("INSERT INTO charges VALUES ('c-1', 10)");
@@ -78,7 +78,7 @@ describe("PostgresFencedEffectRepository", () => {
     const lease = await leases.acquire("default", "root-lost", hours(1));
     const key = keyOf("root-lost", lease?.token ?? 0);
 
-    const lost = effects.saveResultIfAbsent(key, async (client) => {
+    const lost = effects.runOnce(key, async (client) => {
       await client.query("INSERT INTO charges VALUES ('c-lost', 5)");
       await client.query("SELECT pg_terminate_backend(pg_backend_pid())");
       return { charged: true };
@@ -87,7 +87,7 @@ describe("PostgresFencedEffectRepository", () => {
     await expect(lost).rejects.toThrow();
     const { rows } = await onSchema(database.url(), "SELECT id FROM charges WHERE id = 'c-lost'");
     expect(rows).toEqual([]);
-    const again = await effects.saveResultIfAbsent(key, async (client) => {
+    const again = await effects.runOnce(key, async (client) => {
       await client.query("INSERT INTO charges VALUES ('c-lost', 5)");
       return { charged: true };
     });
@@ -97,7 +97,7 @@ describe("PostgresFencedEffectRepository", () => {
   it("an unreachable database rejects the effect: the step fails, nothing is written", async () => {
     const { effects } = storesOn(connectionTo("postgres://postgres:pw@127.0.0.1:1/postgres"));
 
-    const call = effects.saveResultIfAbsent(keyOf("root-down", 1), () => ({ charged: true }));
+    const call = effects.runOnce(keyOf("root-down", 1), () => ({ charged: true }));
 
     await expect(call).rejects.toThrow();
     await expect(call).rejects.not.toBeInstanceOf(ExecutionFencedError);
@@ -129,7 +129,7 @@ describe("PostgresFencedEffectRepository: business keys (agbossjs/agboss#508)", 
     for (let round = 0; round < 15; round += 1) {
       const outcomes = await Promise.all(
         instances.map(({ effects, root }) =>
-          effects.saveResultIfAbsent(
+          effects.runOnce(
             effectKeyForTesting(businessKeyOf(root, 1), {
               businessKey: `order:race-${String(round)}`,
             }),
@@ -156,16 +156,16 @@ describe("PostgresFencedEffectRepository: business keys (agbossjs/agboss#508)", 
     const { effects, leases } = storesOn(connectionTo(database.url()), clock);
     await leases.acquire("default", "bk-1", hours(1));
     await leases.acquire("default", "bk-2", hours(1));
-    await effects.saveResultIfAbsent(businessKeyOf("bk-1", 1), () => ({ receipt: "r1" }));
+    await effects.runOnce(businessKeyOf("bk-1", 1), () => ({ receipt: "r1" }));
 
-    const other = await effects.saveResultIfAbsent(businessKeyOf("bk-2", 1), () => ({
+    const other = await effects.runOnce(businessKeyOf("bk-2", 1), () => ({
       receipt: "r2",
     }));
-    const same = await effects.saveResultIfAbsent(businessKeyOf("bk-1", 1), () => ({
+    const same = await effects.runOnce(businessKeyOf("bk-1", 1), () => ({
       receipt: "r3",
     }));
     const conflict = await effects
-      .saveResultIfAbsent(businessKeyOf("bk-2", 1, "g"), () => ({ receipt: "r4" }))
+      .runOnce(businessKeyOf("bk-2", 1, "g"), () => ({ receipt: "r4" }))
       .catch((error: unknown) => error);
 
     expect(other).toEqual({
@@ -179,7 +179,7 @@ describe("PostgresFencedEffectRepository: business keys (agbossjs/agboss#508)", 
       result: { receipt: "r1" },
       token: 1,
     });
-    expect(conflict).toBeInstanceOf(IdempotencyKeyConflictError);
+    expect(conflict).toBeInstanceOf(BusinessKeyConflictError);
     expect(JSON.stringify(conflict) + String(conflict)).not.toContain("order:42");
   });
 
@@ -191,8 +191,8 @@ describe("PostgresFencedEffectRepository: business keys (agbossjs/agboss#508)", 
       fingerprintPolicy: FingerprintPolicy.None,
     });
 
-    await effects.saveResultIfAbsent(bare, () => ({ receipt: "r1" }));
-    const again = await effects.saveResultIfAbsent(
+    await effects.runOnce(bare, () => ({ receipt: "r1" }));
+    const again = await effects.runOnce(
       effectKeyForTesting(bare, { origin: { executionId: "x", nodeId: "n", visitNumber: 1 } }),
       () => ({ receipt: "r2" }),
     );
@@ -215,7 +215,7 @@ describe("PostgresFencedEffectRepository: business keys (agbossjs/agboss#508)", 
 
     for (const name of ["charge:twice", "x".repeat(101), "-lead"])
       await expect(
-        effects.saveResultIfAbsent(effectKeyForTesting(keyOf("bad-name", 1), { name }), () => ({
+        effects.runOnce(effectKeyForTesting(keyOf("bad-name", 1), { name }), () => ({
           ran: true,
         })),
       ).rejects.toBeInstanceOf(InvalidFencedEffectNameError);
@@ -225,12 +225,12 @@ describe("PostgresFencedEffectRepository: business keys (agbossjs/agboss#508)", 
     const clock = new VirtualClock();
     const { effects, leases } = storesOn(connectionTo(database.url()), clock);
     await leases.acquire("default", "sweep", hours(10));
-    await effects.saveResultIfAbsent(
+    await effects.runOnce(
       effectKeyForTesting(businessKeyOf("sweep", 1), { businessKey: "sweep:old" }),
       () => 1,
     );
     await clock.advance(seconds(10));
-    await effects.saveResultIfAbsent(
+    await effects.runOnce(
       effectKeyForTesting(businessKeyOf("sweep", 1), { businessKey: "sweep:new" }),
       () => 2,
     );

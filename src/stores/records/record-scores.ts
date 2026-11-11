@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { changesOf, firstRowOf, rowsOf, type Queryable } from "../../connection/query.js";
-import type { StoredConfigSnapshot, StoredVersionScore } from "./record-rows.js";
+import type { ConfigSnapshot, VersionScore } from "@agboss/core";
 
 /** Quality scores of records, the summary per prompt version, and the config snapshots (#78). */
 
@@ -61,7 +61,7 @@ const SUMMARY = `SELECT r.prompt_version, count(DISTINCT r.id)::integer AS recor
 export async function versionScoresOf(
   database: Queryable,
   workflow: string,
-): Promise<StoredVersionScore[]> {
+): Promise<VersionScore[]> {
   const rows = await rowsOf(database, SUMMARY, [workflow]);
   return rows.map((row) => {
     const r = VersionScoreRow.parse(row);
@@ -106,7 +106,7 @@ export async function configSnapshotsOf(
   database: Queryable,
   workflow: string,
   version: string,
-): Promise<StoredConfigSnapshot[]> {
+): Promise<ConfigSnapshot[]> {
   const rows = await rowsOf(
     database,
     `SELECT version, hash, snapshot, first_seen FROM agboss_config_versions

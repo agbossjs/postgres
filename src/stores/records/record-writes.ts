@@ -1,16 +1,16 @@
 import { randomUUID } from "node:crypto";
-import type { ExecutionRecordStatus } from "@agboss/core";
+import type {
+  ExecutionRecordStatus,
+  NewThread,
+  NewTurn,
+  PauseAnswerRecord,
+  Turn,
+  TurnOutcome,
+} from "@agboss/core";
 import { z } from "zod";
 import { changesOf, firstRowOf, rowsOf, type Queryable } from "../../connection/query.js";
 import { escapedJsonOf, escapedText } from "../nul-escape.js";
-import {
-  outcomeParameters,
-  type NewRecord,
-  type NewThreadRecord,
-  type PauseAnswer,
-  type RecordOutcome,
-  type StoredRecord,
-} from "./record-rows.js";
+import { outcomeParameters } from "./record-rows.js";
 
 /** Threads, appended records, their completion (unconditional or compare-and-set) and the pause log. */
 
@@ -23,7 +23,7 @@ const PauseAnswerRow = z.object({ record: z.string() });
  */
 export async function createThread(
   database: Queryable,
-  thread: NewThreadRecord,
+  thread: NewThread,
   id: string,
   now: Date,
 ): Promise<boolean> {
@@ -53,12 +53,8 @@ export async function threadOwnerOf(
 }
 
 /** Appends a record: a new id, the `Clock`'s time; its order is the table's sequence. */
-export async function appendRecord(
-  database: Queryable,
-  record: NewRecord,
-  now: Date,
-): Promise<StoredRecord> {
-  const stored: StoredRecord = { ...record, id: randomUUID(), createdAt: now.toISOString() };
+export async function appendRecord(database: Queryable, record: NewTurn, now: Date): Promise<Turn> {
+  const stored: Turn = { ...record, id: randomUUID(), createdAt: now.toISOString() };
   await changesOf(
     database,
     `INSERT INTO agboss_execution_records (id, run_id, tenant_id, thread_id, workflow, created_at,
@@ -97,7 +93,7 @@ const COMPLETE = `UPDATE agboss_execution_records SET reply_with = $1, status = 
 export async function completeRecord(
   database: Queryable,
   id: string,
-  outcome: RecordOutcome,
+  outcome: TurnOutcome,
   expected?: ExecutionRecordStatus,
 ): Promise<boolean> {
   const parameters = [...outcomeParameters(outcome), id];
@@ -113,7 +109,7 @@ export async function savePauseAnswer(
   database: Queryable,
   tenantId: string,
   rootExecutionId: string,
-  answer: PauseAnswer,
+  answer: PauseAnswerRecord,
 ): Promise<void> {
   await changesOf(
     database,

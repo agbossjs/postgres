@@ -1,9 +1,13 @@
-import { ComponentKind, PauseAnswerer, PauseResolution } from "@agboss/core";
+import {
+  ComponentKind,
+  PauseAnswerer,
+  PauseResolution,
+  type PauseAnswerRecord,
+} from "@agboss/core";
 import { describe, expect, it } from "vitest";
 import { migratePostgres } from "../../src/index.js";
 import { migrationsIn } from "../../src/migrations/files.js";
 import { migrateWith } from "../../src/migrations/migrate.js";
-import type { PauseAnswer } from "../../src/stores/records/record-rows.js";
 import { freshSchema, onSchema } from "../support/database.js";
 import { migrationsFolder } from "../support/migration-folders.js";
 import { recordsOn } from "../support/stores.js";
@@ -17,7 +21,7 @@ import { recordsOn } from "../support/stores.js";
 
 const STEP_KEY = "old-child-7:child-refund-agent:1:call-1";
 
-const answerOf = (responder: string, askedAt: string): PauseAnswer => ({
+const answerOf = (responder: string, askedAt: string): PauseAnswerRecord => ({
   pauseId: undefined,
   executionId: "old-child-7",
   step: {

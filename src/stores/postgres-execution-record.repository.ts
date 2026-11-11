@@ -1,18 +1,26 @@
 import {
   ApplicationContext,
   Clock,
-  DuplicateThreadIdError,
+  ThreadIdsExhaustedError,
   ExecutionRecordRepository,
   ExecutionRecordStatus,
   IdGenerator,
-  idGeneratorNameOf,
   Injectable,
+  type ConfigSnapshot,
+  type NewSummary,
+  type NewThread,
+  type NewTurn,
+  type PauseAnswerRecord,
+  type Summary,
+  type Turn,
+  type TurnOutcome,
+  type VersionScore,
 } from "@agboss/core";
+import { idGeneratorNameOf } from "@agboss/core/stores";
 import { PostgresConnection } from "../connection/postgres-connection.js";
 import { pauseAnswerOfJson } from "./framework-json.js";
 import * as memory from "./records/record-memory.js";
 import * as reads from "./records/record-reads.js";
-import type * as rows from "./records/record-rows.js";
 import * as scores from "./records/record-scores.js";
 import * as writes from "./records/record-writes.js";
 
@@ -47,10 +55,10 @@ export class PostgresExecutionRecordRepository extends ExecutionRecordRepository
   /**
    * A new thread (agbossjs/agboss#550): a caller's own id is kept as it is (the first one keeps it);
    * a minted one the tenant has already — an `IdGenerator` that repeats its ids — is never handed
-   * out: the next one is minted, at most `MINTED_THREAD_TRIES` times, then `DuplicateThreadIdError`
+   * out: the next one is minted, at most `MINTED_THREAD_TRIES` times, then `ThreadIdsExhaustedError`
    * (agbossjs/agboss#613).
    */
-  async createThread(thread: rows.NewThreadRecord): Promise<string> {
+  async createThread(thread: NewThread): Promise<string> {
     if (thread.threadId !== undefined) {
       await writes.createThread(this.connection.pool, thread, thread.threadId, this.clock.now());
       return thread.threadId;
@@ -60,7 +68,10 @@ export class PostgresExecutionRecordRepository extends ExecutionRecordRepository
       if (await writes.createThread(this.connection.pool, thread, id, this.clock.now())) return id;
     }
     // agbossjs/agboss#613: the core's typed refusal, naming the project's generator class
-    throw new DuplicateThreadIdError(idGeneratorNameOf(this.idGenerator), MINTED_THREAD_TRIES);
+    throw new ThreadIdsExhaustedError({
+      generator: idGeneratorNameOf(this.idGenerator),
+      tries: MINTED_THREAD_TRIES,
+    });
   }
   async hasThread(workflow: string, tenantId: string, threadId: string): Promise<boolean> {
     return (await this.threadOwner(workflow, tenantId, threadId)) !== undefined;
@@ -72,43 +83,35 @@ export class PostgresExecutionRecordRepository extends ExecutionRecordRepository
   ): Promise<{ readonly owner: string | undefined } | undefined> {
     return writes.threadOwnerOf(this.connection.pool, workflow, tenantId, threadId);
   }
-  append(record: rows.NewRecord): Promise<rows.StoredRecord> {
+  append(record: NewTurn): Promise<Turn> {
     return writes.appendRecord(this.connection.pool, record, this.clock.now());
   }
-  async complete(id: string, outcome: rows.RecordOutcome): Promise<void> {
+  async complete(id: string, outcome: TurnOutcome): Promise<void> {
     await writes.completeRecord(this.connection.pool, id, outcome);
   }
   completeIfStatus(
     id: string,
     expected: ExecutionRecordStatus,
-    outcome: rows.RecordOutcome,
+    outcome: TurnOutcome,
   ): Promise<boolean> {
     return writes.completeRecord(this.connection.pool, id, outcome, expected);
   }
-  lastTerns(tenantId: string, threadId: string, limit: number): Promise<rows.StoredRecord[]> {
+  lastTerns(tenantId: string, threadId: string, limit: number): Promise<Turn[]> {
     return reads.lastRecordsOf(this.connection.pool, tenantId, threadId, limit);
   }
-  findByTenantIdAndRunId(tenantId: string, runId: string): Promise<rows.StoredRecord | undefined> {
+  findByTenantIdAndRunId(tenantId: string, runId: string): Promise<Turn | undefined> {
     return reads.recordByRunIdOf(this.connection.pool, tenantId, runId);
   }
-  byIds(ids: readonly string[]): Promise<rows.StoredRecord[]> {
+  byIds(ids: readonly string[]): Promise<Turn[]> {
     return reads.recordsByIds(this.connection.pool, ids);
   }
-  findByStatus(
-    status: ExecutionRecordStatus,
-    limit: number,
-    after?: string,
-  ): Promise<rows.StoredRecord[]> {
+  findByStatus(status: ExecutionRecordStatus, limit: number, after?: string): Promise<Turn[]> {
     return reads.recordsByStatus(this.connection.pool, status, limit, after);
   }
-  byVersion(workflow: string, promptVersion: string, limit: number): Promise<rows.StoredRecord[]> {
+  byVersion(workflow: string, promptVersion: string, limit: number): Promise<Turn[]> {
     return reads.recordsByVersion(this.connection.pool, workflow, promptVersion, limit);
   }
-  unscored(
-    workflow: string,
-    promptVersion: string | undefined,
-    limit: number,
-  ): Promise<rows.StoredRecord[]> {
+  unscored(workflow: string, promptVersion: string | undefined, limit: number): Promise<Turn[]> {
     return reads.unscoredRecords(this.connection.pool, workflow, promptVersion, limit);
   }
   saveScore(recordId: string, judge: string, score: number): Promise<void> {
@@ -117,7 +120,7 @@ export class PostgresExecutionRecordRepository extends ExecutionRecordRepository
   meanScore(recordIds: readonly string[]): Promise<number | null> {
     return scores.meanScoreOf(this.connection.pool, recordIds);
   }
-  summary(workflow: string): Promise<rows.StoredVersionScore[]> {
+  summary(workflow: string): Promise<VersionScore[]> {
     return scores.versionScoresOf(this.connection.pool, workflow);
   }
   rememberConfig(
@@ -129,27 +132,22 @@ export class PostgresExecutionRecordRepository extends ExecutionRecordRepository
     const now = this.clock.now();
     return scores.rememberConfig(this.connection.pool, workflow, version, hash, snapshot, now);
   }
-  configSnapshots(workflow: string, version: string): Promise<rows.StoredConfigSnapshot[]> {
+  configSnapshots(workflow: string, version: string): Promise<ConfigSnapshot[]> {
     return scores.configSnapshotsOf(this.connection.pool, workflow, version);
   }
-  recentOriginals(workflow: string, limit: number): Promise<rows.StoredRecord[]> {
+  recentOriginals(workflow: string, limit: number): Promise<Turn[]> {
     return reads.recentOriginalRecords(this.connection.pool, workflow, limit);
   }
-  uncovered(tenantId: string, threadId: string, compaction: string): Promise<rows.StoredRecord[]> {
+  uncovered(tenantId: string, threadId: string, compaction: string): Promise<Turn[]> {
     return memory.uncoveredRecords(this.connection.pool, tenantId, threadId, compaction);
   }
-  before(
-    tenantId: string,
-    threadId: string,
-    ternId: string,
-    limit: number,
-  ): Promise<rows.StoredRecord[]> {
+  before(tenantId: string, threadId: string, ternId: string, limit: number): Promise<Turn[]> {
     return memory.recordsBefore(this.connection.pool, tenantId, threadId, ternId, limit);
   }
   turnNumber(tenantId: string, threadId: string, ternId: string): Promise<number> {
     return memory.turnNumberOf(this.connection.pool, tenantId, threadId, ternId);
   }
-  addSummary(summary: rows.NewSummaryRecord): Promise<rows.StoredSummary> {
+  addSummary(summary: NewSummary): Promise<Summary> {
     return memory.addSummary(this.connection.pool, summary, this.clock.now());
   }
   latestSummaries(
@@ -157,7 +155,7 @@ export class PostgresExecutionRecordRepository extends ExecutionRecordRepository
     threadId: string,
     compaction: string,
     limit: number,
-  ): Promise<rows.StoredSummary[]> {
+  ): Promise<Summary[]> {
     return memory.latestSummariesOf(this.connection.pool, tenantId, threadId, compaction, limit);
   }
   summaryCount(tenantId: string, threadId: string, compaction: string): Promise<number> {
@@ -166,14 +164,14 @@ export class PostgresExecutionRecordRepository extends ExecutionRecordRepository
   savePauseAnswer(
     tenantId: string,
     rootExecutionId: string,
-    answer: rows.PauseAnswer,
+    answer: PauseAnswerRecord,
   ): Promise<void> {
     return writes.savePauseAnswer(this.connection.pool, tenantId, rootExecutionId, answer);
   }
   async findPauseAnswersByTenantIdAndRootExecutionId(
     tenantId: string,
     rootExecutionId: string,
-  ): Promise<rows.PauseAnswer[]> {
+  ): Promise<PauseAnswerRecord[]> {
     const texts = await writes.pauseAnswerTextsOf(this.connection.pool, tenantId, rootExecutionId);
     return texts.map(pauseAnswerOfJson);
   }

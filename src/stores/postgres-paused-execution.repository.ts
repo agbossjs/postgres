@@ -176,7 +176,7 @@ export class PostgresPausedExecutionRepository extends PausedExecutionRepository
     return this.#pauses.markTaken(tenantId, pauseId);
   }
 
-  deleteResolvedBefore(cutoff: Date): Promise<void> {
-    return this.#pauses.deleteResolvedBefore(cutoff);
+  deleteByResolvedAtBefore(cutoff: Date): Promise<void> {
+    return this.#pauses.deleteByResolvedAtBefore(cutoff);
   }
 }

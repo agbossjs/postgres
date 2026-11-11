@@ -1,4 +1,5 @@
-import { OutboundCallLeaseState, StoreClock, StoreTimeSource } from "@agboss/core";
+import { StoreClock, StoreTimeSource } from "@agboss/core";
+import { OutboundCallLeaseState } from "@agboss/core/stores";
 import { VirtualClock } from "@agboss/core/testing";
 import { seconds } from "@agboss/core/units";
 import { describe, expect, it } from "vitest";

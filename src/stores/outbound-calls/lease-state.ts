@@ -1,4 +1,4 @@
-import { OutboundCallLeaseState, type OutboundCallLease } from "@agboss/core";
+import { OutboundCallLeaseState, type OutboundCallLease } from "@agboss/core/stores";
 import type { PoolClient } from "pg";
 import { z } from "zod";
 import { changesOf, firstRowOf } from "../../connection/query.js";

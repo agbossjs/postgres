@@ -46,12 +46,12 @@ export async function checkFence(
   const { scopeKey, token } = key;
   const row = await firstRowOf(client, LOCK_LEASE, [key.tenantId, key.leaseExecutionId]);
   const lease = row === undefined ? undefined : LeaseRow.parse(row);
-  const refused = () => new ExecutionFencedError({ scopeKey, token, observedToken: lease?.token });
+  const refused = () => ExecutionFencedError.of({ scopeKey, token, observedToken: lease?.token });
   if (lease === undefined || lease.released || lease.token !== token) throw refused();
   const mark = MarkRow.parse(await firstRowOf(client, RAISE_MARK, [scopeKey, token, now]));
   // live while expires_at > now, by the store's time read after the lock (#534, #533)
   if (lease.expires_at.getTime() <= mark.now.getTime()) throw refused();
   if (mark.highest_token > token)
-    throw new ExecutionFencedError({ scopeKey, token, observedToken: mark.highest_token });
+    throw ExecutionFencedError.of({ scopeKey, token, observedToken: mark.highest_token });
   return mark.now;
 }

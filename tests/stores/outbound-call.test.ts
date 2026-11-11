@@ -2,15 +2,14 @@ import { effectKeyForTesting } from "@agboss/core/testing/contracts";
 import {
   ExecutionFencedError,
   FingerprintRequiredError,
-  OutboundCallLeaseState,
   OutboundCallStatus,
   type ExecutionLease,
   type EffectKey,
   type EffectKeyFields,
-  type OutboundCallIntent,
   StoreClock,
   StoreTimeSource,
 } from "@agboss/core";
+import { OutboundCallLeaseState, type OutboundCallIntent } from "@agboss/core/stores";
 import { VirtualClock } from "@agboss/core/testing";
 import { hours, seconds } from "@agboss/core/units";
 import { describe, expect, it } from "vitest";

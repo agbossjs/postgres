@@ -1,42 +1,11 @@
-import type {
-  ConfigSnapshot,
-  NewSummary,
-  NewTern,
-  NewThread,
-  PauseAnswerRecord,
-  Summary,
-  Tern,
-  TernOutcome,
-  VersionScore,
-} from "@agboss/core";
+import type { Turn, TurnOutcome } from "@agboss/core";
 import { z } from "zod";
 import { escapedJsonOf, escapedText, unescapedText } from "../nul-escape.js";
 
 /**
- * The shapes `ExecutionRecordRepository` reads and writes — the core's own types, exported with its
- * contract (agbossjs/agboss#511) — and the rows of `agboss_execution_records`, validated on the way
- * out.
+ * The rows of `agboss_execution_records`, validated on the way out, as the core's own record types
+ * (`Turn`, `TurnOutcome`: exported with its contract, agbossjs/agboss#511, #890) — never local aliases.
  */
-
-/** One execution's record as the repository gives it. */
-export type StoredRecord = Tern;
-/** A record to append. */
-export type NewRecord = NewTern;
-/** What completing a record changes. */
-export type RecordOutcome = TernOutcome;
-/** A thread to create. */
-export type NewThreadRecord = NewThread;
-/** A memory summary of a thread's turns. */
-export type StoredSummary = Summary;
-/** A summary to add. */
-export type NewSummaryRecord = NewSummary;
-/** A resolved config first seen under a version. */
-export type StoredConfigSnapshot = ConfigSnapshot;
-/** Mean score and cost of one prompt version. */
-export type StoredVersionScore = VersionScore;
-/** A resolved pause as the permanent log keeps it. */
-export type PauseAnswer = PauseAnswerRecord;
-
 /** The statuses a record has (`ExecutionRecordStatus`'s values). */
 const STATUSES = [
   "running",
@@ -46,7 +15,7 @@ const STATUSES = [
   "paused",
   "queued",
   "written",
-] as const satisfies readonly StoredRecord["status"][];
+] as const satisfies readonly Turn["status"][];
 
 /** The columns a record is read with, in every query. */
 export const RECORD_COLUMNS = `id, run_id, tenant_id, thread_id, workflow, created_at, task,
@@ -83,7 +52,7 @@ const RecordRow = z.object({
 });
 
 /** A row of `agboss_execution_records` as the record it keeps. */
-export function recordOf(row: unknown): StoredRecord {
+export function recordOf(row: unknown): Turn {
   const r = RecordRow.parse(row);
   return {
     id: r.id,
@@ -108,10 +77,10 @@ export function recordOf(row: unknown): StoredRecord {
 }
 
 /** The records of rows, in their order. */
-export const recordsOf = (rows: readonly unknown[]): StoredRecord[] => rows.map(recordOf);
+export const recordsOf = (rows: readonly unknown[]): Turn[] => rows.map(recordOf);
 
 /** The outcome's columns as statement parameters, in `SET` order. */
-export const outcomeParameters = (outcome: RecordOutcome): readonly unknown[] => [
+export const outcomeParameters = (outcome: TurnOutcome): readonly unknown[] => [
   escapedText(outcome.replyWith),
   outcome.status,
   escapedText(outcome.stopReason),

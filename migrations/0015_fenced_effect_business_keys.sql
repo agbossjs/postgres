@@ -1,6 +1,6 @@
 -- FencedEffectRepository business keys (agbossjs/agboss#508): an effect made under a business key is
 -- one per tenant, name and key, whatever scope or step writes it — with the fingerprint of what it
--- does (another one is IdempotencyKeyConflictError) and the step that wrote it (`replayedFrom`).
+-- does (another one is BusinessKeyConflictError) and the step that wrote it (`replayedFrom`).
 CREATE TABLE agboss_fenced_effect_business_results (
   tenant_id text NOT NULL,
   name text NOT NULL,

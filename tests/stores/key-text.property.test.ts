@@ -7,10 +7,10 @@ import {
   keyTextRuleOf,
   type ExecutionLease,
   type EffectKey,
-  type OutboundCallIntent,
   StoreClock,
   StoreTimeSource,
 } from "@agboss/core";
+import { type OutboundCallIntent } from "@agboss/core/stores";
 import { VirtualClock } from "@agboss/core/testing";
 import { hours } from "@agboss/core/units";
 import fc from "fast-check";
@@ -224,7 +224,7 @@ const invisibleProperty = (first: Stores, second: Stores) =>
       for (const call of [
         second.calls.findByKey(keyed(variant)),
         second.calls.saveIfAbsent(keyed(variant), intentOf(keyed(variant), 1)),
-        second.effects.saveResultIfAbsent(keyed(variant), () => ({ receipt: "r" })),
+        second.effects.runOnce(keyed(variant), () => ({ receipt: "r" })),
       ]) {
         const error = await call.then(
           () => undefined,
@@ -282,13 +282,13 @@ for (const seed of SEEDS)
         fc.asyncProperty(distinctKeys, async (keys) => {
           const keyed = await nextRound(first, "effects");
           for (const [index, businessKey] of keys.entries()) {
-            const ran = await first.effects.saveResultIfAbsent(keyed(businessKey), () => ({
+            const ran = await first.effects.runOnce(keyed(businessKey), () => ({
               receipt: `r${String(index)}`,
             }));
             expect(ran.status).toBe(FencedEffectStatus.Ran);
           }
           for (const [index, businessKey] of keys.entries()) {
-            const replayed = await second.effects.saveResultIfAbsent(keyed(businessKey), () => ({
+            const replayed = await second.effects.runOnce(keyed(businessKey), () => ({
               receipt: "never",
             }));
             expect(replayed).toMatchObject({
@@ -315,7 +315,7 @@ for (const seed of SEEDS)
             stores.calls.findByKey(key),
             stores.calls.saveIfAbsent(key, intentOf(key, 0)),
             stores.calls.markCompleted(key, "owner-1", '"done"'),
-            stores.effects.saveResultIfAbsent(key, () => ({ receipt: "r" })),
+            stores.effects.runOnce(key, () => ({ receipt: "r" })),
           ];
           for (const [entry, call] of calls.entries()) {
             const error = await call.then(

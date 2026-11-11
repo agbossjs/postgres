@@ -1,11 +1,6 @@
-import type { ExecutionRecordStatus } from "@agboss/core";
+import type { ExecutionRecordStatus, Turn } from "@agboss/core";
 import { rowsOf, type Queryable } from "../../connection/query.js";
-import {
-  RECORD_COLUMNS,
-  RECORD_COLUMNS_OF_R,
-  recordsOf,
-  type StoredRecord,
-} from "./record-rows.js";
+import { RECORD_COLUMNS, RECORD_COLUMNS_OF_R, recordsOf } from "./record-rows.js";
 
 /** The reads of records: by thread, by id, by status (recovery), by prompt version. Oldest first. */
 
@@ -15,7 +10,7 @@ export async function lastRecordsOf(
   tenantId: string,
   threadId: string,
   limit: number,
-): Promise<StoredRecord[]> {
+): Promise<Turn[]> {
   return recordsOf(
     await rowsOf(
       database,
@@ -31,7 +26,7 @@ export async function recordByRunIdOf(
   database: Queryable,
   tenantId: string,
   runId: string,
-): Promise<StoredRecord | undefined> {
+): Promise<Turn | undefined> {
   const found = await rowsOf(
     database,
     `SELECT ${RECORD_COLUMNS} FROM agboss_execution_records
@@ -42,10 +37,7 @@ export async function recordByRunIdOf(
 }
 
 /** The records of `ids`, in the order they were appended. */
-export async function recordsByIds(
-  database: Queryable,
-  ids: readonly string[],
-): Promise<StoredRecord[]> {
+export async function recordsByIds(database: Queryable, ids: readonly string[]): Promise<Turn[]> {
   return recordsOf(
     await rowsOf(
       database,
@@ -61,7 +53,7 @@ export async function recordsByStatus(
   status: ExecutionRecordStatus,
   limit: number,
   after: string | undefined,
-): Promise<StoredRecord[]> {
+): Promise<Turn[]> {
   return recordsOf(
     await rowsOf(
       database,
@@ -79,7 +71,7 @@ export async function recordsByVersion(
   workflow: string,
   promptVersion: string,
   limit: number,
-): Promise<StoredRecord[]> {
+): Promise<Turn[]> {
   return recordsOf(
     await rowsOf(
       database,
@@ -96,7 +88,7 @@ export async function unscoredRecords(
   workflow: string,
   promptVersion: string | undefined,
   limit: number,
-): Promise<StoredRecord[]> {
+): Promise<Turn[]> {
   return recordsOf(
     await rowsOf(
       database,
@@ -114,7 +106,7 @@ export async function recentOriginalRecords(
   database: Queryable,
   workflow: string,
   limit: number,
-): Promise<StoredRecord[]> {
+): Promise<Turn[]> {
   return recordsOf(
     await rowsOf(
       database,
