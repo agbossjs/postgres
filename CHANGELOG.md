@@ -46,6 +46,18 @@ status, limit, after? })` is keyset-paged on the row's identity `id`, its limit 
 
 ### Added
 
+- **The direct A2A replies, shared by the pods** (#860) — `PostgresA2ADirectMessageRepository`, the
+  core's `A2ADirectMessageRepository` on migration `0030_a2a_direct_messages`
+  (`agboss_a2a_direct_messages`): a skill that answers with a `Message` keeps its reply once, and a
+  resend of the same `messageId` to any pod gets it — never a second run or charge. The message's
+  id is claimed in the A2A task store's `agboss_a2a_messages` (a claim of no task, `task_id` `''`)
+  in the same transaction as its row, so a task message and a direct message of one id are never
+  both kept. Completing, taking over a lost attempt and removing a failed one are compare-and-set
+  statements; the retention sweep removes the oldest rows a page at a time and frees their ids'
+  claims, locking each claim before it deletes it (a resend saving under it is waited for). A reply
+  is NUL-escaped `jsonb`; a row whose state and reply disagree is refused (by the table's check too).
+  Declares `backend = "postgres"`: list it beside `PostgresA2ATaskRepository`, or an application
+  with a direct-reply skill does not assemble (`[a2a.message-store-not-shared]`).
 - **The A2A tasks, shared by the pods** (#824) — `PostgresA2ATaskRepository`, the core's
   `A2ATaskRepository` on migration `0026_a2a_tasks` (`agboss_a2a_tasks`, `agboss_a2a_messages`):
   the same `messageId` sent to two pods at once starts one execution and both answer the same task;

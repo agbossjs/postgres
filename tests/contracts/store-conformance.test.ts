@@ -8,6 +8,7 @@ import { minutes } from "@agboss/core/units";
 import type { PoolClient } from "pg";
 import { beforeAll } from "vitest";
 import {
+  PostgresA2ADirectMessageRepository,
   PostgresA2ATaskRepository,
   PostgresCheckpointSaver,
   PostgresChildExecutionQueueRepository,
@@ -27,7 +28,7 @@ import { onSchema, testDatabase, truncateAll } from "../support/database.js";
 import { postgresStore } from "./postgres-store.js";
 
 /**
- * Every PostgreSQL store through the core's `storeConformance` (agbossjs/agboss#526): the 14
+ * Every PostgreSQL store through the core's `storeConformance` (agbossjs/agboss#526): the 15
  * published contract suites, each as `<contract> (PostgreSQL)`, and `store set (PostgreSQL)` —
  * the three fencing stores declare one backend. One schema for the file, emptied before each case.
  * Nothing is left out (`without`): this package has a store of every contract. The interleaving
@@ -83,6 +84,12 @@ storeConformance<PoolClient>({
     await truncateAll(database.url());
   },
   stores: {
+    // agbossjs/agboss#860: the direct replies, their ids claimed among the A2A task store's messages
+    // on the same pool
+    a2aDirectMessage: postgresStore(database, (connection) => ({
+      messages: new PostgresA2ADirectMessageRepository(connection),
+      tasks: new PostgresA2ATaskRepository(connection),
+    })),
     // agbossjs/agboss#824: the A2A tasks, shared by the instances
     a2aTask: postgresStore(database, (connection) => new PostgresA2ATaskRepository(connection)),
     checkpointSaver: postgresStore(

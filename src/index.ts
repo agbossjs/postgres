@@ -38,3 +38,4 @@ export { PostgresRateLimitRepository } from "./stores/postgres-rate-limit.reposi
 export { PostgresMeshRequestRepository } from "./stores/postgres-mesh-request.repository.js";
 export { PostgresOutboundCallRepository } from "./stores/postgres-outbound-call.repository.js";
 export { PostgresA2ATaskRepository } from "./stores/postgres-a2a-task.repository.js";
+export { PostgresA2ADirectMessageRepository } from "./stores/postgres-a2a-direct-message.repository.js";

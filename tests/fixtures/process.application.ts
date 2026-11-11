@@ -13,6 +13,7 @@ import {
 import { hours, usd, type Usd } from "@agboss/core/units";
 import {
   PostgresConnection,
+  PostgresA2ADirectMessageRepository,
   PostgresA2ATaskRepository,
   PostgresCheckpointSaver,
   PostgresChildExecutionQueueRepository,
@@ -133,6 +134,7 @@ export class ProcessObserver implements OnExecutionEnd, OnExecutionLeaseTakeover
     LimitedModelProvider,
     QueuedShipApprovalChannel,
     PostgresConnection,
+    PostgresA2ADirectMessageRepository,
     PostgresA2ATaskRepository,
     PostgresCheckpointSaver,
     PostgresChildExecutionQueueRepository,

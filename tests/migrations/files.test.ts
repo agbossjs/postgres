@@ -41,8 +41,9 @@ describe("the package's migration files", () => {
       "27:outbound_call_outcome_names",
       "28:a2a_task_mesh_body_hash",
       "29:execution_lease_token",
+      "30:a2a_direct_messages",
     ]);
-    expect(newestVersionOf(files)).toBe(29);
+    expect(newestVersionOf(files)).toBe(30);
     expect(files.every((file) => file.checksum === checksumOf(file.sql))).toBe(true);
   });
 
@@ -83,7 +84,8 @@ describe("the package's migration files", () => {
 
     expect(pendingMigrations(files, applied).map((file) => file.version)).toEqual([
       5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29,
+      30,
     ]);
-    expect(pendingMigrations(files, [])).toHaveLength(29);
+    expect(pendingMigrations(files, [])).toHaveLength(30);
   });
 });

@@ -4,6 +4,12 @@
 
 ```ts
 
+import { A2ADirectMessageAttempt } from '@agboss/core';
+import { A2ADirectMessageKey } from '@agboss/core';
+import { A2ADirectMessageRecord } from '@agboss/core';
+import { A2ADirectMessageReply } from '@agboss/core';
+import { A2ADirectMessageRepository } from '@agboss/core';
+import { A2ADirectMessageSave } from '@agboss/core';
 import { A2AMessageKey } from '@agboss/core';
 import { A2AMessageRecord } from '@agboss/core';
 import { A2ATaskKey } from '@agboss/core';
@@ -55,6 +61,7 @@ import { MeshRequestKey } from '@agboss/core';
 import { MeshRequestRecord } from '@agboss/core';
 import { MeshRequestRepository } from '@agboss/core';
 import type { Milliseconds } from '@agboss/core/units';
+import { NewA2ADirectMessage } from '@agboss/core';
 import { NewA2ATask } from '@agboss/core';
 import { NewSummary } from '@agboss/core';
 import { NewThread } from '@agboss/core';
@@ -124,6 +131,29 @@ export interface MigrationReport {
     readonly checkpointMigrations: number;
     readonly schema: string;
     readonly version: number;
+}
+
+// @public
+export class PostgresA2ADirectMessageRepository extends A2ADirectMessageRepository {
+    constructor(connection: PostgresConnection);
+    // (undocumented)
+    completeIfInFlight(key: A2ADirectMessageKey, attemptId: string, reply: A2ADirectMessageReply, completedAt: Date): Promise<A2ADirectMessageRecord | undefined>;
+    // (undocumented)
+    deleteByCreatedAtBefore(cutoff: Date, limit: number): Promise<readonly A2ADirectMessageRecord[]>;
+    // (undocumented)
+    deleteIfInFlight(key: A2ADirectMessageKey, attemptId: string): Promise<boolean>;
+    // (undocumented)
+    findAllInFlightByExpiresAtBefore(now: Date, limit: number): Promise<readonly A2ADirectMessageRecord[]>;
+    // (undocumented)
+    findByKey(key: A2ADirectMessageKey): Promise<A2ADirectMessageRecord | undefined>;
+    // (undocumented)
+    ping(): Promise<void>;
+    // (undocumented)
+    retakeIfExpired(key: A2ADirectMessageKey, expiredAttemptId: string, next: A2ADirectMessageAttempt, now: Date): Promise<A2ADirectMessageRecord | undefined>;
+    // (undocumented)
+    saveIfAbsent(message: NewA2ADirectMessage): Promise<A2ADirectMessageSave>;
+    // (undocumented)
+    static readonly store: StoreDescriptor;
 }
 
 // @public
@@ -563,6 +593,15 @@ export interface SchemaVersions {
 // src/errors.ts:104:12 - (ae-undocumented) Missing documentation for "name".
 // src/migrations/migrate.ts:23:3 - (ae-undocumented) Missing documentation for "version".
 // src/migrations/migrate.ts:24:3 - (ae-undocumented) Missing documentation for "name".
+// src/stores/postgres-a2a-direct-message.repository.ts:73:3 - (ae-undocumented) Missing documentation for "store".
+// src/stores/postgres-a2a-direct-message.repository.ts:79:3 - (ae-undocumented) Missing documentation for "ping".
+// src/stores/postgres-a2a-direct-message.repository.ts:83:3 - (ae-undocumented) Missing documentation for "saveIfAbsent".
+// src/stores/postgres-a2a-direct-message.repository.ts:96:3 - (ae-undocumented) Missing documentation for "findByKey".
+// src/stores/postgres-a2a-direct-message.repository.ts:100:9 - (ae-undocumented) Missing documentation for "completeIfInFlight".
+// src/stores/postgres-a2a-direct-message.repository.ts:122:9 - (ae-undocumented) Missing documentation for "retakeIfExpired".
+// src/stores/postgres-a2a-direct-message.repository.ts:145:9 - (ae-undocumented) Missing documentation for "deleteIfInFlight".
+// src/stores/postgres-a2a-direct-message.repository.ts:154:9 - (ae-undocumented) Missing documentation for "findAllInFlightByExpiresAtBefore".
+// src/stores/postgres-a2a-direct-message.repository.ts:167:9 - (ae-undocumented) Missing documentation for "deleteByCreatedAtBefore".
 // src/stores/postgres-a2a-task.repository.ts:54:3 - (ae-undocumented) Missing documentation for "store".
 // src/stores/postgres-a2a-task.repository.ts:60:3 - (ae-undocumented) Missing documentation for "ping".
 // src/stores/postgres-a2a-task.repository.ts:64:3 - (ae-undocumented) Missing documentation for "saveIfAbsent".

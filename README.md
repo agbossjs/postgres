@@ -33,6 +33,7 @@ Every coordination store has a PostgreSQL implementation. List them in the appli
 import { Application } from "@agboss/core";
 import { hours } from "@agboss/core/units";
 import {
+  PostgresA2ADirectMessageRepository,
   PostgresA2ATaskRepository,
   PostgresCheckpointSaver,
   PostgresChildExecutionQueueRepository,
@@ -57,6 +58,7 @@ import { AppEnvironment } from "./environments/app.environment.js";
   workflows: [DeskWorkflow],
   retention: { executionRecords: hours(24 * 30) }, // 30 days of the history `agboss records export` reads
   providers: [
+    PostgresA2ADirectMessageRepository, // direct A2A replies: a resend to another pod gets the same reply
     PostgresA2ATaskRepository, // A2A tasks: a message resent to another pod gets the same task
     PostgresCheckpointSaver, // LangGraph's PostgresSaver on the shared pool
     PostgresChildExecutionQueueRepository, // ChildPlacement.AnyInstance children
@@ -92,6 +94,7 @@ export class DeskApplication {}
 | `PostgresRateLimitRepository`           | `RateLimitRepository`                | `agboss_rate_limit_keys`, `…_slots`, `…_window_buckets`, `…_pauses`                                  |
 | `PostgresMeshRequestRepository`         | `MeshRequestRepository`              | `agboss_mesh_requests`                                                                               |
 | `PostgresA2ATaskRepository`             | `A2ATaskRepository`                  | `agboss_a2a_tasks`, `agboss_a2a_messages` (`0026`, `0028`)                                           |
+| `PostgresA2ADirectMessageRepository`    | `A2ADirectMessageRepository`         | `agboss_a2a_direct_messages`, its ids claimed in `agboss_a2a_messages` (`0030`)                      |
 
 With all of them listed, nothing of the application is per pod: budgets sum every pod's spend, a
 provider's limits hold across pods, `agboss records export` on any pod lists every pod's
@@ -99,7 +102,10 @@ executions, a mesh request retried against another pod is answered from the firs
 message (agbossjs/agboss#824) resent to another pod — the same `messageId` — gets the task the first
 pod accepted, never a second execution; `GetTask` and `ListTasks` read it on any pod. An application
 that serves A2A on these leases without `PostgresA2ATaskRepository` does not assemble
-(`[a2a.task-store-not-shared]`).
+(`[a2a.task-store-not-shared]`). A skill that answers with a direct `Message` (agbossjs/agboss#860)
+keeps its reply in `PostgresA2ADirectMessageRepository`: a resend of the same `messageId` to any pod
+gets the reply the first run made, and a message id is one message across both reply modes; without
+it such an application does not assemble (`[a2a.message-store-not-shared]`).
 
 Every store injects `PostgresConnection` — one `pg.Pool` per application instance, ended when the
 instance stops — and answers `ping()` with `SELECT 1` (`app.checkReadiness()`). **The database's
