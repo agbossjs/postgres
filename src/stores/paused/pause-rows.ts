@@ -105,7 +105,7 @@ export class PauseRows {
   }
 
   /** Removes every `Taken` and `Cancelled` pause of every tenant resolved before `cutoff`. */
-  async deleteResolvedBefore(cutoff: Date): Promise<void> {
+  async deleteByResolvedAtBefore(cutoff: Date): Promise<void> {
     await changesOf(
       this.pool,
       `DELETE FROM agboss_pauses WHERE status = ANY($1::text[]) AND resolved_at < $2`,

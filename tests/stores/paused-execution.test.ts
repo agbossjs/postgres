@@ -135,7 +135,7 @@ describe("PostgresPausedExecutionRepository", () => {
     );
     await pauses.markTakenByTenantIdAndPauseId("default", "p-swept");
 
-    await pauses.deleteResolvedBefore(new Date("2026-01-05T09:00:00.001Z"));
+    await pauses.deleteByResolvedAtBefore(new Date("2026-01-05T09:00:00.001Z"));
 
     expect(await pauses.findByTenantIdAndPauseId("default", "p-swept")).toBeUndefined();
   });

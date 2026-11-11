@@ -4,13 +4,12 @@ import {
   FencedEffectSettings,
   FencedEffectStatus,
   Injectable,
-  replayedFromOf,
-  storedKeyFactsOf,
   type StoreDescriptor,
   type EffectKey,
   type FencedEffectOutcome,
   type FencedEffectWork,
 } from "@agboss/core";
+import { replayedFromOf, storedKeyFactsOf } from "@agboss/core/stores";
 import type { PoolClient } from "pg";
 import { changesOf, firstRowOf } from "../connection/query.js";
 import { inPoolTransaction } from "../connection/transaction.js";
@@ -116,7 +115,7 @@ function replayOf<TResult>(key: EffectKey, row: unknown): FencedEffectOutcome<TR
  * and its result. The row lock serializes two instances on one tree's effects (one `Ran`, the other
  * `Replayed`). A business key's effect (agbossjs/agboss#508) is one row per tenant, name and key in
  * `agboss_fenced_effect_business_results`, its writers serialized by an advisory transaction lock
- * on that identity — another fingerprint is `IdempotencyKeyConflictError`, a replay from another
+ * on that identity — another fingerprint is `BusinessKeyConflictError`, a replay from another
  * step names it (`replayedFrom`). The work runs on the transaction's own connection, so it may
  * `await` its statements and a pool of one never deadlocks. Listed with
  * `PostgresExecutionLeaseRepository`, whose leases it reads.

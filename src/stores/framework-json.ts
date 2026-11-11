@@ -5,9 +5,9 @@ import {
   PauseStatus,
   type PausedExecution,
   type PauseRecord,
+  type PauseAnswerRecord,
 } from "@agboss/core";
 import { z } from "zod";
-import type { PauseAnswer } from "./records/record-rows.js";
 
 /**
  * The framework's records a store keeps as JSON — a resolved pause's log entry, a pause, a paused
@@ -82,7 +82,7 @@ const StoredRun = z.looseObject({
   budgetUsd: z.custom<number>((value) => typeof value === "number" && !Number.isNaN(value)),
 });
 
-const isPauseAnswer = (value: unknown): value is PauseAnswer =>
+const isPauseAnswer = (value: unknown): value is PauseAnswerRecord =>
   StoredPauseAnswer.safeParse(value).success;
 
 const isPauseRecord = (value: unknown): value is PauseRecord => {
@@ -98,7 +98,7 @@ const unreadable = (what: string, value: unknown): Error =>
   new Error(`a stored ${what} is not readable: ${JSON.stringify(value)}`);
 
 /** A resolved pause's log entry, from the JSON `savePauseAnswer` wrote. */
-export function pauseAnswerOfJson(json: string): PauseAnswer {
+export function pauseAnswerOfJson(json: string): PauseAnswerRecord {
   const value: unknown = JSON.parse(json);
   if (!isPauseAnswer(value)) throw unreadable("pause answer", value);
   return value;

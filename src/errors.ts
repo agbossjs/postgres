@@ -24,7 +24,7 @@ export const MIGRATE_COMMAND = 'npx agboss-postgres migrate --url "$DATABASE_URL
  * migrations (`agboss-postgres migrate`, a Kubernetes Job) or set the flag.
  */
 export class PostgresSchemaMissingError extends AGBossError {
-  static override readonly code: string = "postgres.schema-missing";
+  static override readonly code = "postgres.schema-missing" as const;
   override name = "PostgresSchemaMissingError";
   readonly applied: number;
   readonly expected: number;
@@ -44,7 +44,7 @@ export class PostgresSchemaMissingError extends AGBossError {
  * migrations are never rolled back.
  */
 export class PostgresSchemaTooNewError extends AGBossError {
-  static override readonly code: string = "postgres.schema-too-new";
+  static override readonly code = "postgres.schema-too-new" as const;
   override name = "PostgresSchemaTooNewError";
   readonly applied: number;
   readonly expected: number;
@@ -70,7 +70,7 @@ export interface ChangedMigration {
  * a change of schema is a new migration.
  */
 export class PostgresMigrationChangedError extends AGBossError {
-  static override readonly code: string = "postgres.migration-changed";
+  static override readonly code = "postgres.migration-changed" as const;
   override name = "PostgresMigrationChangedError";
   readonly version: number;
   readonly migration: string;
@@ -89,7 +89,7 @@ export class PostgresMigrationChangedError extends AGBossError {
  * when set, `postgresPoolSize` (a whole number from 1) and `postgresMigrateOnStart` (a flag).
  */
 export class PostgresSettingsError extends AGBossError {
-  static override readonly code: string = "postgres.settings-invalid";
+  static override readonly code = "postgres.settings-invalid" as const;
   override name = "PostgresSettingsError";
 }
 
@@ -100,7 +100,7 @@ export class PostgresSettingsError extends AGBossError {
  * any prune's cutoff (`now − retention.costLedgerEntries` covers every prune the sweep made).
  */
 export class PostgresLedgerMarkMissingError extends AGBossError {
-  static override readonly code: string = "postgres.ledger-mark-missing";
+  static override readonly code = "postgres.ledger-mark-missing" as const;
   override name = "PostgresLedgerMarkMissingError";
 
   constructor() {

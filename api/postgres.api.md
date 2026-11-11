@@ -27,10 +27,11 @@ import { ChildExecutionQueueCounts } from '@agboss/core';
 import { ChildExecutionQueueRepository } from '@agboss/core';
 import { ChildExecutionQueueWatch } from '@agboss/core';
 import { Clock } from '@agboss/core';
-import type { ConfigSnapshot } from '@agboss/core';
+import { ConfigSnapshot } from '@agboss/core';
 import { CostCounter } from '@agboss/core';
 import { CostLedgerRepository } from '@agboss/core';
 import { EffectKey } from '@agboss/core';
+import { EffectKey as EffectKey_2 } from '@agboss/core/stores';
 import { ExecutionAuditEventRecord } from '@agboss/core';
 import { ExecutionAuditLogRepository } from '@agboss/core';
 import { ExecutionHistoryPage } from '@agboss/core';
@@ -55,23 +56,23 @@ import { MeshRequestRecord } from '@agboss/core';
 import { MeshRequestRepository } from '@agboss/core';
 import type { Milliseconds } from '@agboss/core/units';
 import { NewA2ATask } from '@agboss/core';
-import type { NewSummary } from '@agboss/core';
-import type { NewTern } from '@agboss/core';
-import type { NewThread } from '@agboss/core';
+import { NewSummary } from '@agboss/core';
+import { NewThread } from '@agboss/core';
+import { NewTurn } from '@agboss/core';
 import { OnDestroy } from '@agboss/core';
 import { OnInit } from '@agboss/core';
-import { OutboundCallClaim } from '@agboss/core';
-import { OutboundCallFailure } from '@agboss/core';
-import { OutboundCallIntent } from '@agboss/core';
-import { OutboundCallLease } from '@agboss/core';
-import { OutboundCallLeaseState } from '@agboss/core';
-import { OutboundCallPage } from '@agboss/core';
-import { OutboundCallRecord } from '@agboss/core';
-import { OutboundCallRepository } from '@agboss/core';
-import { OutboundCallState } from '@agboss/core';
-import { OutboundCallStatusQuery } from '@agboss/core';
-import { PauseAnswer as PauseAnswer_2 } from '@agboss/core';
-import type { PauseAnswerRecord } from '@agboss/core';
+import { OutboundCallClaim } from '@agboss/core/stores';
+import { OutboundCallFailure } from '@agboss/core/stores';
+import { OutboundCallIntent } from '@agboss/core/stores';
+import { OutboundCallLease } from '@agboss/core/stores';
+import { OutboundCallLeaseState } from '@agboss/core/stores';
+import { OutboundCallPage } from '@agboss/core/stores';
+import { OutboundCallRecord } from '@agboss/core/stores';
+import { OutboundCallRepository } from '@agboss/core/stores';
+import { OutboundCallState } from '@agboss/core/stores';
+import { OutboundCallStatusQuery } from '@agboss/core/stores';
+import { PauseAnswer } from '@agboss/core';
+import { PauseAnswerRecord } from '@agboss/core';
 import { PauseCancellation } from '@agboss/core';
 import { PausedExecution } from '@agboss/core';
 import { PausedExecutionRepository } from '@agboss/core';
@@ -85,11 +86,12 @@ import { RateLimitRepository } from '@agboss/core';
 import type { RunnableConfig } from '@langchain/core/runnables';
 import { StoreClock } from '@agboss/core';
 import { StoreDescriptor } from '@agboss/core';
-import type { Summary } from '@agboss/core';
-import type { Tern } from '@agboss/core';
-import type { TernOutcome } from '@agboss/core';
+import { StoreDescriptor as StoreDescriptor_2 } from '@agboss/core/stores';
+import { Summary } from '@agboss/core';
+import { Turn } from '@agboss/core';
+import { TurnOutcome } from '@agboss/core';
 import { Usd } from '@agboss/core/units';
-import type { VersionScore } from '@agboss/core';
+import { VersionScore } from '@agboss/core';
 
 // @public
 export interface AppliedMigrationReport {
@@ -281,51 +283,50 @@ export class PostgresExecutionLeaseRepository extends ExecutionLeaseRepository {
 export class PostgresExecutionRecordRepository extends ExecutionRecordRepository {
     constructor(connection: PostgresConnection, clock: Clock, applicationContext: ApplicationContext, idGenerator: IdGenerator);
     // (undocumented)
-    addSummary(summary: rows.NewSummaryRecord): Promise<rows.StoredSummary>;
+    addSummary(summary: NewSummary): Promise<Summary>;
     // (undocumented)
-    append(record: rows.NewRecord): Promise<rows.StoredRecord>;
+    append(record: NewTurn): Promise<Turn>;
     // (undocumented)
-    before(tenantId: string, threadId: string, ternId: string, limit: number): Promise<rows.StoredRecord[]>;
+    before(tenantId: string, threadId: string, ternId: string, limit: number): Promise<Turn[]>;
     // (undocumented)
-    byIds(ids: readonly string[]): Promise<rows.StoredRecord[]>;
+    byIds(ids: readonly string[]): Promise<Turn[]>;
     // (undocumented)
-    byVersion(workflow: string, promptVersion: string, limit: number): Promise<rows.StoredRecord[]>;
+    byVersion(workflow: string, promptVersion: string, limit: number): Promise<Turn[]>;
     // (undocumented)
-    complete(id: string, outcome: rows.RecordOutcome): Promise<void>;
+    complete(id: string, outcome: TurnOutcome): Promise<void>;
     // (undocumented)
-    completeIfStatus(id: string, expected: ExecutionRecordStatus, outcome: rows.RecordOutcome): Promise<boolean>;
+    completeIfStatus(id: string, expected: ExecutionRecordStatus, outcome: TurnOutcome): Promise<boolean>;
     // (undocumented)
-    configSnapshots(workflow: string, version: string): Promise<rows.StoredConfigSnapshot[]>;
-    // Warning: (ae-forgotten-export) The symbol "rows" needs to be exported by the entry point index.d.ts
-    createThread(thread: rows.NewThreadRecord): Promise<string>;
+    configSnapshots(workflow: string, version: string): Promise<ConfigSnapshot[]>;
+    createThread(thread: NewThread): Promise<string>;
     // (undocumented)
-    findByStatus(status: ExecutionRecordStatus, limit: number, after?: string): Promise<rows.StoredRecord[]>;
+    findByStatus(status: ExecutionRecordStatus, limit: number, after?: string): Promise<Turn[]>;
     // (undocumented)
-    findByTenantIdAndRunId(tenantId: string, runId: string): Promise<rows.StoredRecord | undefined>;
+    findByTenantIdAndRunId(tenantId: string, runId: string): Promise<Turn | undefined>;
     // (undocumented)
-    findPauseAnswersByTenantIdAndRootExecutionId(tenantId: string, rootExecutionId: string): Promise<rows.PauseAnswer[]>;
+    findPauseAnswersByTenantIdAndRootExecutionId(tenantId: string, rootExecutionId: string): Promise<PauseAnswerRecord[]>;
     // (undocumented)
     hasThread(workflow: string, tenantId: string, threadId: string): Promise<boolean>;
     // (undocumented)
-    lastTerns(tenantId: string, threadId: string, limit: number): Promise<rows.StoredRecord[]>;
+    lastTerns(tenantId: string, threadId: string, limit: number): Promise<Turn[]>;
     // (undocumented)
-    latestSummaries(tenantId: string, threadId: string, compaction: string, limit: number): Promise<rows.StoredSummary[]>;
+    latestSummaries(tenantId: string, threadId: string, compaction: string, limit: number): Promise<Summary[]>;
     // (undocumented)
     meanScore(recordIds: readonly string[]): Promise<number | null>;
     // (undocumented)
     ping(): Promise<void>;
     // (undocumented)
-    recentOriginals(workflow: string, limit: number): Promise<rows.StoredRecord[]>;
+    recentOriginals(workflow: string, limit: number): Promise<Turn[]>;
     // (undocumented)
     rememberConfig(workflow: string, version: string, hash: string, snapshot: string): Promise<{
         readonly drift: boolean;
     }>;
     // (undocumented)
-    savePauseAnswer(tenantId: string, rootExecutionId: string, answer: rows.PauseAnswer): Promise<void>;
+    savePauseAnswer(tenantId: string, rootExecutionId: string, answer: PauseAnswerRecord): Promise<void>;
     // (undocumented)
     saveScore(recordId: string, judge: string, score: number): Promise<void>;
     // (undocumented)
-    summary(workflow: string): Promise<rows.StoredVersionScore[]>;
+    summary(workflow: string): Promise<VersionScore[]>;
     // (undocumented)
     summaryCount(tenantId: string, threadId: string, compaction: string): Promise<number>;
     // (undocumented)
@@ -335,9 +336,9 @@ export class PostgresExecutionRecordRepository extends ExecutionRecordRepository
     // (undocumented)
     turnNumber(tenantId: string, threadId: string, ternId: string): Promise<number>;
     // (undocumented)
-    uncovered(tenantId: string, threadId: string, compaction: string): Promise<rows.StoredRecord[]>;
+    uncovered(tenantId: string, threadId: string, compaction: string): Promise<Turn[]>;
     // (undocumented)
-    unscored(workflow: string, promptVersion: string | undefined, limit: number): Promise<rows.StoredRecord[]>;
+    unscored(workflow: string, promptVersion: string | undefined, limit: number): Promise<Turn[]>;
 }
 
 // @public
@@ -369,7 +370,7 @@ export class PostgresFencedEffectRepository extends FencedEffectRepository<PoolC
 export class PostgresLedgerMarkMissingError extends AGBossError {
     constructor();
     // (undocumented)
-    static readonly code: string;
+    static readonly code: "postgres.ledger-mark-missing";
     // (undocumented)
     name: string;
 }
@@ -395,9 +396,9 @@ export interface PostgresListenerOptions {
 export class PostgresMeshRequestRepository extends MeshRequestRepository {
     constructor(connection: PostgresConnection);
     // (undocumented)
-    deleteByKey(key: MeshRequestKey): Promise<void>;
+    deleteByCreatedAtBefore(cutoff: Date): Promise<void>;
     // (undocumented)
-    deleteCreatedBefore(cutoff: Date): Promise<void>;
+    deleteByKey(key: MeshRequestKey): Promise<void>;
     // (undocumented)
     findByKey(key: MeshRequestKey): Promise<MeshRequestRecord | undefined>;
     // (undocumented)
@@ -412,7 +413,7 @@ export class PostgresMeshRequestRepository extends MeshRequestRepository {
 export class PostgresMigrationChangedError extends AGBossError {
     constructor(changed: ChangedMigration);
     // (undocumented)
-    static readonly code: string;
+    static readonly code: "postgres.migration-changed";
     // (undocumented)
     readonly migration: string;
     // (undocumented)
@@ -430,20 +431,20 @@ export class PostgresOutboundCallRepository extends OutboundCallRepository {
     findAllByTenantIdAndRootExecutionId(tenantId: string, rootExecutionId: string): Promise<readonly OutboundCallRecord[]>;
     findAllByTenantIdAndStatus(query: OutboundCallStatusQuery): Promise<OutboundCallPage>;
     // (undocumented)
-    findByKey(key: EffectKey): Promise<OutboundCallRecord | undefined>;
+    findByKey(key: EffectKey_2): Promise<OutboundCallRecord | undefined>;
     // (undocumented)
     leaseStateOf(lease: OutboundCallLease): Promise<OutboundCallLeaseState>;
     // (undocumented)
-    markCompleted(key: EffectKey, attemptOwner: string, result: string): Promise<boolean>;
+    markCompleted(key: EffectKey_2, attemptOwner: string, result: string): Promise<boolean>;
     // (undocumented)
-    markFailed(key: EffectKey, attemptOwner: string, failure: OutboundCallFailure): Promise<boolean>;
+    markFailed(key: EffectKey_2, attemptOwner: string, failure: OutboundCallFailure): Promise<boolean>;
     // (undocumented)
-    markPending(key: EffectKey, expected: OutboundCallState, claim: OutboundCallClaim): Promise<boolean>;
+    markPending(key: EffectKey_2, expected: OutboundCallState, claim: OutboundCallClaim): Promise<boolean>;
     // (undocumented)
     ping(): Promise<void>;
     // (undocumented)
-    saveIfAbsent(key: EffectKey, intent: OutboundCallIntent): Promise<boolean>;
-    static readonly store: StoreDescriptor;
+    saveIfAbsent(key: EffectKey_2, intent: OutboundCallIntent): Promise<boolean>;
+    static readonly store: StoreDescriptor_2;
 }
 
 // @public
@@ -452,11 +453,11 @@ export class PostgresPausedExecutionRepository extends PausedExecutionRepository
     // (undocumented)
     cancelByTenantIdAndPauseId(tenantId: string, pauseId: string, resolution: PauseCancellation, at: Date): Promise<boolean>;
     // (undocumented)
-    decideByTenantIdAndPauseId(tenantId: string, pauseId: string, answer: PauseAnswer_2, at: Date): Promise<boolean>;
+    decideByTenantIdAndPauseId(tenantId: string, pauseId: string, answer: PauseAnswer, at: Date): Promise<boolean>;
+    // (undocumented)
+    deleteByResolvedAtBefore(cutoff: Date): Promise<void>;
     // (undocumented)
     deleteByTenantIdAndThreadId(tenantId: string, threadId: string): Promise<void>;
-    // (undocumented)
-    deleteResolvedBefore(cutoff: Date): Promise<void>;
     // (undocumented)
     findAllByTenantIdAndRootExecutionId(tenantId: string, rootExecutionId: string): Promise<readonly PauseRecord[]>;
     // (undocumented)
@@ -472,7 +473,7 @@ export class PostgresPausedExecutionRepository extends PausedExecutionRepository
     // (undocumented)
     ping(): Promise<void>;
     // (undocumented)
-    resolveByTenantIdAndPauseId(tenantId: string, pauseId: string, answer: PauseAnswer_2, at: Date): Promise<PauseRecord | undefined>;
+    resolveByTenantIdAndPauseId(tenantId: string, pauseId: string, answer: PauseAnswer, at: Date): Promise<PauseRecord | undefined>;
     // (undocumented)
     save(paused: PausedExecution): Promise<void>;
 }
@@ -504,7 +505,7 @@ export class PostgresSchemaMissingError extends AGBossError {
     // (undocumented)
     readonly applied: number;
     // (undocumented)
-    static readonly code: string;
+    static readonly code: "postgres.schema-missing";
     // (undocumented)
     readonly expected: number;
     // (undocumented)
@@ -517,7 +518,7 @@ export class PostgresSchemaTooNewError extends AGBossError {
     // (undocumented)
     readonly applied: number;
     // (undocumented)
-    static readonly code: string;
+    static readonly code: "postgres.schema-too-new";
     // (undocumented)
     readonly expected: number;
     // (undocumented)
@@ -527,7 +528,7 @@ export class PostgresSchemaTooNewError extends AGBossError {
 // @public
 export class PostgresSettingsError extends AGBossError {
     // (undocumented)
-    static readonly code: string;
+    static readonly code: "postgres.settings-invalid";
     // (undocumented)
     name: string;
 }
@@ -584,12 +585,12 @@ export interface SchemaVersions {
 // src/stores/postgres-child-execution-queue.repository.ts:176:9 - (ae-undocumented) Missing documentation for "completeByTenantIdAndExecutionId".
 // src/stores/postgres-child-execution-queue.repository.ts:197:9 - (ae-undocumented) Missing documentation for "deleteAllByTenantIdAndRootExecutionId".
 // src/stores/postgres-child-execution-queue.repository.ts:208:9 - (ae-undocumented) Missing documentation for "countByStatus".
-// src/stores/postgres-cost-ledger.repository.ts:128:3 - (ae-undocumented) Missing documentation for "ping".
-// src/stores/postgres-cost-ledger.repository.ts:132:9 - (ae-undocumented) Missing documentation for "findSpentByCounter".
-// src/stores/postgres-cost-ledger.repository.ts:142:9 - (ae-undocumented) Missing documentation for "saveAll".
-// src/stores/postgres-cost-ledger.repository.ts:163:9 - (ae-undocumented) Missing documentation for "deleteByMadeAtBefore".
-// src/stores/postgres-cost-ledger.repository.ts:170:9 - (ae-undocumented) Missing documentation for "findMaxSpendByAccount".
-// src/stores/postgres-cost-ledger.repository.ts:180:9 - (ae-undocumented) Missing documentation for "saveMaxSpend".
+// src/stores/postgres-cost-ledger.repository.ts:127:3 - (ae-undocumented) Missing documentation for "ping".
+// src/stores/postgres-cost-ledger.repository.ts:131:9 - (ae-undocumented) Missing documentation for "findSpentByCounter".
+// src/stores/postgres-cost-ledger.repository.ts:141:9 - (ae-undocumented) Missing documentation for "saveAll".
+// src/stores/postgres-cost-ledger.repository.ts:162:9 - (ae-undocumented) Missing documentation for "deleteByMadeAtBefore".
+// src/stores/postgres-cost-ledger.repository.ts:169:9 - (ae-undocumented) Missing documentation for "findMaxSpendByAccount".
+// src/stores/postgres-cost-ledger.repository.ts:179:9 - (ae-undocumented) Missing documentation for "saveMaxSpend".
 // src/stores/postgres-execution-audit-log.repository.ts:26:3 - (ae-undocumented) Missing documentation for "ping".
 // src/stores/postgres-execution-audit-log.repository.ts:30:9 - (ae-undocumented) Missing documentation for "save".
 // src/stores/postgres-execution-audit-log.repository.ts:39:9 - (ae-undocumented) Missing documentation for "findAllByTenantIdAndRootExecutionIdOrderByOccurredAt".
@@ -610,54 +611,54 @@ export interface SchemaVersions {
 // src/stores/postgres-execution-lease.repository.ts:224:9 - (ae-undocumented) Missing documentation for "retire".
 // src/stores/postgres-execution-lease.repository.ts:228:9 - (ae-undocumented) Missing documentation for "yield".
 // src/stores/postgres-execution-lease.repository.ts:236:9 - (ae-undocumented) Missing documentation for "reclaim".
-// src/stores/postgres-execution-record.repository.ts:43:3 - (ae-undocumented) Missing documentation for "ping".
-// src/stores/postgres-execution-record.repository.ts:65:9 - (ae-undocumented) Missing documentation for "hasThread".
-// src/stores/postgres-execution-record.repository.ts:68:3 - (ae-undocumented) Missing documentation for "threadOwner".
-// src/stores/postgres-execution-record.repository.ts:75:3 - (ae-undocumented) Missing documentation for "append".
-// src/stores/postgres-execution-record.repository.ts:78:9 - (ae-undocumented) Missing documentation for "complete".
-// src/stores/postgres-execution-record.repository.ts:81:3 - (ae-undocumented) Missing documentation for "completeIfStatus".
-// src/stores/postgres-execution-record.repository.ts:88:3 - (ae-undocumented) Missing documentation for "lastTerns".
-// src/stores/postgres-execution-record.repository.ts:91:3 - (ae-undocumented) Missing documentation for "findByTenantIdAndRunId".
-// src/stores/postgres-execution-record.repository.ts:94:3 - (ae-undocumented) Missing documentation for "byIds".
-// src/stores/postgres-execution-record.repository.ts:97:3 - (ae-undocumented) Missing documentation for "findByStatus".
-// src/stores/postgres-execution-record.repository.ts:104:3 - (ae-undocumented) Missing documentation for "byVersion".
-// src/stores/postgres-execution-record.repository.ts:107:3 - (ae-undocumented) Missing documentation for "unscored".
-// src/stores/postgres-execution-record.repository.ts:114:3 - (ae-undocumented) Missing documentation for "saveScore".
-// src/stores/postgres-execution-record.repository.ts:117:3 - (ae-undocumented) Missing documentation for "meanScore".
-// src/stores/postgres-execution-record.repository.ts:120:3 - (ae-undocumented) Missing documentation for "summary".
-// src/stores/postgres-execution-record.repository.ts:123:3 - (ae-undocumented) Missing documentation for "rememberConfig".
-// src/stores/postgres-execution-record.repository.ts:132:3 - (ae-undocumented) Missing documentation for "configSnapshots".
-// src/stores/postgres-execution-record.repository.ts:135:3 - (ae-undocumented) Missing documentation for "recentOriginals".
-// src/stores/postgres-execution-record.repository.ts:138:3 - (ae-undocumented) Missing documentation for "uncovered".
-// src/stores/postgres-execution-record.repository.ts:141:3 - (ae-undocumented) Missing documentation for "before".
-// src/stores/postgres-execution-record.repository.ts:149:3 - (ae-undocumented) Missing documentation for "turnNumber".
-// src/stores/postgres-execution-record.repository.ts:152:3 - (ae-undocumented) Missing documentation for "addSummary".
-// src/stores/postgres-execution-record.repository.ts:155:3 - (ae-undocumented) Missing documentation for "latestSummaries".
-// src/stores/postgres-execution-record.repository.ts:163:3 - (ae-undocumented) Missing documentation for "summaryCount".
-// src/stores/postgres-execution-record.repository.ts:166:3 - (ae-undocumented) Missing documentation for "savePauseAnswer".
-// src/stores/postgres-execution-record.repository.ts:173:9 - (ae-undocumented) Missing documentation for "findPauseAnswersByTenantIdAndRootExecutionId".
+// src/stores/postgres-execution-record.repository.ts:51:3 - (ae-undocumented) Missing documentation for "ping".
+// src/stores/postgres-execution-record.repository.ts:76:9 - (ae-undocumented) Missing documentation for "hasThread".
+// src/stores/postgres-execution-record.repository.ts:79:3 - (ae-undocumented) Missing documentation for "threadOwner".
+// src/stores/postgres-execution-record.repository.ts:86:3 - (ae-undocumented) Missing documentation for "append".
+// src/stores/postgres-execution-record.repository.ts:89:9 - (ae-undocumented) Missing documentation for "complete".
+// src/stores/postgres-execution-record.repository.ts:92:3 - (ae-undocumented) Missing documentation for "completeIfStatus".
+// src/stores/postgres-execution-record.repository.ts:99:3 - (ae-undocumented) Missing documentation for "lastTerns".
+// src/stores/postgres-execution-record.repository.ts:102:3 - (ae-undocumented) Missing documentation for "findByTenantIdAndRunId".
+// src/stores/postgres-execution-record.repository.ts:105:3 - (ae-undocumented) Missing documentation for "byIds".
+// src/stores/postgres-execution-record.repository.ts:108:3 - (ae-undocumented) Missing documentation for "findByStatus".
+// src/stores/postgres-execution-record.repository.ts:111:3 - (ae-undocumented) Missing documentation for "byVersion".
+// src/stores/postgres-execution-record.repository.ts:114:3 - (ae-undocumented) Missing documentation for "unscored".
+// src/stores/postgres-execution-record.repository.ts:117:3 - (ae-undocumented) Missing documentation for "saveScore".
+// src/stores/postgres-execution-record.repository.ts:120:3 - (ae-undocumented) Missing documentation for "meanScore".
+// src/stores/postgres-execution-record.repository.ts:123:3 - (ae-undocumented) Missing documentation for "summary".
+// src/stores/postgres-execution-record.repository.ts:126:3 - (ae-undocumented) Missing documentation for "rememberConfig".
+// src/stores/postgres-execution-record.repository.ts:135:3 - (ae-undocumented) Missing documentation for "configSnapshots".
+// src/stores/postgres-execution-record.repository.ts:138:3 - (ae-undocumented) Missing documentation for "recentOriginals".
+// src/stores/postgres-execution-record.repository.ts:141:3 - (ae-undocumented) Missing documentation for "uncovered".
+// src/stores/postgres-execution-record.repository.ts:144:3 - (ae-undocumented) Missing documentation for "before".
+// src/stores/postgres-execution-record.repository.ts:147:3 - (ae-undocumented) Missing documentation for "turnNumber".
+// src/stores/postgres-execution-record.repository.ts:150:3 - (ae-undocumented) Missing documentation for "addSummary".
+// src/stores/postgres-execution-record.repository.ts:153:3 - (ae-undocumented) Missing documentation for "latestSummaries".
+// src/stores/postgres-execution-record.repository.ts:161:3 - (ae-undocumented) Missing documentation for "summaryCount".
+// src/stores/postgres-execution-record.repository.ts:164:3 - (ae-undocumented) Missing documentation for "savePauseAnswer".
+// src/stores/postgres-execution-record.repository.ts:171:9 - (ae-undocumented) Missing documentation for "findPauseAnswersByTenantIdAndRootExecutionId".
 // src/stores/postgres-execution-tree.repository.ts:38:3 - (ae-undocumented) Missing documentation for "ping".
 // src/stores/postgres-execution-tree.repository.ts:42:9 - (ae-undocumented) Missing documentation for "saveIfAbsentInTree".
 // src/stores/postgres-execution-tree.repository.ts:56:9 - (ae-undocumented) Missing documentation for "findByIdInTree".
 // src/stores/postgres-execution-tree.repository.ts:68:9 - (ae-undocumented) Missing documentation for "deleteAllInTree".
-// src/stores/postgres-fenced-effect.repository.ts:137:3 - (ae-undocumented) Missing documentation for "ping".
-// src/stores/postgres-fenced-effect.repository.ts:138:3 - (ae-undocumented) Missing documentation for "runInTransaction".
-// src/stores/postgres-fenced-effect.repository.ts:150:9 - (ae-undocumented) Missing documentation for "deleteByStoredAtBefore".
+// src/stores/postgres-fenced-effect.repository.ts:136:3 - (ae-undocumented) Missing documentation for "ping".
+// src/stores/postgres-fenced-effect.repository.ts:137:3 - (ae-undocumented) Missing documentation for "runInTransaction".
+// src/stores/postgres-fenced-effect.repository.ts:149:9 - (ae-undocumented) Missing documentation for "deleteByStoredAtBefore".
 // src/stores/postgres-mesh-request.repository.ts:49:3 - (ae-undocumented) Missing documentation for "ping".
 // src/stores/postgres-mesh-request.repository.ts:53:9 - (ae-undocumented) Missing documentation for "saveIfAbsent".
 // src/stores/postgres-mesh-request.repository.ts:63:9 - (ae-undocumented) Missing documentation for "findByKey".
 // src/stores/postgres-mesh-request.repository.ts:82:9 - (ae-undocumented) Missing documentation for "saveResponse".
 // src/stores/postgres-mesh-request.repository.ts:90:9 - (ae-undocumented) Missing documentation for "deleteByKey".
-// src/stores/postgres-mesh-request.repository.ts:98:9 - (ae-undocumented) Missing documentation for "deleteCreatedBefore".
-// src/stores/postgres-outbound-call.repository.ts:85:3 - (ae-undocumented) Missing documentation for "ping".
-// src/stores/postgres-outbound-call.repository.ts:89:3 - (ae-undocumented) Missing documentation for "findByKey".
-// src/stores/postgres-outbound-call.repository.ts:102:3 - (ae-undocumented) Missing documentation for "saveIfAbsent".
-// src/stores/postgres-outbound-call.repository.ts:127:3 - (ae-undocumented) Missing documentation for "markPending".
-// src/stores/postgres-outbound-call.repository.ts:141:3 - (ae-undocumented) Missing documentation for "markCompleted".
-// src/stores/postgres-outbound-call.repository.ts:151:3 - (ae-undocumented) Missing documentation for "markFailed".
-// src/stores/postgres-outbound-call.repository.ts:162:9 - (ae-undocumented) Missing documentation for "findAllByTenantIdAndRootExecutionId".
-// src/stores/postgres-outbound-call.repository.ts:193:9 - (ae-undocumented) Missing documentation for "deleteByEndedAtBefore".
-// src/stores/postgres-outbound-call.repository.ts:201:3 - (ae-undocumented) Missing documentation for "leaseStateOf".
+// src/stores/postgres-mesh-request.repository.ts:98:9 - (ae-undocumented) Missing documentation for "deleteByCreatedAtBefore".
+// src/stores/postgres-outbound-call.repository.ts:84:3 - (ae-undocumented) Missing documentation for "ping".
+// src/stores/postgres-outbound-call.repository.ts:88:3 - (ae-undocumented) Missing documentation for "findByKey".
+// src/stores/postgres-outbound-call.repository.ts:101:3 - (ae-undocumented) Missing documentation for "saveIfAbsent".
+// src/stores/postgres-outbound-call.repository.ts:126:3 - (ae-undocumented) Missing documentation for "markPending".
+// src/stores/postgres-outbound-call.repository.ts:140:3 - (ae-undocumented) Missing documentation for "markCompleted".
+// src/stores/postgres-outbound-call.repository.ts:150:3 - (ae-undocumented) Missing documentation for "markFailed".
+// src/stores/postgres-outbound-call.repository.ts:161:9 - (ae-undocumented) Missing documentation for "findAllByTenantIdAndRootExecutionId".
+// src/stores/postgres-outbound-call.repository.ts:192:9 - (ae-undocumented) Missing documentation for "deleteByEndedAtBefore".
+// src/stores/postgres-outbound-call.repository.ts:200:3 - (ae-undocumented) Missing documentation for "leaseStateOf".
 // src/stores/postgres-paused-execution.repository.ts:45:3 - (ae-undocumented) Missing documentation for "ping".
 // src/stores/postgres-paused-execution.repository.ts:49:9 - (ae-undocumented) Missing documentation for "findByTenantIdAndThreadId".
 // src/stores/postgres-paused-execution.repository.ts:68:9 - (ae-undocumented) Missing documentation for "save".
@@ -670,7 +671,7 @@ export interface SchemaVersions {
 // src/stores/postgres-paused-execution.repository.ts:146:9 - (ae-undocumented) Missing documentation for "decideByTenantIdAndPauseId".
 // src/stores/postgres-paused-execution.repository.ts:161:9 - (ae-undocumented) Missing documentation for "cancelByTenantIdAndPauseId".
 // src/stores/postgres-paused-execution.repository.ts:175:3 - (ae-undocumented) Missing documentation for "markTakenByTenantIdAndPauseId".
-// src/stores/postgres-paused-execution.repository.ts:179:3 - (ae-undocumented) Missing documentation for "deleteResolvedBefore".
+// src/stores/postgres-paused-execution.repository.ts:179:3 - (ae-undocumented) Missing documentation for "deleteByResolvedAtBefore".
 // src/stores/postgres-rate-limit.repository.ts:54:3 - (ae-undocumented) Missing documentation for "ping".
 // src/stores/postgres-rate-limit.repository.ts:58:3 - (ae-undocumented) Missing documentation for "acquire".
 // src/stores/postgres-rate-limit.repository.ts:80:9 - (ae-undocumented) Missing documentation for "renew".

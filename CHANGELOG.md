@@ -15,6 +15,16 @@ own process, no shared disk — share every store on one database.
 
 ### Changed
 
+- **The core's #890 (API review G8)** — the stores import what they are written with from
+  `@agboss/core/stores` (the boundary rows `OutboundCallIntent`, …, and the core's store helpers
+  `assertEffectName`, `replayedFromOf`, `assertLedgerEntries`, `idGeneratorNameOf`, …);
+  `PostgresExecutionRecordRepository`'s methods name the core's record types (`Turn`, `NewTurn`,
+  `TurnOutcome`, `NewThread`, `Summary`, `NewSummary`, `ConfigSnapshot`, `VersionScore`,
+  `PauseAnswerRecord`), no local aliases; `PostgresFencedEffectRepository.runOnce` (was
+  `saveResultIfAbsent`; an application injects `FencedEffects`), `deleteByResolvedAtBefore`
+  (pauses) and `deleteByCreatedAtBefore` (mesh answers); `ThreadIdsExhaustedError({ generator,
+tries })` (was `DuplicateThreadIdError`), `ExecutionFencedError.of(…)`; each error's static
+  `code` is its literal.
 - **The core's #889, the execution audit log** — `PostgresExecutionLeaseEventRepository` is
   `PostgresExecutionAuditLogRepository` (the contract `ExecutionAuditLogRepository`, its records
   `ExecutionAuditEventRecord`); the table keeps its name, `agboss_execution_lease_events`, and no

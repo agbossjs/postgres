@@ -124,12 +124,14 @@ the child queue, the audit log and the other stores are not constrained. To writ
 own, on another database, see the Wiki's
 [Your own store](https://github.com/agbossjs/agboss/wiki/Your-own-store).
 
-A fenced effect's work gets the transaction's `PoolClient` and may `await` its statements:
+A component injects the application's `FencedEffects` (agbossjs/agboss#890: never this store's
+class — the store is the application's, listed in its `providers`); a fenced effect's work gets the
+transaction's `PoolClient` and may `await` its statements:
 
 ```ts
-const outcome = await effects.saveResultIfAbsent(
+const outcome = await fencedEffects.runOnce(
   effectKeyOf(executionContext, "charge"),
-  async (client) => {
+  async (client: PoolClient) => {
     await client.query("INSERT INTO charges (order_id, amount) VALUES ($1, $2)", [orderId, amount]);
     return { receipt: orderId };
   },
@@ -140,7 +142,7 @@ With a business key (#508) the effect is one per tenant, name and key — whatev
 thread makes it — instead of one per step:
 `effectKeyOf(executionContext, "charge", { businessKey: "order:42", fingerprint: { amount } })`.
 A second execution's call replays the first one's result (`replayedFrom` names its step); the same
-key with another fingerprint is `IdempotencyKeyConflictError`, nothing run.
+key with another fingerprint is `BusinessKeyConflictError`, nothing run.
 
 ### Calls that leave the system
 
@@ -374,7 +376,7 @@ the tree over, so a pod never moves a tree whose lease it could not renew.
 | Child queue   | `saveIfAbsent`       | `WITH saved AS (INSERT … ON CONFLICT DO UPDATE … RETURNING) SELECT pg_notify('agboss_child_queued', current_schema()) FROM saved`  |
 | Child queue   | `watchQueued`        | `LISTEN agboss_child_queued` on a connection of its own (agbossjs/agboss#777): its schema's notifications wake the claimers        |
 | Paused        | `Pending → …`        | `UPDATE … WHERE status = 'pending' RETURNING` (none → `NotPausedError` from the core)                                              |
-| Fenced effect | `saveResultIfAbsent` | one transaction: lease row `FOR UPDATE`, mark upsert, key lookup, `await work(client)`, insert                                     |
+| Fenced effect | `runOnce`            | one transaction: lease row `FOR UPDATE`, mark upsert, key lookup, `await work(client)`, insert                                     |
 | Fenced effect | business key         | the same, the key's identity serialized by `pg_advisory_xact_lock` first (no lease row covers two trees)                           |
 | Outbound call | `saveIfAbsent`       | one transaction: lease row `FOR UPDATE`, mark upsert, `INSERT … ON CONFLICT DO NOTHING` (unique by step / key)                     |
 | Outbound call | `mark*`              | the same checks, then one `UPDATE … WHERE status AND attempt AND attempt_owner` as read: a compare-and-set                         |
@@ -387,7 +389,7 @@ the tree over, so a pod never moves a tree whose lease it could not renew.
 | Rate limit    | `renew` / `release`  | `UPDATE … WHERE slot_id AND expires_at > $now` (0 rows: expired) / `DELETE`                                                        |
 | Rate limit    | `addToWindow`        | the key's row `FOR UPDATE`, old buckets forgotten, sum, add to this millisecond's bucket if within the limit                       |
 | Rate limit    | `pauseUntil`         | upsert keeping `GREATEST(paused_until, $until)`: a 429 pause or an open breaker, seen by every pod                                 |
-| Mesh request  | `saveIfAbsent`       | `INSERT … ON CONFLICT DO NOTHING` by (tenant, peer, idempotency key); `deleteCreatedBefore` for the sweep                          |
+| Mesh request  | `saveIfAbsent`       | `INSERT … ON CONFLICT DO NOTHING` by (tenant, peer, idempotency key); `deleteByCreatedAtBefore` for the sweep                      |
 | Checkpoints   | —                    | LangGraph's `PostgresSaver` on the shared pool                                                                                     |
 
 ## Tests

@@ -74,7 +74,7 @@ describe("PostgresMeshRequestRepository", () => {
       createdAt: "2026-01-05T08:59:59.999Z",
     });
 
-    await requests.deleteCreatedBefore(new Date(NINE));
+    await requests.deleteByCreatedAtBefore(new Date(NINE));
 
     expect(await requests.findByKey(keyOf("at-cutoff"))).toBeDefined();
     expect(await requests.findByKey(keyOf("before-cutoff"))).toBeUndefined();
@@ -88,6 +88,6 @@ describe("PostgresMeshRequestRepository", () => {
     await expect(down.findByKey(keyOf("down"))).rejects.toThrow();
     await expect(down.saveResponse(keyOf("down"), {})).rejects.toThrow();
     await expect(down.deleteByKey(keyOf("down"))).rejects.toThrow();
-    await expect(down.deleteCreatedBefore(new Date(NINE))).rejects.toThrow();
+    await expect(down.deleteByCreatedAtBefore(new Date(NINE))).rejects.toThrow();
   });
 });

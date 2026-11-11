@@ -36,7 +36,7 @@ const keyOf = (key: MeshRequestKey): readonly [string, string, string] => [
  * `saveIfAbsent` is one `INSERT … ON CONFLICT DO NOTHING`: of two instances admitting one key —
  * a request retried against another pod — exactly one inserts it and runs it, the other finds it
  * (its answer, or a run still in progress). The answer, the forget and the retention sweep's
- * `deleteCreatedBefore` (the `Clock`'s cutoff, passed as a parameter) are one statement each. Every
+ * `deleteByCreatedAtBefore` (the `Clock`'s cutoff, passed as a parameter) are one statement each. Every
  * statement runs alone at `READ COMMITTED`; no other locking. Listed in
  * `@Application({ providers })` with `postgresUrl`.
  */
@@ -95,7 +95,7 @@ export class PostgresMeshRequestRepository extends MeshRequestRepository {
     );
   }
 
-  async deleteCreatedBefore(cutoff: Date): Promise<void> {
+  async deleteByCreatedAtBefore(cutoff: Date): Promise<void> {
     await changesOf(
       this.connection.pool,
       "DELETE FROM agboss_mesh_requests WHERE created_at < $1",

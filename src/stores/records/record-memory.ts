@@ -2,13 +2,8 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { changesOf, firstRowOf, rowsOf, type Queryable } from "../../connection/query.js";
 import { escapedText, unescapedText } from "../nul-escape.js";
-import {
-  RECORD_COLUMNS,
-  recordsOf,
-  type NewSummaryRecord,
-  type StoredRecord,
-  type StoredSummary,
-} from "./record-rows.js";
+import { RECORD_COLUMNS, recordsOf } from "./record-rows.js";
+import type { NewSummary, Summary, Turn } from "@agboss/core";
 
 /**
  * Conversation memory on the records (#77, #120 PR 3): the turns a compaction has not summarised,
@@ -32,7 +27,7 @@ const SummaryRow = z.object({
 
 const CountRow = z.object({ count: z.number() });
 
-const summaryOf = (row: unknown): StoredSummary => {
+const summaryOf = (row: unknown): Summary => {
   const r = SummaryRow.parse(row);
   return {
     id: r.id,
@@ -59,7 +54,7 @@ export async function uncoveredRecords(
   tenantId: string,
   threadId: string,
   compaction: string,
-): Promise<StoredRecord[]> {
+): Promise<Turn[]> {
   return recordsOf(
     await rowsOf(
       database,
@@ -79,7 +74,7 @@ export async function recordsBefore(
   threadId: string,
   recordId: string,
   limit: number,
-): Promise<StoredRecord[]> {
+): Promise<Turn[]> {
   return recordsOf(
     await rowsOf(
       database,
@@ -110,10 +105,10 @@ export async function turnNumberOf(
 /** Adds a summary of a run of turns: its bounds kept as their records' `seq`. */
 export async function addSummary(
   database: Queryable,
-  summary: NewSummaryRecord,
+  summary: NewSummary,
   now: Date,
-): Promise<StoredSummary> {
-  const stored: StoredSummary = { ...summary, id: randomUUID(), createdAt: now.toISOString() };
+): Promise<Summary> {
+  const stored: Summary = { ...summary, id: randomUUID(), createdAt: now.toISOString() };
   await changesOf(
     database,
     `INSERT INTO agboss_execution_summaries (id, tenant_id, thread_id, workflow, compaction,
@@ -143,7 +138,7 @@ export async function latestSummariesOf(
   threadId: string,
   compaction: string,
   limit: number,
-): Promise<StoredSummary[]> {
+): Promise<Summary[]> {
   const rows = await rowsOf(
     database,
     `SELECT * FROM (SELECT * FROM agboss_execution_summaries

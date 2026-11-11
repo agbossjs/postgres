@@ -1,4 +1,4 @@
-import { DuplicateThreadIdError, IdGenerator } from "@agboss/core";
+import { ThreadIdsExhaustedError, IdGenerator } from "@agboss/core";
 import { SequentialIdGenerator, VirtualClock } from "@agboss/core/testing";
 import { beforeEach, describe, expect, it } from "vitest";
 import { onSchema, testDatabase } from "../support/database.js";
@@ -36,9 +36,9 @@ const exhausted = (records: ReturnType<typeof recordsOn>) =>
 
 /** The typed refusal of #613: the project's generator and the tries, never an id. */
 function expectExhausted(refused: unknown): void {
-  expect(refused).toBeInstanceOf(DuplicateThreadIdError);
+  expect(refused).toBeInstanceOf(ThreadIdsExhaustedError);
   expect(refused).toMatchObject({
-    code: "run.duplicate-thread-id",
+    code: "run.thread-ids-exhausted",
     generator: "StuckIdGenerator",
     tries: 100,
   });
@@ -124,7 +124,7 @@ describe("agbossjs/agboss#550: a minted thread id is a new thread", () => {
     });
   });
 
-  it("agbossjs/agboss#613: a generator that only repeats a taken id fails after 100 tries with DuplicateThreadIdError", async () => {
+  it("agbossjs/agboss#613: a generator that only repeats a taken id fails after 100 tries with ThreadIdsExhaustedError", async () => {
     const records = recordsOn(database.url(), new VirtualClock(), new StuckIdGenerator());
     await records.createThread({ workflow: "desk-workflow", tenantId: "default" });
 

@@ -1,10 +1,8 @@
+import { Injectable, StoreClock } from "@agboss/core";
 import {
-  StoreClock,
-  Injectable,
   OutboundCallRepository,
   OutboundCallStatus,
   pendingOutboundCallOf,
-  type StoreDescriptor,
   type EffectKey,
   type OutboundCallClaim,
   type OutboundCallFailure,
@@ -13,9 +11,10 @@ import {
   type OutboundCallLeaseState,
   type OutboundCallPage,
   type OutboundCallRecord,
-  type OutboundCallStatusQuery,
   type OutboundCallState,
-} from "@agboss/core";
+  type OutboundCallStatusQuery,
+  type StoreDescriptor,
+} from "@agboss/core/stores";
 import type { PoolClient } from "pg";
 import { PostgresConnection } from "../connection/postgres-connection.js";
 import { changesOf, firstRowOf, rowsOf } from "../connection/query.js";
