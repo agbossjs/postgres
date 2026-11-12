@@ -31,6 +31,8 @@ export {
   PostgresSchemaTooNewError,
   PostgresSettingsError,
   type ChangedMigration,
+  type PostgresLedgerMarkMissingErrorOptions,
+  type PostgresSettingsErrorOptions,
   type SchemaVersions,
 } from "./errors.js";
 export { PostgresExecutionRecordRepository } from "./stores/postgres-execution-record.repository.js";

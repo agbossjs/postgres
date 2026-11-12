@@ -112,7 +112,8 @@ export interface AppliedMigrationReport {
 // @public
 export interface ChangedMigration {
     // (undocumented)
-    readonly name: string;
+    readonly cause?: unknown;
+    readonly migration: string;
     // (undocumented)
     readonly version: number;
 }
@@ -331,7 +332,7 @@ export class PostgresExecutionRecordRepository extends ExecutionRecordRepository
     // (undocumented)
     append(record: NewTurn): Promise<Turn>;
     // (undocumented)
-    before(tenantId: string, threadId: string, ternId: string, limit: number): Promise<Turn[]>;
+    before(tenantId: string, threadId: string, turnId: string, limit: number): Promise<Turn[]>;
     // (undocumented)
     byIds(ids: readonly string[]): Promise<Turn[]>;
     // (undocumented)
@@ -352,7 +353,7 @@ export class PostgresExecutionRecordRepository extends ExecutionRecordRepository
     // (undocumented)
     hasThread(workflow: string, tenantId: string, threadId: string): Promise<boolean>;
     // (undocumented)
-    lastTerns(tenantId: string, threadId: string, limit: number): Promise<Turn[]>;
+    lastTurns(tenantId: string, threadId: string, limit: number): Promise<Turn[]>;
     // (undocumented)
     latestSummaries(tenantId: string, threadId: string, compaction: string, limit: number): Promise<Summary[]>;
     // (undocumented)
@@ -378,7 +379,7 @@ export class PostgresExecutionRecordRepository extends ExecutionRecordRepository
         readonly owner: string | undefined;
     } | undefined>;
     // (undocumented)
-    turnNumber(tenantId: string, threadId: string, ternId: string): Promise<number>;
+    turnNumber(tenantId: string, threadId: string, turnId: string): Promise<number>;
     // (undocumented)
     uncovered(tenantId: string, threadId: string, compaction: string): Promise<Turn[]>;
     // (undocumented)
@@ -412,11 +413,19 @@ export class PostgresFencedEffectRepository extends FencedEffectRepository<PoolC
 
 // @public
 export class PostgresLedgerMarkMissingError extends AGBossError {
-    constructor();
+    constructor(options?: PostgresLedgerMarkMissingErrorOptions);
     // (undocumented)
     static readonly code: "postgres.ledger-mark-missing";
     // (undocumented)
+    readonly code: typeof PostgresLedgerMarkMissingError.code;
+    // (undocumented)
     name: string;
+}
+
+// @public
+export interface PostgresLedgerMarkMissingErrorOptions {
+    // (undocumented)
+    readonly cause?: unknown;
 }
 
 // @public
@@ -441,6 +450,8 @@ export class PostgresMigrationChangedError extends AGBossError {
     constructor(changed: ChangedMigration);
     // (undocumented)
     static readonly code: "postgres.migration-changed";
+    // (undocumented)
+    readonly code: typeof PostgresMigrationChangedError.code;
     // (undocumented)
     readonly migration: string;
     // (undocumented)
@@ -534,6 +545,8 @@ export class PostgresSchemaMissingError extends AGBossError {
     // (undocumented)
     static readonly code: "postgres.schema-missing";
     // (undocumented)
+    readonly code: typeof PostgresSchemaMissingError.code;
+    // (undocumented)
     readonly expected: number;
     // (undocumented)
     name: string;
@@ -547,6 +560,8 @@ export class PostgresSchemaTooNewError extends AGBossError {
     // (undocumented)
     static readonly code: "postgres.schema-too-new";
     // (undocumented)
+    readonly code: typeof PostgresSchemaTooNewError.code;
+    // (undocumented)
     readonly expected: number;
     // (undocumented)
     name: string;
@@ -554,10 +569,21 @@ export class PostgresSchemaTooNewError extends AGBossError {
 
 // @public
 export class PostgresSettingsError extends AGBossError {
+    constructor(options: PostgresSettingsErrorOptions);
     // (undocumented)
     static readonly code: "postgres.settings-invalid";
     // (undocumented)
+    readonly code: typeof PostgresSettingsError.code;
+    // (undocumented)
     name: string;
+}
+
+// @public
+export interface PostgresSettingsErrorOptions {
+    // (undocumented)
+    readonly cause?: unknown;
+    // (undocumented)
+    readonly message: string;
 }
 
 export { SchemaSetup }
@@ -565,29 +591,38 @@ export { SchemaSetup }
 // @public
 export interface SchemaVersions {
     readonly applied: number;
+    readonly cause?: unknown;
     readonly expected: number;
 }
 
 // Warnings were encountered during analysis:
 //
-// src/errors.ts:28:3 - (ae-undocumented) Missing documentation for "code".
-// src/errors.ts:29:12 - (ae-undocumented) Missing documentation for "name".
-// src/errors.ts:30:3 - (ae-undocumented) Missing documentation for "applied".
-// src/errors.ts:31:3 - (ae-undocumented) Missing documentation for "expected".
-// src/errors.ts:48:3 - (ae-undocumented) Missing documentation for "code".
-// src/errors.ts:49:12 - (ae-undocumented) Missing documentation for "name".
-// src/errors.ts:50:3 - (ae-undocumented) Missing documentation for "applied".
-// src/errors.ts:51:3 - (ae-undocumented) Missing documentation for "expected".
-// src/errors.ts:64:3 - (ae-undocumented) Missing documentation for "version".
-// src/errors.ts:65:3 - (ae-undocumented) Missing documentation for "name".
-// src/errors.ts:74:3 - (ae-undocumented) Missing documentation for "code".
-// src/errors.ts:75:12 - (ae-undocumented) Missing documentation for "name".
-// src/errors.ts:76:3 - (ae-undocumented) Missing documentation for "version".
-// src/errors.ts:77:3 - (ae-undocumented) Missing documentation for "migration".
-// src/errors.ts:94:3 - (ae-undocumented) Missing documentation for "code".
-// src/errors.ts:95:12 - (ae-undocumented) Missing documentation for "name".
-// src/errors.ts:105:3 - (ae-undocumented) Missing documentation for "code".
-// src/errors.ts:106:12 - (ae-undocumented) Missing documentation for "name".
+// src/errors.ts:30:3 - (ae-undocumented) Missing documentation for "code".
+// src/errors.ts:31:3 - (ae-undocumented) Missing documentation for "code".
+// src/errors.ts:32:12 - (ae-undocumented) Missing documentation for "name".
+// src/errors.ts:33:3 - (ae-undocumented) Missing documentation for "applied".
+// src/errors.ts:34:3 - (ae-undocumented) Missing documentation for "expected".
+// src/errors.ts:52:3 - (ae-undocumented) Missing documentation for "code".
+// src/errors.ts:53:3 - (ae-undocumented) Missing documentation for "code".
+// src/errors.ts:54:12 - (ae-undocumented) Missing documentation for "name".
+// src/errors.ts:55:3 - (ae-undocumented) Missing documentation for "applied".
+// src/errors.ts:56:3 - (ae-undocumented) Missing documentation for "expected".
+// src/errors.ts:70:3 - (ae-undocumented) Missing documentation for "version".
+// src/errors.ts:73:3 - (ae-undocumented) Missing documentation for "cause".
+// src/errors.ts:82:3 - (ae-undocumented) Missing documentation for "code".
+// src/errors.ts:83:3 - (ae-undocumented) Missing documentation for "code".
+// src/errors.ts:84:12 - (ae-undocumented) Missing documentation for "name".
+// src/errors.ts:85:3 - (ae-undocumented) Missing documentation for "version".
+// src/errors.ts:86:3 - (ae-undocumented) Missing documentation for "migration".
+// src/errors.ts:100:3 - (ae-undocumented) Missing documentation for "message".
+// src/errors.ts:101:3 - (ae-undocumented) Missing documentation for "cause".
+// src/errors.ts:110:3 - (ae-undocumented) Missing documentation for "code".
+// src/errors.ts:111:3 - (ae-undocumented) Missing documentation for "code".
+// src/errors.ts:112:12 - (ae-undocumented) Missing documentation for "name".
+// src/errors.ts:121:3 - (ae-undocumented) Missing documentation for "cause".
+// src/errors.ts:131:3 - (ae-undocumented) Missing documentation for "code".
+// src/errors.ts:132:3 - (ae-undocumented) Missing documentation for "code".
+// src/errors.ts:133:12 - (ae-undocumented) Missing documentation for "name".
 // src/migrations/migrate.ts:32:3 - (ae-undocumented) Missing documentation for "version".
 // src/migrations/migrate.ts:33:3 - (ae-undocumented) Missing documentation for "name".
 // src/stores/postgres-a2a-direct-message.repository.ts:74:3 - (ae-undocumented) Missing documentation for "store".
@@ -653,7 +688,7 @@ export interface SchemaVersions {
 // src/stores/postgres-execution-record.repository.ts:86:3 - (ae-undocumented) Missing documentation for "append".
 // src/stores/postgres-execution-record.repository.ts:89:9 - (ae-undocumented) Missing documentation for "complete".
 // src/stores/postgres-execution-record.repository.ts:92:3 - (ae-undocumented) Missing documentation for "completeIfStatus".
-// src/stores/postgres-execution-record.repository.ts:99:3 - (ae-undocumented) Missing documentation for "lastTerns".
+// src/stores/postgres-execution-record.repository.ts:99:3 - (ae-undocumented) Missing documentation for "lastTurns".
 // src/stores/postgres-execution-record.repository.ts:102:3 - (ae-undocumented) Missing documentation for "findByTenantIdAndRunId".
 // src/stores/postgres-execution-record.repository.ts:105:3 - (ae-undocumented) Missing documentation for "byIds".
 // src/stores/postgres-execution-record.repository.ts:108:3 - (ae-undocumented) Missing documentation for "findByStatus".

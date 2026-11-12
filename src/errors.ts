@@ -13,6 +13,8 @@ export interface SchemaVersions {
   readonly applied: number;
   /** The newest migration of this package. */
   readonly expected: number;
+  /** What made the check fail, when it has one. */
+  readonly cause?: unknown;
 }
 
 /** The command an operator runs to migrate, as an error message names it. */
@@ -26,6 +28,7 @@ export const MIGRATE_COMMAND = "npx agboss-postgres migrate";
  */
 export class PostgresSchemaMissingError extends AGBossError {
   static override readonly code = "postgres.schema-missing" as const;
+  declare readonly code: typeof PostgresSchemaMissingError.code;
   override name = "PostgresSchemaMissingError";
   readonly applied: number;
   readonly expected: number;
@@ -33,6 +36,7 @@ export class PostgresSchemaMissingError extends AGBossError {
   constructor(versions: SchemaVersions) {
     super(
       `the PostgreSQL schema is at migration ${String(versions.applied)}, this package needs ${String(versions.expected)}: run \`${MIGRATE_COMMAND}\` with POSTGRES_URL set (add --schema <name> for the application's postgresSchema; or set postgresSchemaSetup: SchemaSetup.MigrateOnStart in the environment)`,
+      { cause: versions.cause },
     );
     this.applied = versions.applied;
     this.expected = versions.expected;
@@ -46,6 +50,7 @@ export class PostgresSchemaMissingError extends AGBossError {
  */
 export class PostgresSchemaTooNewError extends AGBossError {
   static override readonly code = "postgres.schema-too-new" as const;
+  declare readonly code: typeof PostgresSchemaTooNewError.code;
   override name = "PostgresSchemaTooNewError";
   readonly applied: number;
   readonly expected: number;
@@ -53,6 +58,7 @@ export class PostgresSchemaTooNewError extends AGBossError {
   constructor(versions: SchemaVersions) {
     super(
       `the PostgreSQL schema is at migration ${String(versions.applied)}, newer than this package's ${String(versions.expected)}: a newer @agboss/postgres migrated it — deploy that version, the migrations are not rolled back`,
+      { cause: versions.cause },
     );
     this.applied = versions.applied;
     this.expected = versions.expected;
@@ -62,7 +68,9 @@ export class PostgresSchemaTooNewError extends AGBossError {
 /** Which migration changed after it was applied. */
 export interface ChangedMigration {
   readonly version: number;
-  readonly name: string;
+  /** The migration's file name. */
+  readonly migration: string;
+  readonly cause?: unknown;
 }
 
 /**
@@ -72,17 +80,25 @@ export interface ChangedMigration {
  */
 export class PostgresMigrationChangedError extends AGBossError {
   static override readonly code = "postgres.migration-changed" as const;
+  declare readonly code: typeof PostgresMigrationChangedError.code;
   override name = "PostgresMigrationChangedError";
   readonly version: number;
   readonly migration: string;
 
   constructor(changed: ChangedMigration) {
     super(
-      `migration ${String(changed.version)} (${changed.name}) was applied with another name or checksum than this package's file: restore the file — a schema change is a new migration`,
+      `migration ${String(changed.version)} (${changed.migration}) was applied with another name or checksum than this package's file: restore the file — a schema change is a new migration`,
+      { cause: changed.cause },
     );
     this.version = changed.version;
-    this.migration = changed.name;
+    this.migration = changed.migration;
   }
+}
+
+/** What a refused setting takes: the message, and what made it fail when it has a cause. */
+export interface PostgresSettingsErrorOptions {
+  readonly message: string;
+  readonly cause?: unknown;
 }
 
 /**
@@ -92,7 +108,17 @@ export class PostgresMigrationChangedError extends AGBossError {
  */
 export class PostgresSettingsError extends AGBossError {
   static override readonly code = "postgres.settings-invalid" as const;
+  declare readonly code: typeof PostgresSettingsError.code;
   override name = "PostgresSettingsError";
+
+  constructor(options: PostgresSettingsErrorOptions) {
+    super(options.message, options);
+  }
+}
+
+/** What a missing ledger mark takes: only a cause. */
+export interface PostgresLedgerMarkMissingErrorOptions {
+  readonly cause?: unknown;
 }
 
 /**
@@ -103,11 +129,13 @@ export class PostgresSettingsError extends AGBossError {
  */
 export class PostgresLedgerMarkMissingError extends AGBossError {
   static override readonly code = "postgres.ledger-mark-missing" as const;
+  declare readonly code: typeof PostgresLedgerMarkMissingError.code;
   override name = "PostgresLedgerMarkMissingError";
 
-  constructor() {
+  constructor(options: PostgresLedgerMarkMissingErrorOptions = {}) {
     super(
       "the ledger's pruning mark is missing (agboss_cost_entries_pruned has no row): nothing was added — insert it with a mark no lower than any prune's cutoff, e.g. INSERT INTO agboss_cost_entries_pruned VALUES (true, now())",
+      { cause: options.cause },
     );
   }
 }

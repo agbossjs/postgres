@@ -67,7 +67,7 @@ export function pendingMigrations(
   for (const done of applied) {
     const file = files[done.version - 1];
     if (file?.name !== done.name || file.checksum !== done.checksum)
-      throw new PostgresMigrationChangedError({ version: done.version, name: done.name });
+      throw new PostgresMigrationChangedError({ version: done.version, migration: done.name });
   }
   return files.filter((file) => file.version > newest);
 }
