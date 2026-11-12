@@ -29,13 +29,31 @@ const StoredHistoryRecord = z.looseObject({
 
 const HistoryRow = z.object({ record: z.unknown() });
 
-const isHistoryRecord = (value: unknown): value is ExecutionHistoryRecord =>
-  StoredHistoryRecord.safeParse(value).success;
+/** The ids that name a stored record in an error: never its contexts (#906 D4: those are the caller's). */
+/** ` (tenantId acme, …)`, or nothing when no id is readable. */
+const named = (ids: string): string => (ids === "" ? "" : ` (${ids})`);
+
+const idsOf = (value: unknown): string =>
+  ["tenantId", "executionId", "threadId"]
+    .flatMap((key) => {
+      const id: unknown =
+        typeof value === "object" && value !== null ? Reflect.get(value, key) : "";
+      return typeof id === "string" ? [`${key} ${id}`] : [];
+    })
+    .join(", ");
 
 /** The record of a row (`SELECT record …`). */
 export function historyRecordOf(row: unknown): ExecutionHistoryRecord {
   const record = unescapedJson(HistoryRow.parse(row).record);
-  if (!isHistoryRecord(record))
-    throw new Error(`a stored execution history record is not readable: ${JSON.stringify(record)}`);
-  return record;
+  const stored = StoredHistoryRecord.safeParse(record);
+  if (!stored.success) {
+    const field = [
+      ...new Set(stored.error.issues.map((issue) => issue.path.join(".") || "(the value)")),
+    ].join(", ");
+    throw new Error(
+      `a stored execution history record is not readable${named(idsOf(record))}: the field(s) ${field} missing or not what the framework wrote`,
+      { cause: stored.error },
+    );
+  }
+  return record as ExecutionHistoryRecord;
 }

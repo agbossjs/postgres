@@ -188,7 +188,7 @@ describe("PostgresPausedExecutionRepository", () => {
     );
 
     await expect(pauses.findByTenantIdAndThreadId("default", "thread-bad")).rejects.toThrow(
-      'a stored paused run is not readable: {"status":"answered"}',
+      /^a stored paused run is not readable: the field\(s\) .*threadId/,
     );
   });
 });
