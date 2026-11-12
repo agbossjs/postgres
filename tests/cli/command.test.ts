@@ -99,6 +99,41 @@ describe("agboss-postgres migrate", () => {
     }
   });
 
+  it("agbossjs/agboss#891: --flag=value works as --flag value, for --schema and --url", async () => {
+    const [spaced, equals] = [newSchemaName(), newSchemaName()];
+    const io = ioOf({ POSTGRES_URL: "not a url" });
+    try {
+      expect(await runCommand(["migrate", "--schema", spaced, `--url=${serverUrl()}`], io)).toBe(
+        ExitCode.Ok,
+      );
+      expect(await runCommand(["migrate", `--schema=${equals}`, "--url", serverUrl()], io)).toBe(
+        ExitCode.Ok,
+      );
+      expect(io.lines).toContain(`applied 0001_execution_leases (${spaced})`);
+      expect(io.lines).toContain(`applied 0001_execution_leases (${equals})`);
+      expect(io.errors).toEqual([]);
+    } finally {
+      await dropSchema(spaced);
+      await dropSchema(equals);
+    }
+  });
+
+  it("agbossjs/agboss#891: an unknown --flag=value names the flag only, never its value", async () => {
+    for (const args of [
+      ["migrate", "--unknown=s3cret-pw"],
+      ["migrate", "--schema=", "--url=postgres://u:s3cret-pw@h/db"],
+      ["migrate", "--url=postgres://u:s3cret-pw@h/db", "--url=postgres://u:s3cret-pw@h/db"],
+    ]) {
+      const io = ioOf();
+
+      expect(await runCommand(args, io)).toBe(ExitCode.Usage);
+      expect(io.errors.join("\n")).not.toContain("s3cret-pw");
+    }
+    const named = ioOf();
+    await runCommand(["migrate", "--schema=", "--unknown=x"], named);
+    expect(named.errors[0]).toContain("unexpected arguments (flags: --schema <flag>)");
+  });
+
   it("neither --url nor POSTGRES_URL nor DATABASE_URL: a usage error, exit code 2", async () => {
     for (const env of [{}, { POSTGRES_URL: "", DATABASE_URL: "" }]) {
       const io = ioOf(env);
@@ -164,9 +199,11 @@ describe("agboss-postgres migrate", () => {
     const secretUrl = "postgres://app:s3cret-pw@127.0.0.1:1/app";
     const failed = ioOf({ POSTGRES_URL: secretUrl });
     const usage = ioOf();
+    const equalsForm = ioOf(); // --url=<url> is a URL now: the run fails at the connection, masked
 
     expect(await runCommand(["migrate"], failed)).toBe(ExitCode.Failed);
     expect(await runCommand(["migrate", "--url", secretUrl, "extra"], usage)).toBe(ExitCode.Usage);
+    expect(await runCommand(["migrate", `--url=${secretUrl}`], equalsForm)).toBe(ExitCode.Failed);
 
     const shapes = [
       "postgres://u:s3cret-pw@h/db",
@@ -181,7 +218,6 @@ describe("agboss-postgres migrate", () => {
         ["migrate", shape],
         ["migrate", "--schema", "a", shape],
       ]),
-      ["migrate", "--url=postgres://u:s3cret-pw@h/db"],
       ["migrate", "--url", secretUrl, "--url", secretUrl],
       ["migrate", "--password", "s3cret-pw"],
     ];
@@ -195,6 +231,7 @@ describe("agboss-postgres migrate", () => {
 
     const printed = [
       ...[...failed.lines, ...failed.errors, ...usage.lines, ...usage.errors],
+      ...[...equalsForm.lines, ...equalsForm.errors],
       ...others.flat(),
     ].join("\n");
     expect(printed).toContain("the migration failed");

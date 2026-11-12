@@ -43,21 +43,34 @@ const PRINTABLE_FLAGS: ReadonlySet<string> = new Set([...FLAGS, "--help", "-h"])
 const flagNamesOf = (rest: readonly string[]): string =>
   rest
     .filter((arg) => arg.startsWith("-"))
-    .map((arg) => (PRINTABLE_FLAGS.has(arg) ? arg : "<flag>"))
+    .map((arg) => arg.split("=", 1)[0] ?? "") // `--flag=value`: the value is never named
+    .map((name) => (PRINTABLE_FLAGS.has(name) ? name : "<flag>"))
     .join(" ") || "none";
 
 /** An unknown command, never echoed: it may be a URL or a secret typed in the wrong place. */
 const UNKNOWN_COMMAND = "unknown command (the commands: migrate)";
 
-/** Each `--flag value` of `rest`; a string → a usage problem. */
+/** One flag and its value: `--flag=value` or `--flag value`; `next` is where the next one starts. */
+function flagAt(
+  rest: readonly string[],
+  at: number,
+): { readonly flag: string; readonly value: string | undefined; readonly next: number } {
+  const arg = rest[at] ?? "";
+  const equals = arg.startsWith("--") ? arg.indexOf("=") : -1;
+  return equals < 0
+    ? { flag: arg, value: rest[at + 1], next: at + 2 }
+    : { flag: arg.slice(0, equals), value: arg.slice(equals + 1), next: at + 1 };
+}
+
+/** Each `--flag value` or `--flag=value` of `rest`; a string → a usage problem. */
 function flagsOf(rest: readonly string[]): ReadonlyMap<string, string> | string {
   const flags = new Map<string, string>();
-  for (let at = 0; at < rest.length; at += 2) {
-    const [flag, value] = [rest[at], rest[at + 1]];
-    const isKnown = flag !== undefined && FLAGS.has(flag) && !flags.has(flag);
-    if (!isKnown || value === undefined || value === "")
+  for (let at = 0; at < rest.length;) {
+    const { flag, value, next } = flagAt(rest, at);
+    if (!FLAGS.has(flag) || flags.has(flag) || value === undefined || value === "")
       return `unexpected arguments (flags: ${flagNamesOf(rest)})`;
     flags.set(flag, value);
+    at = next;
   }
   return flags;
 }
