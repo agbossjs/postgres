@@ -70,11 +70,12 @@ const SCHEMA_NAME = /^[a-z_][a-z0-9_]{0,62}$/u;
 /** `schema` when the stores accept it (`SCHEMA_NAME`), else `PostgresSettingsError`. */
 export function checkedSchemaOf(schema: string | undefined): string | undefined {
   if (schema === undefined) return undefined;
-  if (schema.length === 0) throw new PostgresSettingsError("the schema name is empty");
+  if (schema.length === 0) throw new PostgresSettingsError({ message: "the schema name is empty" });
   if (!SCHEMA_NAME.test(schema))
-    throw new PostgresSettingsError(
-      "the schema name must be a plain lowercase identifier — a-z, 0-9 and _, not starting with a digit, at most 63 characters",
-    );
+    throw new PostgresSettingsError({
+      message:
+        "the schema name must be a plain lowercase identifier — a-z, 0-9 and _, not starting with a digit, at most 63 characters",
+    });
   return schema;
 }
 
@@ -97,13 +98,13 @@ export function settingsOfEnvironment(environment: unknown): PostgresConnectionS
     const problems = parsed.error.issues.map((issue) =>
       issue.path[0] === "postgresUrl" && isUrlMissing ? MISSING_URL : issue.message,
     );
-    throw new PostgresSettingsError(
-      `the PostgreSQL stores need their environment fields — ${problems.join("; ")}`,
-    );
+    throw new PostgresSettingsError({
+      message: `the PostgreSQL stores need their environment fields — ${problems.join("; ")}`,
+    });
   }
   const { postgresUrl, postgresPoolSize, postgresSchema, postgresSchemaSetup } = parsed.data;
   const url = postgresUrl.reveal();
-  if (url.length === 0) throw new PostgresSettingsError("postgresUrl is empty");
+  if (url.length === 0) throw new PostgresSettingsError({ message: "postgresUrl is empty" });
   return {
     url,
     poolSize: postgresPoolSize,

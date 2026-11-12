@@ -15,6 +15,13 @@ own process, no shared disk — share every store on one database.
 
 ### Changed
 
+- **One options object for every error, `Turn` to the end** (agbossjs/agboss#906, completing #890) —
+  every error of the package is made from one options object whose keys are its own properties, with a
+  `cause` (kept as `.cause`) and a literal instance `code`: `PostgresMigrationChangedError({ version, migration })` (the option was `name`, the field is `.migration`); an error with only its text takes
+  `{ message }` (`PostgresSettingsError`). The store contract's
+  `lastTerns` is `lastTurns`, a summary's `fromTernId` / `toTernId` are `fromTurnId` / `toTurnId`
+  (the core's `Turn` names; no `Tern` stays in the API report). The columns are unchanged.
+
 - **One schema per application, one setup enum, the store bundles** (#891, API review G11) —
   `PostgresConnectionSettings.schema` / the environment's `postgresSchema` put every connection in
   that schema (`DEFAULT_SCHEMA = "public"` when neither it nor the URL's `search_path` says

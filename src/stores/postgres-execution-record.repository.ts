@@ -96,7 +96,7 @@ export class PostgresExecutionRecordRepository extends ExecutionRecordRepository
   ): Promise<boolean> {
     return writes.completeRecord(this.connection.pool, id, outcome, expected);
   }
-  lastTerns(tenantId: string, threadId: string, limit: number): Promise<Turn[]> {
+  lastTurns(tenantId: string, threadId: string, limit: number): Promise<Turn[]> {
     return reads.lastRecordsOf(this.connection.pool, tenantId, threadId, limit);
   }
   findByTenantIdAndRunId(tenantId: string, runId: string): Promise<Turn | undefined> {
@@ -141,11 +141,11 @@ export class PostgresExecutionRecordRepository extends ExecutionRecordRepository
   uncovered(tenantId: string, threadId: string, compaction: string): Promise<Turn[]> {
     return memory.uncoveredRecords(this.connection.pool, tenantId, threadId, compaction);
   }
-  before(tenantId: string, threadId: string, ternId: string, limit: number): Promise<Turn[]> {
-    return memory.recordsBefore(this.connection.pool, tenantId, threadId, ternId, limit);
+  before(tenantId: string, threadId: string, turnId: string, limit: number): Promise<Turn[]> {
+    return memory.recordsBefore(this.connection.pool, tenantId, threadId, turnId, limit);
   }
-  turnNumber(tenantId: string, threadId: string, ternId: string): Promise<number> {
-    return memory.turnNumberOf(this.connection.pool, tenantId, threadId, ternId);
+  turnNumber(tenantId: string, threadId: string, turnId: string): Promise<number> {
+    return memory.turnNumberOf(this.connection.pool, tenantId, threadId, turnId);
   }
   addSummary(summary: NewSummary): Promise<Summary> {
     return memory.addSummary(this.connection.pool, summary, this.clock.now());

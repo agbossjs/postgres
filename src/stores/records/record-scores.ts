@@ -67,7 +67,7 @@ export async function versionScoresOf(
     const r = VersionScoreRow.parse(row);
     return {
       promptVersion: r.prompt_version,
-      terns: r.records,
+      turns: r.records,
       scored: r.scored,
       meanScore: r.mean_score,
       costUsd: r.cost_usd,
