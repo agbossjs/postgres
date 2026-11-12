@@ -31,6 +31,11 @@ const StoredHistoryRecord = z.looseObject({
   }),
 });
 
+/** What the check below established, as the type the core's normaliser takes (no cast at a call). */
+const CheckedHistory = z.custom<StoredHistory>(
+  (value) => StoredHistoryRecord.safeParse(value).success,
+);
+
 const HistoryRow = z.object({ record: z.unknown() });
 
 /** The ids that name a stored record in an error: never its contexts (#906 D4: those are the caller's). */
@@ -59,5 +64,5 @@ export function historyRecordOf(row: unknown): ExecutionHistoryRecord {
       { cause: stored.error },
     );
   }
-  return executionHistoryRecordOfStored(record as StoredHistory);
+  return executionHistoryRecordOfStored(CheckedHistory.parse(record));
 }
