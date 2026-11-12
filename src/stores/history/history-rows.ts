@@ -1,4 +1,8 @@
 import { ExecutionHistoryStatus, type ExecutionHistoryRecord } from "@agboss/core";
+import {
+  executionHistoryRecordOfStored,
+  type StoredHistoryRecord as StoredHistory,
+} from "@agboss/core/stores";
 import { z } from "zod";
 import { unescapedJson } from "../nul-escape.js";
 
@@ -55,5 +59,5 @@ export function historyRecordOf(row: unknown): ExecutionHistoryRecord {
       { cause: stored.error },
     );
   }
-  return record as ExecutionHistoryRecord;
+  return executionHistoryRecordOfStored(record as StoredHistory);
 }
