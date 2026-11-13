@@ -7,6 +7,7 @@ import {
   PauseStatus,
   type PauseRecord,
 } from "@agboss/core";
+import { NO_RECIPIENTS } from "@agboss/core/stores";
 import { VirtualClock } from "@agboss/core/testing";
 import { describe, expect, it } from "vitest";
 import { PostgresPausedExecutionRepository } from "../../src/index.js";
@@ -69,6 +70,7 @@ describe("PostgresPausedExecutionRepository", () => {
       "p-question",
       { decision: { verdict: "yes" }, answeredBy: undefined },
       NINE,
+      NO_RECIPIENTS,
     );
 
     expect(await pauses.findAllByTenantIdAndRootExecutionId("default", "run-1")).toEqual([
@@ -109,6 +111,7 @@ describe("PostgresPausedExecutionRepository", () => {
       "p-resolved",
       { decision: 1, answeredBy: "a" },
       NINE,
+      NO_RECIPIENTS,
     );
 
     await pauses.markTakenByTenantIdAndPauseId("default", "p-resolved");
@@ -138,6 +141,7 @@ describe("PostgresPausedExecutionRepository", () => {
       "p-swept",
       { decision: 1, answeredBy: "a" },
       NINE,
+      NO_RECIPIENTS,
     );
     await pauses.markTakenByTenantIdAndPauseId("default", "p-swept");
 

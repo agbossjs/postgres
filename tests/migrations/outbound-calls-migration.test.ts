@@ -38,6 +38,7 @@ const BEFORE = {
   "0028_a2a_task_mesh_body_hash.sql": null,
   "0029_execution_lease_token.sql": null,
   "0030_a2a_direct_messages.sql": null,
+  "0031_pause_deadlines_and_notices.sql": null,
 };
 
 const leasesOn = (url: string, clock: VirtualClock, instanceId: string) =>
@@ -79,7 +80,7 @@ describe("migrations 0014–0016 keep the leases written before them", () => {
     await clock.advance(seconds(31));
 
     expect(report.applied.map((migration) => migration.version)).toEqual([
-      14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30,
+      14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31,
     ]);
     const { rows } = await onSchema(
       url,

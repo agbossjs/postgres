@@ -23,7 +23,12 @@ describe("migration 0030 adds the direct A2A messages", () => {
     const url = await freshSchema();
     await migrateWith(
       { url },
-      migrationsIn(migrationsFolder({ "0030_a2a_direct_messages.sql": null })),
+      migrationsIn(
+        migrationsFolder({
+          "0030_a2a_direct_messages.sql": null,
+          "0031_pause_deadlines_and_notices.sql": null,
+        }),
+      ),
     );
     const tasks = new PostgresA2ATaskRepository(connectionTo(url));
     await tasks.saveIfAbsent({
@@ -40,7 +45,7 @@ describe("migration 0030 adds the direct A2A messages", () => {
 
     const report = await migratePostgres({ url });
 
-    expect(report.applied.map((file) => file.version)).toEqual([30]);
+    expect(report.applied.map((file) => file.version)).toEqual([30, 31]);
     const save = await new PostgresA2ADirectMessageRepository(connectionTo(url)).saveIfAbsent({
       tenantId: "acme",
       ownerId: "alice",

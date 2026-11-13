@@ -2,6 +2,10 @@
   "repository": "agbossjs/agboss",
   "branch": "main",
   "source": "commit",
+<<<<<<< HEAD
   "frameworkSha": "8fdecd5a6228736eeefa7e86cf87df5040e4a622",
+=======
+  "frameworkSha": "1e0d9c92447b9493a101cd3b476a1b370324f360",
+>>>>>>> e897458 (feat-936: the pause store contract v2 on PostgreSQL)
   "version": "0.1.0"
 }

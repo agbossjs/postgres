@@ -73,6 +73,22 @@ status, limit, after? })` is keyset-paged on the row's identity `id`, its limit 
 
 ### Added
 
+- **The pause store, contract v2** (#936, #910) — `PostgresPausedExecutionRepository` keeps a
+  pause's deadline, reminder and notices, on migration `0031_pause_deadlines_and_notices`
+  (`agboss_pauses.expires_at` / `remind_at` / `channel`, `agboss_pause_notices`; it only adds: no
+  `record` is rewritten, `channel` is filled from it). An answer is refused at or after `expiresAt`
+  in the same `UPDATE … WHERE status = 'pending' AND (expires_at IS NULL OR expires_at > $at)` that
+  would record it; a transition and its notices — one ordered mailbox per pause and receiver, in
+  `agboss_pause_notices` — are one transaction (a pause row lock, `READ COMMITTED`): never a change
+  without its notice nor a notice without its change. Delivery claims a mailbox with `FOR UPDATE
+SKIP LOCKED` under a random token (two instances never claim one), acknowledges, retries and sets
+  aside only for that token, and keeps the head notice's time (`head_written_at`) for the retention's
+  look. The scans (`expires_at` / `remind_at` on partial indexes, pages by `seq`, the `bigserial`
+  insertion sequence — a cursor never meets a reused id), the retention that keeps a pause with a live
+  mailbox, `deleteByTenantIdAndThreadIdAndRunId` and the answer log's `markPauseAnswerNotTaken`
+  (the first entry's place in the order kept) complete the contract; the core's shared contract suite
+  passes on PostgreSQL 16, pinned at the core commit `17ac3a56`.
+
 - **The direct A2A replies, shared by the pods** (#860) — `PostgresA2ADirectMessageRepository`, the
   core's `A2ADirectMessageRepository` on migration `0030_a2a_direct_messages`
   (`agboss_a2a_direct_messages`): a skill that answers with a `Message` keeps its reply once, and a

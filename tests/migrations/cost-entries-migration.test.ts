@@ -55,6 +55,7 @@ describe("migration 0022 adds the ledger's entries", () => {
           "0028_a2a_task_mesh_body_hash.sql": null,
           "0029_execution_lease_token.sql": null,
           "0030_a2a_direct_messages.sql": null,
+          "0031_pause_deadlines_and_notices.sql": null,
         }),
       ),
     );
@@ -74,7 +75,7 @@ describe("migration 0022 adds the ledger's entries", () => {
     await ledger.saveAll([tenantDay], [paid(0.25, "run-1:pay-action:1#0")]);
 
     expect(report.applied.map((migration) => migration.version)).toEqual([
-      22, 23, 24, 25, 26, 27, 28, 29, 30,
+      22, 23, 24, 25, 26, 27, 28, 29, 30, 31,
     ]);
     expect(await ledger.findSpentByCounter(tenantDay)).toBe(2.25);
   });
@@ -95,6 +96,7 @@ describe("migration 0023 dates the ledger's entries", () => {
           "0028_a2a_task_mesh_body_hash.sql": null,
           "0029_execution_lease_token.sql": null,
           "0030_a2a_direct_messages.sql": null,
+          "0031_pause_deadlines_and_notices.sql": null,
         }),
       ),
     );
@@ -109,7 +111,7 @@ describe("migration 0023 dates the ledger's entries", () => {
     );
 
     expect(report.applied.map((migration) => migration.version)).toEqual([
-      23, 24, 25, 26, 27, 28, 29, 30,
+      23, 24, 25, 26, 27, 28, 29, 30, 31,
     ]);
     expect(await before.findSpentByCounter(tenantDay)).toBe(0);
     const rows = await onSchema(

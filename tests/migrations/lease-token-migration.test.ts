@@ -42,6 +42,7 @@ async function schemaAt28(): Promise<string> {
       migrationsFolder({
         "0029_execution_lease_token.sql": null,
         "0030_a2a_direct_messages.sql": null,
+        "0031_pause_deadlines_and_notices.sql": null,
       }),
     ),
   );
@@ -70,7 +71,7 @@ describe("migration 0029 names the lease's fencing token `token`", () => {
     const report = await migratePostgres({ url });
     await clock.advance(seconds(31));
 
-    expect(report.applied.map((migration) => migration.version)).toEqual([29, 30]);
+    expect(report.applied.map((migration) => migration.version)).toEqual([29, 30, 31]);
     const columns = await onSchema(
       url,
       `SELECT column_name FROM information_schema.columns
