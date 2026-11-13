@@ -1,3 +1,4 @@
+import { DIRECT_MESSAGE_CLAIM } from "@agboss/core/stores";
 import type {
   A2AMessageKey,
   A2AMessageRecord,
@@ -119,4 +120,22 @@ export async function savedOrKept(
     if (kept !== undefined) return kept;
   }
   throw new Error("an A2A message's row conflicted, then was gone, twice: nothing is saved");
+}
+
+/**
+ * Removes the messages whose task is gone and whose `saved_at` is before `cutoff` (agbossjs/agboss#960):
+ * a follow-up saved while the sweep removed its task, which no task's sweep would find. A message
+ * and its task are saved in one transaction, so a message without a task is never a new task's. A direct message's claim has no task by design
+ * (agbossjs/agboss#860): never an orphan.
+ */
+export async function sweptOrphanMessagesBefore(
+  database: Queryable,
+  cutoff: Date,
+): Promise<number> {
+  return changesOf(
+    database,
+    `DELETE FROM agboss_a2a_messages m WHERE m.saved_at < $1 AND m.task_id <> $2 AND NOT EXISTS (
+       SELECT 1 FROM agboss_a2a_tasks t WHERE t.tenant_id = m.tenant_id AND t.task_id = m.task_id)`,
+    [cutoff, DIRECT_MESSAGE_CLAIM],
+  );
 }

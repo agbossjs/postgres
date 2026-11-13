@@ -98,7 +98,6 @@ describe("agbossjs/agboss#810: the mesh's fields of an A2A task on PostgreSQL", 
   });
 
   it.each([
-    ["a field it does not know", "unknown", { pendingPauses: [], grantedUsd: 5 }],
     ["a negative spend", "negative", { pendingPauses: [], spentUsd: -1 }],
     ["a spend that is no number", "text", { pendingPauses: [], spentUsd: "3" }],
   ])("a status with %s is refused, never read without it", async (_name, id, fields) => {
@@ -113,5 +112,19 @@ describe("agbossjs/agboss#810: the mesh's fields of an A2A task on PostgreSQL", 
     );
 
     await expect(tasks.findById(keyOf(id))).rejects.toThrow();
+  });
+
+  it("agbossjs/agboss#960 AC3: a status key this version does not know is read back as written", async () => {
+    const tasks = tasksOn();
+    await tasks.saveIfAbsent(newTask("later"));
+    const status = { state: A2ATaskState.Completed, pendingPauses: [], grantedUsd: { n: 5 } };
+    await onSchema(
+      database.url(),
+      `UPDATE agboss_a2a_tasks SET state = $3, status = $4::jsonb
+       WHERE tenant_id = $1 AND task_id = $2`,
+      ["acme", "later", A2ATaskState.Completed, JSON.stringify(status)],
+    );
+
+    expect((await tasks.findById(keyOf("later")))?.status).toEqual(status);
   });
 });

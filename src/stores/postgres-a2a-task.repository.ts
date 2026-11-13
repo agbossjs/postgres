@@ -22,6 +22,7 @@ import {
   insertedTask,
   messageAt,
   savedOrKept,
+  sweptOrphanMessagesBefore,
   taskAt,
   taskFieldsOf,
 } from "./a2a-tasks/a2a-task-statements.js";
@@ -44,8 +45,9 @@ import { escapedJsonOf } from "./nul-escape.js";
  *   statement.
  * - `list` reads the page and its count in two statements: a task saved in between moves the
  *   count by one, as the next page would show it.
- * - `deleteTerminalByStatusAtBefore` removes a finished task's messages and the task in one
- *   transaction, the cutoff the `Clock`'s.
+ * - `deleteTerminalByStatusAtBefore` removes a finished task's messages and the task, then every
+ *   message whose task is gone and whose `saved_at` is before the cutoff (agbossjs/agboss#960: a
+ *   follow-up saved while its task was removed), in one transaction, the cutoff the `Clock`'s.
  *
  * Listed in `@Application({ providers })` with `postgresUrl`.
  */
@@ -158,6 +160,7 @@ export class PostgresA2ATaskRepository extends A2ATaskRepository {
         TERMINAL_STATES,
         cutoff,
       ]);
+      await sweptOrphanMessagesBefore(client, cutoff);
     });
   }
 }
