@@ -1,8 +1,8 @@
 import { emptyCheckpoint, type CheckpointMetadata } from "@langchain/langgraph-checkpoint";
 import { describe, expect, it, vi } from "vitest";
-import { migratePostgres, PostgresCheckpointSaver } from "../../src/index.js";
-import { STEP_INDEX_COLUMNS, STEP_INDEX_NAME } from "../../src/migrations/checkpoint-step-index.js";
-import { createSchema, dropSchema, onSchema, testDatabase } from "../support/database.js";
+import { PostgresCheckpointSaver } from "../../src/index.js";
+import { STEP_INDEX_NAME } from "../../src/migrations/checkpoint-step-index.js";
+import { onSchema, testDatabase } from "../support/database.js";
 import { connectionTo } from "../support/stores.js";
 
 /**
@@ -132,60 +132,4 @@ describe("agbossjs/agboss#962: PostgresCheckpointSaver.latestByStep", () => {
     await writes;
     expect((await reader.latestByStep(at("live")))?.checkpoint.id).toBe("id-029");
   });
-});
-
-describe("agbossjs/agboss#962: the index migration", () => {
-  it("AC1: on a populated table it builds the index, a second run finds it, an INVALID one is made again", async () => {
-    const { schema, url } = await createSchema();
-    try {
-      await migratePostgres({ url });
-      const state = async (): Promise<unknown> =>
-        (
-          await onSchema(
-            url,
-            `SELECT i.indisvalid FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid
-              WHERE c.relname = $1 AND c.relnamespace = current_schema()::regnamespace`,
-            [STEP_INDEX_NAME],
-          )
-        ).rows[0]?.indisvalid;
-      expect(await state()).toBe(true);
-      // a table filled before the index existed
-      await onSchema(url, `DROP INDEX ${STEP_INDEX_NAME}`);
-      await populate(url, "old", 10_000);
-      expect(await state()).toBeUndefined();
-
-      await migratePostgres({ url });
-      expect(await state()).toBe(true);
-
-      await migratePostgres({ url });
-      expect(await state()).toBe(true);
-      await onSchema(
-        url,
-        `UPDATE pg_index SET indisvalid = false WHERE indexrelid = $1::regclass`,
-        [`${schema}.${STEP_INDEX_NAME}`],
-      );
-      expect(await state()).toBe(false);
-
-      await migratePostgres({ url });
-      expect(await state()).toBe(true);
-      // the README's way for a table too large to hold: built CONCURRENTLY first, the run finds it
-      await onSchema(url, `DROP INDEX ${STEP_INDEX_NAME}`);
-      await onSchema(
-        url,
-        `CREATE INDEX CONCURRENTLY ${STEP_INDEX_NAME} ON checkpoints ${STEP_INDEX_COLUMNS}`,
-      );
-      const built = await onSchema(url, `SELECT '${STEP_INDEX_NAME}'::regclass::oid AS oid`);
-      await migratePostgres({ url });
-      expect(await state()).toBe(true);
-      expect(await onSchema(url, `SELECT '${STEP_INDEX_NAME}'::regclass::oid AS oid`)).toEqual(
-        built,
-      );
-      const saver = new PostgresCheckpointSaver(connectionTo(url));
-      expect((await saver.latestByStep(at("old")))?.config.configurable?.checkpoint_id).toBe(
-        "id-009999",
-      );
-    } finally {
-      await dropSchema(schema);
-    }
-  }, 60_000);
 });

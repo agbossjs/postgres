@@ -1,12 +1,11 @@
 import { PostgresSaver } from "@langchain/langgraph-checkpoint-postgres";
 import type pg from "pg";
 import { z } from "zod";
-import { ensureStepIndex } from "./checkpoint-step-index.js";
 import { isUndefinedTable } from "./history.js";
 
 const VersionRow = z.object({ newest: z.number().nullable() });
 
-/** LangGraph's checkpoint tables in `schema`, set up by its saver, and our index on them; how many of LangGraph's migrations ran. */
+/** LangGraph's checkpoint tables in `schema`, set up by its saver; how many of its migrations ran. */
 export async function setupCheckpoints(
   pool: pg.Pool,
   client: pg.PoolClient,
@@ -14,10 +13,7 @@ export async function setupCheckpoints(
 ): Promise<number> {
   const before = await checkpointVersionOf(client);
   await new PostgresSaver(pool, undefined, { schema }).setup();
-  const ran = (await checkpointVersionOf(client)) - before;
-  // agbossjs/agboss#962: once the table is there
-  await ensureStepIndex(client, schema);
-  return ran;
+  return (await checkpointVersionOf(client)) - before;
 }
 
 /** The newest of LangGraph's checkpoint migrations applied (-1: none, its table absent). */

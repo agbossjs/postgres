@@ -2,6 +2,7 @@ import pg from "pg";
 import { z } from "zod";
 import { migrationsIn, newestVersionOf, type MigrationFile } from "./files.js";
 import { appliedMigrationsOf, HISTORY_TABLE, pendingMigrations } from "./history.js";
+import { buildStepIndex } from "./checkpoint-step-index.js";
 import { setupCheckpoints } from "./checkpoint-setup.js";
 import { inTransaction } from "../connection/transaction.js";
 import { checkedSchemaOf, quotedIdentifier, searchPathOptionOf } from "../connection/settings.js";
@@ -60,10 +61,17 @@ export function migratePostgres(options: MigratePostgresOptions): Promise<Migrat
   return migrateWith(options, migrationsIn());
 }
 
-/** `migratePostgres` with the migrations given (a test's folder). */
+/**
+ * `migratePostgres` with the migrations given (a test's folder). After them, once the migration
+ * lock is released, the checkpoint index is built (`buildStepIndex`, agbossjs/agboss#962): awaited
+ * by default — a command is done when its index is —, or `indexInBackground` (a start that
+ * migrates: the pod serves while it builds; a failed build is only a slower read, the next run
+ * builds it).
+ */
 export async function migrateWith(
   options: MigratePostgresOptions,
   files: readonly MigrationFile[],
+  indexInBackground = false,
 ): Promise<MigrationReport> {
   options.signal?.throwIfAborted();
   const schema = checkedSchemaOf(options.schema);
@@ -82,7 +90,9 @@ export async function migrateWith(
     try {
       if (schema !== undefined) await createSchema(client, schema);
       const run = { pool, client, files, schema, signal: options.signal };
-      return await underLock(client, () => migrateLocked(run));
+      const report = await underLock(client, () => migrateLocked(run));
+      await indexAfter(options, report.schema, indexInBackground);
+      return report;
     } finally {
       client.off("error", onLost);
       client.release();
@@ -90,6 +100,18 @@ export async function migrateWith(
   } finally {
     await pool.end();
   }
+}
+
+/** The index step, after the migration lock is released. */
+async function indexAfter(
+  options: MigratePostgresOptions,
+  schema: string,
+  inBackground: boolean,
+): Promise<void> {
+  options.signal?.throwIfAborted();
+  const build = buildStepIndex({ url: options.url, schema });
+  if (inBackground) build.catch(() => undefined);
+  else await build;
 }
 
 /** PostgreSQL's codes when a concurrent `CREATE SCHEMA IF NOT EXISTS` made it first. */
