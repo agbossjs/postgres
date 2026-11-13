@@ -112,14 +112,18 @@ export class PauseScans {
     return pageOf(rows, limit);
   }
 
-  /** What `deleteClosedBefore(cutoff)` removes, at most `limit`, in the insertion order. */
-  async closedBefore(cutoff: Date, limit: number): Promise<readonly PauseRecord[]> {
+  /**
+   * A page of what `deleteClosedBefore(cutoff)` removes, in the insertion order (`seq`), after the
+   * cursor — the retention's log repair reads every page before the one removal (#939).
+   */
+  async closedBefore(cutoff: Date, after: string, limit: number): Promise<PausePage> {
     const rows = await rowsOf(
       this.pool,
-      `SELECT p.record FROM agboss_pauses p WHERE ${REMOVABLE} ORDER BY p.seq LIMIT $2`,
-      [cutoff, limit],
+      `SELECT p.record, p.seq FROM agboss_pauses p WHERE p.seq > $3::bigint AND ${REMOVABLE}
+       ORDER BY p.seq LIMIT $2`,
+      [cutoff, limit + 1, after],
     );
-    return rows.map(recordOfRow);
+    return pageOf(rows, limit);
   }
 
   /**

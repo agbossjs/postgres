@@ -52,9 +52,13 @@ export abstract class PostgresPauseQueryRepository extends PostgresPausedRunRepo
     );
   }
 
-  async findClosedByResolvedAtBefore(cutoff: Date, limit: number): Promise<readonly PauseRecord[]> {
+  async findClosedByResolvedAtBefore(
+    cutoff: Date,
+    limit: number,
+    after?: string,
+  ): Promise<PausePage> {
     assertScanLimit(limit);
-    return new PauseScans(this.connection.pool).closedBefore(cutoff, limit);
+    return new PauseScans(this.connection.pool).closedBefore(cutoff, seqOfCursor(after), limit);
   }
 
   deleteByResolvedAtBefore(cutoff: Date): Promise<void> {

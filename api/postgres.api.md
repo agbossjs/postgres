@@ -130,6 +130,9 @@ export interface ChangedMigration {
 }
 
 // @public
+export const DEFAULT_CONNECT_TIMEOUT = 10000;
+
+// @public
 export const DEFAULT_POOL_SIZE = 10;
 
 // @public
@@ -215,7 +218,6 @@ export class PostgresCheckpointSaver extends BaseCheckpointSaver {
     getNextVersion(current: number | undefined): number;
     // (undocumented)
     getTuple(config: RunnableConfig): Promise<CheckpointTuple | undefined>;
-    latestByStep(config: RunnableConfig): Promise<CheckpointTuple | undefined>;
     // (undocumented)
     list(config: RunnableConfig, options?: CheckpointListOptions): AsyncGenerator<CheckpointTuple>;
     ping(): Promise<void>;
@@ -558,7 +560,7 @@ export abstract class PostgresPauseQueryRepository extends PostgresPausedRunRepo
     // (undocumented)
     deleteByResolvedAtBefore(cutoff: Date): Promise<void>;
     // (undocumented)
-    findClosedByResolvedAtBefore(cutoff: Date, limit: number): Promise<readonly PauseRecord[]>;
+    findClosedByResolvedAtBefore(cutoff: Date, limit: number, after?: string): Promise<PausePage>;
     // (undocumented)
     findOpenAfter(after: string | undefined, limit: number): Promise<PausePage>;
     // (undocumented)
@@ -682,8 +684,8 @@ export interface SchemaVersions {
 // src/errors.ts:131:3 - (ae-undocumented) Missing documentation for "code".
 // src/errors.ts:132:3 - (ae-undocumented) Missing documentation for "code".
 // src/errors.ts:133:12 - (ae-undocumented) Missing documentation for "name".
-// src/migrations/migrate.ts:28:3 - (ae-undocumented) Missing documentation for "version".
-// src/migrations/migrate.ts:29:3 - (ae-undocumented) Missing documentation for "name".
+// src/migrations/migrate.ts:33:3 - (ae-undocumented) Missing documentation for "version".
+// src/migrations/migrate.ts:34:3 - (ae-undocumented) Missing documentation for "name".
 // src/stores/postgres-a2a-direct-message.repository.ts:74:3 - (ae-undocumented) Missing documentation for "store".
 // src/stores/postgres-a2a-direct-message.repository.ts:80:3 - (ae-undocumented) Missing documentation for "ping".
 // src/stores/postgres-a2a-direct-message.repository.ts:84:3 - (ae-undocumented) Missing documentation for "saveIfAbsent".
@@ -703,11 +705,11 @@ export interface SchemaVersions {
 // src/stores/postgres-a2a-task.repository.ts:121:9 - (ae-undocumented) Missing documentation for "compareAndSetStatus".
 // src/stores/postgres-a2a-task.repository.ts:146:3 - (ae-undocumented) Missing documentation for "list".
 // src/stores/postgres-a2a-task.repository.ts:150:9 - (ae-undocumented) Missing documentation for "deleteTerminalByStatusAtBefore".
-// src/stores/postgres-checkpoint-saver.ts:45:9 - (ae-undocumented) Missing documentation for "getTuple".
-// src/stores/postgres-checkpoint-saver.ts:71:10 - (ae-undocumented) Missing documentation for "list".
-// src/stores/postgres-checkpoint-saver.ts:78:9 - (ae-undocumented) Missing documentation for "put".
-// src/stores/postgres-checkpoint-saver.ts:88:9 - (ae-undocumented) Missing documentation for "putWrites".
-// src/stores/postgres-checkpoint-saver.ts:97:9 - (ae-undocumented) Missing documentation for "deleteThread".
+// src/stores/postgres-checkpoint-saver.ts:44:9 - (ae-undocumented) Missing documentation for "getTuple".
+// src/stores/postgres-checkpoint-saver.ts:48:10 - (ae-undocumented) Missing documentation for "list".
+// src/stores/postgres-checkpoint-saver.ts:55:9 - (ae-undocumented) Missing documentation for "put".
+// src/stores/postgres-checkpoint-saver.ts:65:9 - (ae-undocumented) Missing documentation for "putWrites".
+// src/stores/postgres-checkpoint-saver.ts:74:9 - (ae-undocumented) Missing documentation for "deleteThread".
 // src/stores/postgres-child-execution-queue.repository.ts:125:3 - (ae-undocumented) Missing documentation for "ping".
 // src/stores/postgres-child-execution-queue.repository.ts:129:9 - (ae-undocumented) Missing documentation for "saveIfAbsent".
 // src/stores/postgres-child-execution-queue.repository.ts:156:9 - (ae-undocumented) Missing documentation for "findByTenantIdAndExecutionId".
@@ -795,13 +797,13 @@ export interface SchemaVersions {
 // src/stores/postgres-pause-queries.repository.ts:34:9 - (ae-undocumented) Missing documentation for "findOpenAfter".
 // src/stores/postgres-pause-queries.repository.ts:39:9 - (ae-undocumented) Missing documentation for "findPageByTenantId".
 // src/stores/postgres-pause-queries.repository.ts:55:9 - (ae-undocumented) Missing documentation for "findClosedByResolvedAtBefore".
-// src/stores/postgres-pause-queries.repository.ts:60:3 - (ae-undocumented) Missing documentation for "deleteByResolvedAtBefore".
-// src/stores/postgres-pause-queries.repository.ts:64:9 - (ae-undocumented) Missing documentation for "claimNoticesDue".
-// src/stores/postgres-pause-queries.repository.ts:74:3 - (ae-undocumented) Missing documentation for "ackNotice".
-// src/stores/postgres-pause-queries.repository.ts:78:3 - (ae-undocumented) Missing documentation for "retryNotice".
-// src/stores/postgres-pause-queries.repository.ts:82:3 - (ae-undocumented) Missing documentation for "setAsideNotices".
-// src/stores/postgres-pause-queries.repository.ts:86:9 - (ae-undocumented) Missing documentation for "setAsideStaleNoticesBefore".
-// src/stores/postgres-pause-queries.repository.ts:96:3 - (ae-undocumented) Missing documentation for "countNotices".
+// src/stores/postgres-pause-queries.repository.ts:64:3 - (ae-undocumented) Missing documentation for "deleteByResolvedAtBefore".
+// src/stores/postgres-pause-queries.repository.ts:68:9 - (ae-undocumented) Missing documentation for "claimNoticesDue".
+// src/stores/postgres-pause-queries.repository.ts:78:3 - (ae-undocumented) Missing documentation for "ackNotice".
+// src/stores/postgres-pause-queries.repository.ts:82:3 - (ae-undocumented) Missing documentation for "retryNotice".
+// src/stores/postgres-pause-queries.repository.ts:86:3 - (ae-undocumented) Missing documentation for "setAsideNotices".
+// src/stores/postgres-pause-queries.repository.ts:90:9 - (ae-undocumented) Missing documentation for "setAsideStaleNoticesBefore".
+// src/stores/postgres-pause-queries.repository.ts:100:3 - (ae-undocumented) Missing documentation for "countNotices".
 // src/stores/postgres-paused-execution.repository.ts:35:3 - (ae-undocumented) Missing documentation for "markSentByTenantIdAndPauseId".
 // src/stores/postgres-paused-execution.repository.ts:43:3 - (ae-undocumented) Missing documentation for "resolveByTenantIdAndPauseId".
 // src/stores/postgres-paused-execution.repository.ts:59:3 - (ae-undocumented) Missing documentation for "decideByTenantIdAndPauseId".

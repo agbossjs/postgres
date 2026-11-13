@@ -6,6 +6,7 @@ import { buildStepIndex } from "./checkpoint-step-index.js";
 import { setupCheckpoints } from "./checkpoint-setup.js";
 import { inTransaction } from "../connection/transaction.js";
 import { checkedSchemaOf, quotedIdentifier, searchPathOptionOf } from "../connection/settings.js";
+import { connectTimeoutOf } from "../connection/connect-timeout.js";
 
 /**
  * What `migratePostgres` takes: the database, the schema, and a signal that stops the run between
@@ -80,6 +81,8 @@ export async function migrateWith(
   const pool = new pg.Pool({
     connectionString: options.url,
     max: 2,
+    // agbossjs/agboss#989: a database that never answers the start fails the run, never hangs it
+    connectionTimeoutMillis: connectTimeoutOf(options.url),
     ...(schema === undefined ? {} : { options: searchPathOptionOf(schema) }),
   });
   try {

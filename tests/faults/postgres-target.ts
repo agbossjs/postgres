@@ -2,7 +2,9 @@ import { fileURLToPath } from "node:url";
 import type { FaultSuiteOptions } from "@agboss/core/testing/faults";
 import { afterAll } from "vitest";
 import { migratePostgres } from "../../src/index.js";
-import { createSchema, dropSchema, onSchema } from "../support/database.js";
+import { endPodBackends, podApplicationName, urlNamed } from "../support/abandoned-backends.js";
+import { createSchema, onSchema, serverUrl } from "../support/database.js";
+import { teardownSchemas, teardownTimeout } from "../support/drop-schemas.js";
 import { FAULT_BUSINESS_ROWS_DDL } from "./postgres.fault-stores.js";
 
 /**
@@ -24,13 +26,19 @@ export const POSTGRES_FAULT_STORES = fileURLToPath(
   new URL("./postgres.fault-stores.ts", import.meta.url),
 );
 
+/** The most schemas a file makes (one per case of the core's suite), for the hook's bound. */
+const MOST_SCHEMAS = 64;
+
 /** The fault suite's options on fresh schemas of this file's own, on the real clock. */
 export function postgresFaultTarget(): FaultSuiteOptions {
   const schemas: string[] = [];
   let url = "";
+  // agbossjs/agboss#985: bounded parallel drops, a leak named; the backends of killed pods ended first
   afterAll(async () => {
-    for (const schema of schemas) await dropSchema(schema);
-  });
+    const ended = await endPodBackends(serverUrl(), schemas);
+    if (ended > 0) process.stderr.write(`ended ${String(ended)} connections the pods left open\n`);
+    await teardownSchemas(serverUrl(), schemas);
+  }, teardownTimeout(MOST_SCHEMAS));
   return {
     name: "PostgreSQL",
     storesModule: POSTGRES_FAULT_STORES,
@@ -50,7 +58,7 @@ export function postgresFaultTarget(): FaultSuiteOptions {
         schemas.push(created.schema);
         await migratePostgres({ url: created.url });
         await onSchema(created.url, FAULT_BUSINESS_ROWS_DDL);
-        url = created.url;
+        url = urlNamed(created.url, podApplicationName(created.schema));
       },
     },
   };
