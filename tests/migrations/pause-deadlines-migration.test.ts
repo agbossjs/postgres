@@ -90,7 +90,7 @@ describe("migration 0031: pause deadlines and notices", () => {
     );
     expect(page.pauses).toHaveLength(3);
     expect(await store.countNotices()).toEqual({ live: 0, dead: 0 });
-    expect(await store.findClosedByResolvedAtBefore(LATER, 10)).toEqual([
+    expect((await store.findClosedByResolvedAtBefore(LATER, 10)).pauses).toEqual([
       expect.objectContaining({ pauseId: "old-cancelled" }),
     ]);
   });

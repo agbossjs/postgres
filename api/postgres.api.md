@@ -557,7 +557,7 @@ export abstract class PostgresPauseQueryRepository extends PostgresPausedRunRepo
     // (undocumented)
     deleteByResolvedAtBefore(cutoff: Date): Promise<void>;
     // (undocumented)
-    findClosedByResolvedAtBefore(cutoff: Date, limit: number): Promise<readonly PauseRecord[]>;
+    findClosedByResolvedAtBefore(cutoff: Date, limit: number, after?: string): Promise<PausePage>;
     // (undocumented)
     findOpenAfter(after: string | undefined, limit: number): Promise<PausePage>;
     // (undocumented)
@@ -794,13 +794,13 @@ export interface SchemaVersions {
 // src/stores/postgres-pause-queries.repository.ts:34:9 - (ae-undocumented) Missing documentation for "findOpenAfter".
 // src/stores/postgres-pause-queries.repository.ts:39:9 - (ae-undocumented) Missing documentation for "findPageByTenantId".
 // src/stores/postgres-pause-queries.repository.ts:55:9 - (ae-undocumented) Missing documentation for "findClosedByResolvedAtBefore".
-// src/stores/postgres-pause-queries.repository.ts:60:3 - (ae-undocumented) Missing documentation for "deleteByResolvedAtBefore".
-// src/stores/postgres-pause-queries.repository.ts:64:9 - (ae-undocumented) Missing documentation for "claimNoticesDue".
-// src/stores/postgres-pause-queries.repository.ts:74:3 - (ae-undocumented) Missing documentation for "ackNotice".
-// src/stores/postgres-pause-queries.repository.ts:78:3 - (ae-undocumented) Missing documentation for "retryNotice".
-// src/stores/postgres-pause-queries.repository.ts:82:3 - (ae-undocumented) Missing documentation for "setAsideNotices".
-// src/stores/postgres-pause-queries.repository.ts:86:9 - (ae-undocumented) Missing documentation for "setAsideStaleNoticesBefore".
-// src/stores/postgres-pause-queries.repository.ts:96:3 - (ae-undocumented) Missing documentation for "countNotices".
+// src/stores/postgres-pause-queries.repository.ts:64:3 - (ae-undocumented) Missing documentation for "deleteByResolvedAtBefore".
+// src/stores/postgres-pause-queries.repository.ts:68:9 - (ae-undocumented) Missing documentation for "claimNoticesDue".
+// src/stores/postgres-pause-queries.repository.ts:78:3 - (ae-undocumented) Missing documentation for "ackNotice".
+// src/stores/postgres-pause-queries.repository.ts:82:3 - (ae-undocumented) Missing documentation for "retryNotice".
+// src/stores/postgres-pause-queries.repository.ts:86:3 - (ae-undocumented) Missing documentation for "setAsideNotices".
+// src/stores/postgres-pause-queries.repository.ts:90:9 - (ae-undocumented) Missing documentation for "setAsideStaleNoticesBefore".
+// src/stores/postgres-pause-queries.repository.ts:100:3 - (ae-undocumented) Missing documentation for "countNotices".
 // src/stores/postgres-paused-execution.repository.ts:35:3 - (ae-undocumented) Missing documentation for "markSentByTenantIdAndPauseId".
 // src/stores/postgres-paused-execution.repository.ts:43:3 - (ae-undocumented) Missing documentation for "resolveByTenantIdAndPauseId".
 // src/stores/postgres-paused-execution.repository.ts:59:3 - (ae-undocumented) Missing documentation for "decideByTenantIdAndPauseId".
