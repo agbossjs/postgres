@@ -215,6 +215,7 @@ export class PostgresCheckpointSaver extends BaseCheckpointSaver {
     getNextVersion(current: number | undefined): number;
     // (undocumented)
     getTuple(config: RunnableConfig): Promise<CheckpointTuple | undefined>;
+    latestByStep(config: RunnableConfig): Promise<CheckpointTuple | undefined>;
     // (undocumented)
     list(config: RunnableConfig, options?: CheckpointListOptions): AsyncGenerator<CheckpointTuple>;
     ping(): Promise<void>;
@@ -681,8 +682,8 @@ export interface SchemaVersions {
 // src/errors.ts:131:3 - (ae-undocumented) Missing documentation for "code".
 // src/errors.ts:132:3 - (ae-undocumented) Missing documentation for "code".
 // src/errors.ts:133:12 - (ae-undocumented) Missing documentation for "name".
-// src/migrations/migrate.ts:32:3 - (ae-undocumented) Missing documentation for "version".
-// src/migrations/migrate.ts:33:3 - (ae-undocumented) Missing documentation for "name".
+// src/migrations/migrate.ts:33:3 - (ae-undocumented) Missing documentation for "version".
+// src/migrations/migrate.ts:34:3 - (ae-undocumented) Missing documentation for "name".
 // src/stores/postgres-a2a-direct-message.repository.ts:74:3 - (ae-undocumented) Missing documentation for "store".
 // src/stores/postgres-a2a-direct-message.repository.ts:80:3 - (ae-undocumented) Missing documentation for "ping".
 // src/stores/postgres-a2a-direct-message.repository.ts:84:3 - (ae-undocumented) Missing documentation for "saveIfAbsent".
@@ -702,11 +703,11 @@ export interface SchemaVersions {
 // src/stores/postgres-a2a-task.repository.ts:121:9 - (ae-undocumented) Missing documentation for "compareAndSetStatus".
 // src/stores/postgres-a2a-task.repository.ts:146:3 - (ae-undocumented) Missing documentation for "list".
 // src/stores/postgres-a2a-task.repository.ts:150:9 - (ae-undocumented) Missing documentation for "deleteTerminalByStatusAtBefore".
-// src/stores/postgres-checkpoint-saver.ts:44:9 - (ae-undocumented) Missing documentation for "getTuple".
-// src/stores/postgres-checkpoint-saver.ts:48:10 - (ae-undocumented) Missing documentation for "list".
-// src/stores/postgres-checkpoint-saver.ts:55:9 - (ae-undocumented) Missing documentation for "put".
-// src/stores/postgres-checkpoint-saver.ts:65:9 - (ae-undocumented) Missing documentation for "putWrites".
-// src/stores/postgres-checkpoint-saver.ts:74:9 - (ae-undocumented) Missing documentation for "deleteThread".
+// src/stores/postgres-checkpoint-saver.ts:45:9 - (ae-undocumented) Missing documentation for "getTuple".
+// src/stores/postgres-checkpoint-saver.ts:71:10 - (ae-undocumented) Missing documentation for "list".
+// src/stores/postgres-checkpoint-saver.ts:78:9 - (ae-undocumented) Missing documentation for "put".
+// src/stores/postgres-checkpoint-saver.ts:88:9 - (ae-undocumented) Missing documentation for "putWrites".
+// src/stores/postgres-checkpoint-saver.ts:97:9 - (ae-undocumented) Missing documentation for "deleteThread".
 // src/stores/postgres-child-execution-queue.repository.ts:125:3 - (ae-undocumented) Missing documentation for "ping".
 // src/stores/postgres-child-execution-queue.repository.ts:129:9 - (ae-undocumented) Missing documentation for "saveIfAbsent".
 // src/stores/postgres-child-execution-queue.repository.ts:156:9 - (ae-undocumented) Missing documentation for "findByTenantIdAndExecutionId".

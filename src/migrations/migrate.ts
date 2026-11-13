@@ -8,6 +8,7 @@ import {
   isUndefinedTable,
   pendingMigrations,
 } from "./history.js";
+import { ensureStepIndex } from "./checkpoint-step-index.js";
 import { inTransaction } from "../connection/transaction.js";
 import { checkedSchemaOf, quotedIdentifier, searchPathOptionOf } from "../connection/settings.js";
 
@@ -169,6 +170,8 @@ async function migrateLocked(run: MigrationRun): Promise<MigrationReport> {
     applied.push({ version: file.version, name: file.name });
   }
   const checkpointMigrations = await setupCheckpoints(pool, client, schema);
+  // #962: after LangGraph's setup made the table; outside a transaction, CONCURRENTLY
+  await ensureStepIndex(client, schema);
   return { schema, applied, version: newestVersionOf(files), checkpointMigrations };
 }
 

@@ -294,6 +294,16 @@ applied 0021_pause_answers_by_tree (public)
 applied 6 LangGraph checkpoint migration(s)
 ```
 
+After LangGraph's tables, every run makes one index of its own on `checkpoints`
+(`checkpoints_latest_by_step`, agbossjs/agboss#962: a thread's newest checkpoint by step, which a
+thread whose host clock stepped back reads on every continuation) and does nothing when it is
+there. It is made `CREATE INDEX CONCURRENTLY`: a populated table keeps taking writes while it builds
+(it waits for transactions open at its start, and takes as long as the table is large). It is no
+numbered migration file because PostgreSQL refuses `CONCURRENTLY` inside a transaction (each file
+runs in one) and because `checkpoints` does not exist yet when the files run on a new database.
+A build that failed or was cancelled leaves an INVALID index; the next run drops and makes it again.
+Reads work without the index, slower.
+
 A second run prints `nothing to apply: public is at migration 21`. Exit codes: `0` done, `1` the
 migration failed (the reason on stderr, any password in it masked), `2` a usage error. The command
 reads `POSTGRES_URL`; `--url <url>` overrides it, but puts the URL — its password included — in the
