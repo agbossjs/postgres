@@ -34,7 +34,8 @@ PostgreSQL (`AGBOSS_POSTGRES_TEST_URL`) · api-extractor (`api/postgres.api.md`)
 
 - `src/connection/` — `PostgresConnection` (DI token, `deps: [ApplicationContext]`, or
   `new PostgresConnection({ url })` in a script/test), its settings from the environment
-  (`postgresUrl: Secret`, `postgresPoolSize`, `postgresSchema`, `postgresSchemaSetup`), the query helpers (rows
+  (`postgresUrl: Secret`, `postgresPoolSize`, `postgresSchema`, `postgresSchemaSetup`), the connect bound (agbossjs/agboss#989: the URL's `connect_timeout`, else
+  `DEFAULT_CONNECT_TIMEOUT`, 10 s), the query helpers (rows
   as `unknown`, validated by each store) and the transaction helper (a pool of one never deadlocks).
 - `src/migrations/` — `migrations/NNNN_<name>.sql` read and checksummed, the history table, the
   advisory-locked run (`migratePostgres`), the start check (`PostgresSchemaMissingError` /

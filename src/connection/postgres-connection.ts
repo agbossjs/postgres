@@ -9,6 +9,7 @@ import pg from "pg";
 import { z } from "zod";
 import { migrationsIn } from "../migrations/files.js";
 import { once } from "./once.js";
+import { connectTimeoutOf } from "./connect-timeout.js";
 import { PostgresListener, type PostgresListenerOptions } from "./listener.js";
 import { checkSchema } from "../migrations/schema-check.js";
 import {
@@ -75,6 +76,8 @@ export class PostgresConnection implements OnInit, OnDestroy {
     this.pool = new pg.Pool({
       connectionString: this.#settings.url,
       max: this.#settings.poolSize ?? DEFAULT_POOL_SIZE,
+      // agbossjs/agboss#989: a connection that never answers rejects the call, never hangs it
+      connectionTimeoutMillis: connectTimeoutOf(this.#settings.url),
       ...(schema === undefined ? {} : { options: searchPathOptionOf(schema) }),
     });
     // an idle connection that fails leaves the pool by itself; the next statement opens a new one,

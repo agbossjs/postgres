@@ -9,6 +9,7 @@
  * `migratePostgres({ url, schema })` — never the URL on a command line.
  */
 export { PostgresConnection } from "./connection/postgres-connection.js";
+export { DEFAULT_CONNECT_TIMEOUT } from "./connection/connect-timeout.js";
 export {
   DEFAULT_POOL_SIZE,
   DEFAULT_SCHEMA,
