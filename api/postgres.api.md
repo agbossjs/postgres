@@ -57,6 +57,7 @@ import { FencedEffectSettings } from '@agboss/core';
 import { FencedEffectWork } from '@agboss/core';
 import { IdGenerator } from '@agboss/core';
 import { LedgerEntry } from '@agboss/core';
+import { Logger } from '@agboss/core';
 import { MeshRequestKey } from '@agboss/core';
 import { MeshRequestRecord } from '@agboss/core';
 import { MeshRequestRepository } from '@agboss/core';
@@ -137,6 +138,9 @@ export const DEFAULT_POOL_SIZE = 10;
 
 // @public
 export const DEFAULT_SCHEMA = "public";
+
+// @public
+export const DEFAULT_WATCH_LIVENESS_SECONDS = 10;
 
 // @public
 export function migratePostgres(options: MigratePostgresOptions): Promise<MigrationReport>;
@@ -229,7 +233,7 @@ export class PostgresCheckpointSaver extends BaseCheckpointSaver {
 
 // @public
 export class PostgresChildExecutionQueueRepository extends ChildExecutionQueueRepository {
-    constructor(connection: PostgresConnection, clock: Clock, applicationContext: ApplicationContext);
+    constructor(connection: PostgresConnection, clock: Clock, applicationContext: ApplicationContext, logger: Logger);
     // (undocumented)
     claimFirstByStatusQueuedOrderByDepthDesc(): Promise<QueuedChildExecution | undefined>;
     // (undocumented)
@@ -263,6 +267,7 @@ export interface PostgresConnectionSettings {
     readonly schema?: string;
     readonly schemaSetup?: SchemaSetup;
     readonly url: string;
+    readonly watchLivenessSeconds?: number;
 }
 
 // @public
@@ -710,13 +715,13 @@ export interface SchemaVersions {
 // src/stores/postgres-checkpoint-saver.ts:55:9 - (ae-undocumented) Missing documentation for "put".
 // src/stores/postgres-checkpoint-saver.ts:65:9 - (ae-undocumented) Missing documentation for "putWrites".
 // src/stores/postgres-checkpoint-saver.ts:74:9 - (ae-undocumented) Missing documentation for "deleteThread".
-// src/stores/postgres-child-execution-queue.repository.ts:125:3 - (ae-undocumented) Missing documentation for "ping".
-// src/stores/postgres-child-execution-queue.repository.ts:129:9 - (ae-undocumented) Missing documentation for "saveIfAbsent".
-// src/stores/postgres-child-execution-queue.repository.ts:156:9 - (ae-undocumented) Missing documentation for "findByTenantIdAndExecutionId".
-// src/stores/postgres-child-execution-queue.repository.ts:168:9 - (ae-undocumented) Missing documentation for "claimFirstByStatusQueuedOrderByDepthDesc".
-// src/stores/postgres-child-execution-queue.repository.ts:176:9 - (ae-undocumented) Missing documentation for "completeByTenantIdAndExecutionId".
-// src/stores/postgres-child-execution-queue.repository.ts:197:9 - (ae-undocumented) Missing documentation for "deleteAllByTenantIdAndRootExecutionId".
-// src/stores/postgres-child-execution-queue.repository.ts:208:9 - (ae-undocumented) Missing documentation for "countByStatus".
+// src/stores/postgres-child-execution-queue.repository.ts:128:3 - (ae-undocumented) Missing documentation for "ping".
+// src/stores/postgres-child-execution-queue.repository.ts:132:9 - (ae-undocumented) Missing documentation for "saveIfAbsent".
+// src/stores/postgres-child-execution-queue.repository.ts:171:9 - (ae-undocumented) Missing documentation for "findByTenantIdAndExecutionId".
+// src/stores/postgres-child-execution-queue.repository.ts:183:9 - (ae-undocumented) Missing documentation for "claimFirstByStatusQueuedOrderByDepthDesc".
+// src/stores/postgres-child-execution-queue.repository.ts:191:9 - (ae-undocumented) Missing documentation for "completeByTenantIdAndExecutionId".
+// src/stores/postgres-child-execution-queue.repository.ts:212:9 - (ae-undocumented) Missing documentation for "deleteAllByTenantIdAndRootExecutionId".
+// src/stores/postgres-child-execution-queue.repository.ts:223:9 - (ae-undocumented) Missing documentation for "countByStatus".
 // src/stores/postgres-cost-ledger.repository.ts:127:3 - (ae-undocumented) Missing documentation for "ping".
 // src/stores/postgres-cost-ledger.repository.ts:131:9 - (ae-undocumented) Missing documentation for "findSpentByCounter".
 // src/stores/postgres-cost-ledger.repository.ts:141:9 - (ae-undocumented) Missing documentation for "saveAll".

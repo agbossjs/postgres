@@ -1,3 +1,4 @@
+import { RecordingLogger } from "../support/recording-logger.js";
 import { ExecutionRecordStatus, type QueuedChildExecution } from "@agboss/core";
 import { VirtualClock } from "@agboss/core/testing";
 import { describe, expect, it } from "vitest";
@@ -14,6 +15,7 @@ const queueOf = (instanceId: string): PostgresChildExecutionQueueRepository =>
     connectionTo(database.url(), 3),
     new VirtualClock(),
     new TestApplicationContext({}, instanceId),
+    new RecordingLogger(),
   );
 
 const child = (index: number): QueuedChildExecution => ({
@@ -67,6 +69,7 @@ describe("PostgresChildExecutionQueueRepository: FOR UPDATE SKIP LOCKED", () => 
       connection,
       new VirtualClock(),
       new TestApplicationContext({}, "instance-1"),
+      new RecordingLogger(),
     );
     // the queue after a batch of one (the frozen pod's job): analyzed at one row, then a batch
     await connection.pool.query("DELETE FROM agboss_child_execution_queue");
@@ -93,6 +96,7 @@ describe("PostgresChildExecutionQueueRepository: FOR UPDATE SKIP LOCKED", () => 
       connectionTo("postgres://postgres:pw@127.0.0.1:1/postgres"),
       new VirtualClock(),
       new TestApplicationContext({}),
+      new RecordingLogger(),
     );
 
     await expect(queue.claimFirstByStatusQueuedOrderByDepthDesc()).rejects.toThrow();

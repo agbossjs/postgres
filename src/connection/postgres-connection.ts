@@ -15,6 +15,7 @@ import { checkSchema } from "../migrations/schema-check.js";
 import {
   checkedSchemaOf,
   DEFAULT_POOL_SIZE,
+  DEFAULT_WATCH_LIVENESS_SECONDS,
   searchPathOptionOf,
   settingsOfEnvironment,
   type PostgresConnectionSettings,
@@ -23,8 +24,8 @@ import { SchemaSetup } from "@agboss/core/stores";
 
 const SchemaRow = z.object({ schema: z.string().nullable() });
 
-/** Each connection's URL, for `listenerOf` — the package's own plumbing, not the class's surface. */
-const URLS = new WeakMap<object, string>();
+/** Each connection's settings, for `listenerOf` — the package's own plumbing, not the class's surface. */
+const SETTINGS = new WeakMap<object, PostgresConnectionSettings>();
 
 /**
  * A `LISTEN` on `channel` over a connection of its own, outside `connection`'s pool
@@ -33,11 +34,12 @@ const URLS = new WeakMap<object, string>();
  */
 export function listenerOf(
   connection: PostgresConnection,
-  options: Omit<PostgresListenerOptions, "url">,
+  options: Omit<PostgresListenerOptions, "url" | "livenessSeconds">,
 ): Promise<PostgresListener> {
-  const url = URLS.get(connection);
-  if (url === undefined) throw new Error("a PostgresConnection made outside its constructor");
-  return PostgresListener.open({ ...options, url });
+  const settings = SETTINGS.get(connection);
+  if (settings === undefined) throw new Error("a PostgresConnection made outside its constructor");
+  const livenessSeconds = settings.watchLivenessSeconds ?? DEFAULT_WATCH_LIVENESS_SECONDS;
+  return PostgresListener.open({ ...options, url: settings.url, livenessSeconds });
 }
 
 /**
@@ -58,6 +60,7 @@ export function listenerOf(
   environmentFields: {
     postgresUrl: EnvironmentField.secret(),
     postgresPoolSize: EnvironmentField.integer({ optional: true }),
+    postgresWatchLivenessSeconds: EnvironmentField.integer({ optional: true }),
     postgresSchema: EnvironmentField.text({ optional: true }),
     postgresSchemaSetup: EnvironmentField.text({ optional: true }),
   },
@@ -71,7 +74,7 @@ export class PostgresConnection implements OnInit, OnDestroy {
   constructor(source: ApplicationContext | PostgresConnectionSettings) {
     this.#settings =
       source instanceof ApplicationContext ? settingsOfEnvironment(source.environment) : source;
-    URLS.set(this, this.#settings.url);
+    SETTINGS.set(this, this.#settings);
     const schema = checkedSchemaOf(this.#settings.schema);
     this.pool = new pg.Pool({
       connectionString: this.#settings.url,
