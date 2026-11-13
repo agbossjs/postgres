@@ -8,7 +8,7 @@ issue: 962
 with the greatest `metadata.step`, ties by `checkpoint_id` by code unit (`COLLATE "C"`), a missing
 or non-number step counting as -2 — reads the id from a new expression index on `checkpoints`
 (`checkpoints_latest_by_step`) and the checkpoint by LangGraph's own read. `agboss-postgres migrate`
-(and `migratePostgres`) makes the index after LangGraph's setup, `CREATE INDEX CONCURRENTLY`, safe
-on a populated table and on every re-run (an INVALID leftover is made again); see "Migrations" in
-the README. On 10 000 checkpoints a read went from 38 ms (list and sort) to 1.7 ms. The core's
+(and `migratePostgres`) makes the index after LangGraph's setup with a plain `CREATE INDEX` (it holds
+writes to `checkpoints` while it builds; the README gives the `CONCURRENTLY` statement to run first
+on a table too large for that, and why the run cannot use it), idempotent on every re-run. On 10 000 checkpoints a read went from 38 ms (list and sort) to 1.7 ms. The core's
 `StoreCapability.LatestByStep` conformance case joins `store-conformance` at the next core repin.

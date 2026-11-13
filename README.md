@@ -297,12 +297,22 @@ applied 6 LangGraph checkpoint migration(s)
 After LangGraph's tables, every run makes one index of its own on `checkpoints`
 (`checkpoints_latest_by_step`, agbossjs/agboss#962: a thread's newest checkpoint by step, which a
 thread whose host clock stepped back reads on every continuation) and does nothing when it is
-there. It is made `CREATE INDEX CONCURRENTLY`: a populated table keeps taking writes while it builds
-(it waits for transactions open at its start, and takes as long as the table is large). It is no
-numbered migration file because PostgreSQL refuses `CONCURRENTLY` inside a transaction (each file
-runs in one) and because `checkpoints` does not exist yet when the files run on a new database.
-A build that failed or was cancelled leaves an INVALID index; the next run drops and makes it again.
-Reads work without the index, slower.
+there. It is a plain `CREATE INDEX`, which holds writes to `checkpoints` while it builds (seconds
+per million rows); `CREATE INDEX CONCURRENTLY` is not used by the run because it waits for every
+other transaction of the database — a second migration run waiting for the lock is one, and the two
+deadlock — and PostgreSQL refuses it inside a migration's transaction. On a `checkpoints` table too
+large to stop writes for, make the index first, outside any transaction (`desk` is your schema); the
+run then finds it:
+
+```sql
+CREATE INDEX CONCURRENTLY IF NOT EXISTS checkpoints_latest_by_step ON desk.checkpoints
+  (thread_id, checkpoint_ns,
+   (CASE WHEN jsonb_typeof(metadata->'step') = 'number' THEN (metadata->>'step')::numeric ELSE -2 END) DESC,
+   checkpoint_id COLLATE "C" DESC);
+```
+
+A build that failed leaves an INVALID index (`\d desk.checkpoints` shows it): the next run drops and
+makes it again. Reads work without the index, slower.
 
 A second run prints `nothing to apply: public is at migration 21`. Exit codes: `0` done, `1` the
 migration failed (the reason on stderr, any password in it masked), `2` a usage error. The command

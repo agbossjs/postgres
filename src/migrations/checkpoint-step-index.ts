@@ -8,12 +8,17 @@ import { quotedIdentifier } from "../connection/settings.js";
  *
  * LangGraph's `PostgresSaver.setup()` makes the `checkpoints` table, after this package's numbered
  * migrations have run: so the index is made by the runner right after it, each run, and a run that
- * finds it does nothing. It is made `CONCURRENTLY` — a populated table keeps taking writes while it
- * builds — which PostgreSQL refuses inside a transaction, so it is no numbered migration file (each
- * runs in one). `CONCURRENTLY` can leave an INVALID index behind when it fails or is cancelled:
- * the next run drops that one and makes it again. The expression is IMMUTABLE (`jsonb_typeof`, `->`,
- * `->>`, a text cast to `numeric`); `numeric` rather than `bigint`, so a step that is not an
- * integer cannot make an INSERT fail inside the index.
+ * finds it does nothing; it is no numbered migration file (on a new database the table is not there
+ * when they run). It is made with a plain `CREATE INDEX`, which holds writes to `checkpoints` while
+ * it builds: `CREATE INDEX CONCURRENTLY` would not hold them, but it waits for every other
+ * transaction of the database to end — a concurrent run waiting for the migration lock is one — and
+ * two runs deadlock (PostgreSQL reports it); each numbered file also runs in a transaction, where
+ * `CONCURRENTLY` is refused. A table too large to stop writes for the build gets the index
+ * beforehand, by hand, with the statement in the README (`CONCURRENTLY`, the same name and
+ * columns): the run finds it and does nothing; an INVALID one a failed `CONCURRENTLY` left is
+ * dropped and made again. The expression is IMMUTABLE (`jsonb_typeof`, `->`, `->>`, a text cast to
+ * `numeric`); `numeric` rather than `bigint`, so a step that is not an integer cannot make an INSERT
+ * fail inside the index.
  */
 export const STEP_INDEX_NAME = "checkpoints_latest_by_step";
 
@@ -30,8 +35,7 @@ export const latestByStepSql = (schema: string): string =>
    ORDER BY ${STEP_EXPRESSION} DESC, checkpoint_id COLLATE "C" DESC LIMIT 1`;
 
 /**
- * Makes the index in `schema`, outside any transaction (`client` is in autocommit); an INVALID one
- * left by a failed earlier build is dropped first. Called once LangGraph's setup made the table.
+ * Makes the index in `schema`; an INVALID one left by a failed `CONCURRENTLY` build is dropped first. Called once LangGraph's setup made the table.
  */
 export async function ensureStepIndex(client: pg.PoolClient, schema: string): Promise<void> {
   const table = `${quotedIdentifier(schema)}.checkpoints`;
@@ -42,10 +46,8 @@ export async function ensureStepIndex(client: pg.PoolClient, schema: string): Pr
     [STEP_INDEX_NAME, quotedIdentifier(schema)],
   );
   if (found.rows[0]?.valid === false)
-    await client.query(
-      `DROP INDEX CONCURRENTLY IF EXISTS ${quotedIdentifier(schema)}.${STEP_INDEX_NAME}`,
-    );
+    await client.query(`DROP INDEX IF EXISTS ${quotedIdentifier(schema)}.${STEP_INDEX_NAME}`);
   await client.query(
-    `CREATE INDEX CONCURRENTLY IF NOT EXISTS ${STEP_INDEX_NAME} ON ${table} ${STEP_INDEX_COLUMNS}`,
+    `CREATE INDEX IF NOT EXISTS ${STEP_INDEX_NAME} ON ${table} ${STEP_INDEX_COLUMNS}`,
   );
 }

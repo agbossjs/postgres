@@ -1,7 +1,7 @@
 import { emptyCheckpoint, type CheckpointMetadata } from "@langchain/langgraph-checkpoint";
 import { describe, expect, it, vi } from "vitest";
 import { migratePostgres, PostgresCheckpointSaver } from "../../src/index.js";
-import { STEP_INDEX_NAME } from "../../src/migrations/checkpoint-step-index.js";
+import { STEP_INDEX_COLUMNS, STEP_INDEX_NAME } from "../../src/migrations/checkpoint-step-index.js";
 import { createSchema, dropSchema, onSchema, testDatabase } from "../support/database.js";
 import { connectionTo } from "../support/stores.js";
 
@@ -49,6 +49,25 @@ const populate = (url: string, thread: string, count: number) =>
     [thread, count],
   );
 
+/** A step of a random history: now and then missing or fractional. */
+function stepAt(next: () => number): number | undefined {
+  if (next() < 0.15) return undefined;
+  return next() < 0.15 ? 1.5 : Math.floor(next() * 6) - 1;
+}
+
+/** What the full scan answers: the newest by `(step, id by code unit)` of a listed namespace. */
+async function scanned(saver: PostgresCheckpointSaver, place: ReturnType<typeof at>) {
+  const listed = [];
+  for await (const tuple of saver.list(place)) listed.push(tuple);
+  const stepOf = (metadata: CheckpointMetadata | undefined): number =>
+    typeof metadata?.step === "number" ? metadata.step : -2;
+  const before = (a: string, b: string): number => (a < b ? 1 : a > b ? -1 : 0);
+  listed.sort(
+    (a, b) => stepOf(b.metadata) - stepOf(a.metadata) || before(a.checkpoint.id, b.checkpoint.id),
+  );
+  return listed[0]?.checkpoint.id;
+}
+
 describe("agbossjs/agboss#962: PostgresCheckpointSaver.latestByStep", () => {
   it("AC1: 10 000 checkpoints — two statements, the first an index walk with no sort and no scan", async () => {
     await populate(database.url(), "busy", 10_000);
@@ -60,9 +79,7 @@ describe("agbossjs/agboss#962: PostgresCheckpointSaver.latestByStep", () => {
     const latest = await saver.latestByStep(at("busy"));
 
     expect(latest?.config.configurable?.checkpoint_id).toBe("id-009999");
-    const statements = query.mock.calls.map(([text]) =>
-      String(typeof text === "string" ? text : "").trim(),
-    );
+    const statements = query.mock.calls.map(([text]) => (typeof text === "string" ? text : ""));
     expect(statements).toHaveLength(2);
     expect(statements[0]).toMatch(/LIMIT 1/);
     const { rows } = await onSchema(
@@ -83,22 +100,10 @@ describe("agbossjs/agboss#962: PostgresCheckpointSaver.latestByStep", () => {
     let seed = 962;
     const next = (): number => (seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0) / 2 ** 32;
     for (let round = 0; round < 40; round += 1) {
-      const where = places[Math.floor(next() * places.length)] ?? places[0];
-      const step = next() < 0.15 ? undefined : next() < 0.15 ? 1.5 : Math.floor(next() * 6) - 1;
-      if (where !== undefined)
-        await put(saver, where, ids[Math.floor(next() * ids.length)] ?? "a", step);
-      for (const place of places) {
-        const listed = [];
-        for await (const tuple of saver.list(place)) listed.push(tuple);
-        const stepOf = (metadata: CheckpointMetadata | undefined): number =>
-          typeof metadata?.step === "number" ? metadata.step : -2;
-        listed.sort(
-          (a, b) =>
-            stepOf(b.metadata) - stepOf(a.metadata) ||
-            (a.checkpoint.id < b.checkpoint.id ? 1 : a.checkpoint.id > b.checkpoint.id ? -1 : 0),
-        );
-        expect((await saver.latestByStep(place))?.checkpoint.id).toBe(listed[0]?.checkpoint.id);
-      }
+      const where = places[Math.floor(next() * places.length)] ?? at("random");
+      await put(saver, where, ids[Math.floor(next() * ids.length)] ?? "a", stepAt(next));
+      for (const place of places)
+        expect((await saver.latestByStep(place))?.checkpoint.id).toBe(await scanned(saver, place));
     }
     expect(await saver.latestByStep(at("nobody"))).toBeUndefined();
   });
@@ -163,6 +168,18 @@ describe("agbossjs/agboss#962: the index migration", () => {
 
       await migratePostgres({ url });
       expect(await state()).toBe(true);
+      // the README's way for a table too large to hold: built CONCURRENTLY first, the run finds it
+      await onSchema(url, `DROP INDEX ${STEP_INDEX_NAME}`);
+      await onSchema(
+        url,
+        `CREATE INDEX CONCURRENTLY ${STEP_INDEX_NAME} ON checkpoints ${STEP_INDEX_COLUMNS}`,
+      );
+      const built = await onSchema(url, `SELECT '${STEP_INDEX_NAME}'::regclass::oid AS oid`);
+      await migratePostgres({ url });
+      expect(await state()).toBe(true);
+      expect(await onSchema(url, `SELECT '${STEP_INDEX_NAME}'::regclass::oid AS oid`)).toEqual(
+        built,
+      );
       const saver = new PostgresCheckpointSaver(connectionTo(url));
       expect((await saver.latestByStep(at("old")))?.config.configurable?.checkpoint_id).toBe(
         "id-009999",
