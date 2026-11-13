@@ -63,11 +63,10 @@ export function migratePostgres(options: MigratePostgresOptions): Promise<Migrat
 }
 
 /**
- * `migratePostgres` with the migrations given (a test's folder). After them, once the migration
- * lock is released, the checkpoint index is built (`buildStepIndex`, agbossjs/agboss#962): awaited
- * by default — a command is done when its index is —, or `indexInBackground` (a start that
- * migrates: the pod serves while it builds; a failed build is only a slower read, the next run
- * builds it).
+ * `migratePostgres` with the migrations given (a test's folder). After them, the migration lock
+ * released, the checkpoint index is built (`buildStepIndex`, agbossjs/agboss#962): awaited — a
+ * command is done when its index is —, or `indexInBackground` (a start that migrates: the pod
+ * serves while it builds; a failed build is a slower read, the next run builds it).
  */
 export async function migrateWith(
   options: MigratePostgresOptions,
