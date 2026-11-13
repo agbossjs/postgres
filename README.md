@@ -255,6 +255,15 @@ A contract without `postgresUrl` fails the application's assembly, before anythi
 AppEnvironment (read by PostgresConnection)`. A value of the wrong kind (a plain string for the URL,
 a pool size of 0) fails the start with `PostgresSettingsError`, naming the field, never the URL.
 
+**No connection waits forever** (agbossjs/agboss#989): a statement waits for its connection — a free
+one of the pool, or a new one up to the server's first answer — at most the URL's `connect_timeout`
+(libpq's parameter, whole seconds: `postgres://…/db?connect_timeout=5`), else
+`DEFAULT_CONNECT_TIMEOUT` (10 s); then it rejects with `pg`'s connection timeout. libpq's `0` ("wait
+forever") keeps the default. A peer that takes the socket and never answers — a black-holed
+network, a proxy that drops the forward — fails the call instead of hanging it; the same bound holds
+for the child queue's `LISTEN` connection and for `migratePostgres`. A statement's own run time is
+not bounded yet (agbossjs/agboss#928).
+
 **One schema per application** (agbossjs/agboss#891): `postgresSchema` (or
 `PostgresConnectionSettings.schema`) puts every connection of the pool in that schema
 (`options: -c search_path="<schema>"`), so two applications share one database without seeing each
@@ -432,7 +441,10 @@ the tree over, so a pod never moves a tree whose lease it could not renew.
 
 ## Tests
 
-The tests need a PostgreSQL; without `AGBOSS_POSTGRES_TEST_URL` they fail, never skip:
+The tests need a PostgreSQL; without `AGBOSS_POSTGRES_TEST_URL` they fail, never skip. The global
+setup pins a host name (`localhost`) to the address the server answers on (agbossjs/agboss#989):
+Docker publishes a port on `127.0.0.1` only, and a client's attempt on `::1` with nothing listening
+there could be given that port as its own source and connect to itself.
 
 ```sh
 docker run -d --name agboss-postgres -e POSTGRES_PASSWORD=pw -p 5432:5432 postgres:16

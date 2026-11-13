@@ -130,6 +130,9 @@ export interface ChangedMigration {
 }
 
 // @public
+export const DEFAULT_CONNECT_TIMEOUT = 10000;
+
+// @public
 export const DEFAULT_POOL_SIZE = 10;
 
 // @public
@@ -681,8 +684,8 @@ export interface SchemaVersions {
 // src/errors.ts:131:3 - (ae-undocumented) Missing documentation for "code".
 // src/errors.ts:132:3 - (ae-undocumented) Missing documentation for "code".
 // src/errors.ts:133:12 - (ae-undocumented) Missing documentation for "name".
-// src/migrations/migrate.ts:32:3 - (ae-undocumented) Missing documentation for "version".
-// src/migrations/migrate.ts:33:3 - (ae-undocumented) Missing documentation for "name".
+// src/migrations/migrate.ts:33:3 - (ae-undocumented) Missing documentation for "version".
+// src/migrations/migrate.ts:34:3 - (ae-undocumented) Missing documentation for "name".
 // src/stores/postgres-a2a-direct-message.repository.ts:74:3 - (ae-undocumented) Missing documentation for "store".
 // src/stores/postgres-a2a-direct-message.repository.ts:80:3 - (ae-undocumented) Missing documentation for "ping".
 // src/stores/postgres-a2a-direct-message.repository.ts:84:3 - (ae-undocumented) Missing documentation for "saveIfAbsent".

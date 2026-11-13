@@ -1,6 +1,7 @@
 import type { Clock } from "@agboss/core";
 import { seconds } from "@agboss/core/units";
 import pg from "pg";
+import { connectTimeoutOf } from "./connect-timeout.js";
 
 /**
  * A `LISTEN` on one channel of the database (agbossjs/agboss#777): a connection of its own, outside
@@ -52,7 +53,12 @@ export class PostgresListener {
 
   async #connect(): Promise<void> {
     const { url, channel, payload, onNotify } = this.options;
-    const client = new pg.Client({ connectionString: url, keepAlive: true });
+    const client = new pg.Client({
+      connectionString: url,
+      keepAlive: true,
+      // agbossjs/agboss#989: a start never answered fails the attempt (a reconnect tries again)
+      connectionTimeoutMillis: connectTimeoutOf(url),
+    });
     client.on("notification", (message) => {
       if (message.channel === channel && message.payload === payload) onNotify();
     });
