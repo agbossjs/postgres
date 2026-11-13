@@ -2,6 +2,7 @@ import { VirtualClock } from "@agboss/core/testing";
 import { describe, expect, it } from "vitest";
 import { PostgresPausedExecutionRepository } from "../../src/index.js";
 import { onSchema, testDatabase } from "../support/database.js";
+import { oldPausedRun } from "./pause-names-0.1.0.fixtures.js";
 import { connectionTo } from "../support/stores.js";
 
 /**
@@ -17,14 +18,14 @@ const pausesOn = (): PostgresPausedExecutionRepository =>
   new PostgresPausedExecutionRepository(connectionTo(database.url()), new VirtualClock());
 
 const run = {
-  status: "paused",
+  ...oldPausedRun,
   threadId: "thread-1",
   tenantId: "acme",
   runId: "run-1",
   turnId: "turn-1",
-  budgetUsd: 1,
+  ternId: undefined,
   startInput: { ssn: SECRET },
-  data: { note: SECRET },
+  data: { ...Object(oldPausedRun.data), note: SECRET },
 };
 
 /** The thread's stored run as `stored` (a document no store write makes). */
@@ -57,6 +58,20 @@ describe("agbossjs/agboss#906 D4: PostgreSQL paused runs", () => {
 
     expect(found?.run).toMatchObject({ turnId: "turn-1", runId: "run-1", tenantId: "acme" });
     expect(found?.run).not.toHaveProperty("ternId");
+  });
+
+  it("a run written whole by 0.1.0 (a typed literal against the published declarations) is read: its pending pause has the new names", async () => {
+    await insertRun({ ...oldPausedRun, threadId: "thread-1", runId: "run-1", tenantId: "acme" });
+
+    const found = await pausesOn().findByTenantIdAndThreadId("acme", "thread-1");
+
+    expect(found?.run).toMatchObject({ turnId: "turn-1", cost: { unknownCalls: 0 } });
+    expect(found?.run.pending[0]).toMatchObject({
+      kind: "approval",
+      step: "clerk-agent",
+      answerer: "channel",
+      answeredBy: "channel",
+    });
   });
 
   it("a run without any record id is refused by ids and field: the message carries no input value", async () => {
