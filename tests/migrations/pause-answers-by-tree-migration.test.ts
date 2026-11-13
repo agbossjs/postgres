@@ -1,3 +1,4 @@
+import { pauseAnswerRecordOfStored } from "@agboss/core/stores";
 import {
   ComponentKind,
   PauseAnswerer,
@@ -21,40 +22,41 @@ import { recordsOn } from "../support/stores.js";
 
 const STEP_KEY = "old-child-7:child-refund-agent:1:call-1";
 
-const answerOf = (responder: string, askedAt: string): PauseAnswerRecord => ({
-  pauseId: undefined,
-  executionId: "old-child-7",
-  step: {
-    component: {
-      name: "child-refund-agent",
-      kind: ComponentKind.Agent,
-      promptHash: undefined,
-      schemaHash: undefined,
+const answerOf = (responder: string, askedAt: string): PauseAnswerRecord =>
+  pauseAnswerRecordOfStored({
+    pauseId: undefined,
+    executionId: "old-child-7",
+    step: {
+      component: {
+        name: "child-refund-agent",
+        kind: ComponentKind.Agent,
+        promptHash: undefined,
+        schemaHash: undefined,
+      },
+      nodeId: "child-refund-agent",
+      visitNumber: 1,
+      idempotencyKey: STEP_KEY,
+      callId: "call-1",
+      itemIndex: undefined,
+      copyNumber: 1,
+      toolLoopIteration: 1,
+      validationAttempts: 0,
     },
-    nodeId: "child-refund-agent",
-    visitNumber: 1,
-    idempotencyKey: STEP_KEY,
-    callId: "call-1",
-    itemIndex: undefined,
-    copyNumber: 1,
-    toolLoopIteration: 1,
-    validationAttempts: 0,
-  },
-  role: "finance-desk-refund-approval-channel",
-  answeredBy: PauseAnswerer.Channel,
-  responder,
-  resolution: PauseResolution.Replied,
-  askedAt,
-  resolvedAt: askedAt,
-  decision: { approved: true },
-});
+    role: "finance-desk-refund-approval-channel",
+    answerer: PauseAnswerer.Channel,
+    answeredBy: responder,
+    resolution: PauseResolution.Replied,
+    askedAt,
+    resolvedAt: askedAt,
+    decision: { approved: true },
+  });
 
 const respondersOf = async (
   records: ReturnType<typeof recordsOn>,
   root: string,
 ): Promise<unknown[]> =>
   (await records.findPauseAnswersByTenantIdAndRootExecutionId("acme", root)).map(
-    (answer) => answer.responder,
+    (answer) => answer.answeredBy,
   );
 
 describe("migration 0021 keeps one pause answer per pause of a tree", () => {

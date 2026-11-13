@@ -1,4 +1,8 @@
 import { ExecutionHistoryStatus, type ExecutionHistoryRecord } from "@agboss/core";
+import {
+  executionHistoryRecordOfStored,
+  type StoredHistoryRecord as StoredHistory,
+} from "@agboss/core/stores";
 import { z } from "zod";
 import { unescapedJson } from "../nul-escape.js";
 
@@ -26,6 +30,11 @@ const StoredHistoryRecord = z.looseObject({
     execution: z.record(text, z.unknown()),
   }),
 });
+
+/** What the check below established, as the type the core's normaliser takes (no cast at a call). */
+const CheckedHistory = z.custom<StoredHistory>(
+  (value) => StoredHistoryRecord.safeParse(value).success,
+);
 
 const HistoryRow = z.object({ record: z.unknown() });
 
@@ -55,5 +64,5 @@ export function historyRecordOf(row: unknown): ExecutionHistoryRecord {
       { cause: stored.error },
     );
   }
-  return record as ExecutionHistoryRecord;
+  return executionHistoryRecordOfStored(CheckedHistory.parse(record));
 }

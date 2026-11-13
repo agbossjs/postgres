@@ -36,7 +36,7 @@ import { emit } from "./process-log.js";
   name: "ship-approval-channel",
   description: "An operator approves shipping a job",
   approves: JobDto,
-  answeredBy: PauseAnswerer.ThreadOwner,
+  answerer: PauseAnswerer.ThreadOwner,
 })
 export abstract class ShipApprovalChannel extends ChannelOf<ShipApprovalChannel> {}
 

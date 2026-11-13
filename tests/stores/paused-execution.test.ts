@@ -35,7 +35,7 @@ const pauseOf = (pauseId: string, stepKey: string): PauseRecord => ({
   kind: PauseKind.Approval,
   step: "clerk-agent",
   channel: "refund-approval-channel",
-  answeredBy: PauseAnswerer.Channel,
+  answerer: PauseAnswerer.Channel,
   ask: { callId: "call-1", tool: "charge", arguments: { text: "10 USD" }, summary: "charge" },
   status: PauseStatus.Pending,
   isSent: false,
@@ -67,7 +67,7 @@ describe("PostgresPausedExecutionRepository", () => {
     await pauses.resolveByTenantIdAndPauseId(
       "default",
       "p-question",
-      { decision: { verdict: "yes" }, answerer: undefined },
+      { decision: { verdict: "yes" }, answeredBy: undefined },
       NINE,
     );
 
@@ -101,7 +101,7 @@ describe("PostgresPausedExecutionRepository", () => {
     await pauses.resolveByTenantIdAndPauseId(
       "default",
       "p-resolved",
-      { decision: 1, answerer: "a" },
+      { decision: 1, answeredBy: "a" },
       NINE,
     );
 
@@ -111,7 +111,7 @@ describe("PostgresPausedExecutionRepository", () => {
     expect(await pauses.findByTenantIdAndPauseId("default", "p-resolved")).toMatchObject({
       status: PauseStatus.Taken,
       resolution: PauseResolution.Replied,
-      answer: { decision: 1, answerer: "a" },
+      answer: { decision: 1, answeredBy: "a" },
       resolvedAt: NINE.toISOString(),
     });
     expect((await pauses.findByTenantIdAndPauseId("default", "p-pending"))?.status).toBe(
@@ -130,7 +130,7 @@ describe("PostgresPausedExecutionRepository", () => {
     await pauses.resolveByTenantIdAndPauseId(
       "default",
       "p-swept",
-      { decision: 1, answerer: "a" },
+      { decision: 1, answeredBy: "a" },
       NINE,
     );
     await pauses.markTakenByTenantIdAndPauseId("default", "p-swept");
