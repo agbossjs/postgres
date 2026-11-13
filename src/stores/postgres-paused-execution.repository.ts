@@ -16,6 +16,8 @@ import { pausedRunJsonOf, pausedRunOfJson, pauseRecordOf } from "./framework-jso
 import { PauseRows } from "./paused/pause-rows.js";
 
 const PausedRow = z.object({
+  thread_id: z.string(),
+  run_id: z.string(),
   run: z.string(),
   workflow_version: z.string(),
   config_hash: z.string(),
@@ -52,14 +54,14 @@ export class PostgresPausedExecutionRepository extends PausedExecutionRepository
   ): Promise<PausedExecution | undefined> {
     const row = await firstRowOf(
       this.connection.pool,
-      `SELECT run, workflow_version, config_hash FROM agboss_paused_executions
+      `SELECT thread_id, run_id, run, workflow_version, config_hash FROM agboss_paused_executions
        WHERE tenant_id = $1 AND thread_id = $2`,
       [tenantId, threadId],
     );
     if (row === undefined) return undefined;
     const stored = PausedRow.parse(row);
     return {
-      run: pausedRunOfJson(stored.run),
+      run: pausedRunOfJson(stored.run, { threadId: stored.thread_id, runId: stored.run_id }),
       workflowVersion: stored.workflow_version,
       configHash: stored.config_hash,
     };
