@@ -1,4 +1,4 @@
-import { pauseAnswerRecordOfStored } from "@agboss/core/stores";
+import { pauseAnswerRecordOfValue } from "@agboss/core/stores";
 import {
   ComponentKind,
   PauseAnswerer,
@@ -23,7 +23,7 @@ import { recordsOn } from "../support/stores.js";
 const STEP_KEY = "old-child-7:child-refund-agent:1:call-1";
 
 const answerOf = (responder: string, askedAt: string): PauseAnswerRecord =>
-  pauseAnswerRecordOfStored({
+  pauseAnswerRecordOfValue({
     pauseId: undefined,
     executionId: "old-child-7",
     step: {
