@@ -89,9 +89,15 @@ describe("PostgresPausedExecutionRepository", () => {
       `UPDATE agboss_pauses SET record = record #- '{ask,callId}' WHERE pause_id = 'p-no-call'`,
     );
 
-    await expect(pauses.findByTenantIdAndPauseId("default", "p-no-call")).rejects.toThrow(
-      /a stored pause is not readable/,
+    const error: unknown = await pauses.findByTenantIdAndPauseId("default", "p-no-call").then(
+      () => undefined,
+      (thrown: unknown) => thrown,
     );
+
+    const message = error instanceof Error ? error.message : "";
+    // #906: ids and field paths only, as for a paused run — the tenant is not one of them
+    expect(message).toMatch(/a stored pause is not readable \(pauseId p-no-call, /);
+    expect(message).not.toContain("tenantId");
   });
 
   it("markTaken turns a Resolved pause to Taken, and nothing else", async () => {

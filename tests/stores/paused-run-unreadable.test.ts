@@ -28,12 +28,12 @@ const run = {
 };
 
 /** The thread's stored run as `stored` (a document no store write makes). */
-async function insertRun(stored: object): Promise<void> {
+async function insertRun(stored: object | string): Promise<void> {
   await onSchema(database.url(), "DELETE FROM agboss_paused_executions");
   await onSchema(
     database.url(),
     `INSERT INTO agboss_paused_executions VALUES ('acme', 'thread-1', 'run-1', $1, '1.0.0', 'hash', now())`,
-    [JSON.stringify(stored)],
+    [typeof stored === "string" ? stored : JSON.stringify(stored)],
   );
 }
 
@@ -82,5 +82,23 @@ describe("agbossjs/agboss#906 D4: PostgreSQL paused runs", () => {
     expect(error.message).not.toContain(SECRET);
     expect(error.cause).toBeInstanceOf(Error);
     expect((error.cause as Error).message).not.toContain(SECRET);
+  });
+
+  it("a stored text that is not JSON is refused by ids: no text, no parser message, no cause", async () => {
+    // one character of a real stored run edited: the secret loses its quotes
+    await insertRun(JSON.stringify(run).replace(`"${SECRET}"`, SECRET));
+
+    const error = await failureOf();
+
+    expect(error.message).toContain("a stored paused run is not readable");
+    expect(error.message).toContain("threadId thread-1");
+    expect(error.message).toContain("runId run-1");
+    expect(error).not.toBeInstanceOf(SyntaxError);
+    for (let link: unknown = error; link instanceof Error; link = link.cause) {
+      expect(link.message).not.toContain(SECRET);
+      expect(link.message).not.toContain("startInput");
+      expect(link.message).not.toContain("JSON.parse");
+      expect(link).not.toBeInstanceOf(SyntaxError);
+    }
   });
 });
