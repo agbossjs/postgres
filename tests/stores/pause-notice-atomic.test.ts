@@ -3,7 +3,7 @@ import { NO_RECIPIENTS } from "@agboss/core/stores";
 import pg from "pg";
 import { describe, expect, it } from "vitest";
 import { onSchema, testDatabase } from "../support/database.js";
-import { isWaitingOnLock } from "./pause-locks.js";
+import { isWaitingOnLock, pidOf } from "./pause-locks.js";
 import { APPROVED, MID, RECIPIENTS, expiringPauseOf, instanceOn } from "./pause-fixtures.js";
 
 /**
@@ -48,20 +48,28 @@ describe("a change and its notices are one transaction", () => {
     const late = new Date("2026-01-05T10:30:00.000Z");
 
     const refused = [
-      store.markSentByTenantIdAndPauseId("default", "p1", RECIPIENTS),
-      store.resolveByTenantIdAndPauseId("default", "p2", APPROVED, MID, RECIPIENTS),
-      store.cancelByTenantIdAndPauseId("default", "p3", PauseResolution.Cancelled, MID, RECIPIENTS),
-      store.expireByTenantIdAndPauseId("default", "p4", {}, late, RECIPIENTS),
-      store.extendByTenantIdAndPauseId(
-        "default",
-        "p5",
-        { expiresAt: "2026-01-05T12:00:00.000Z" },
-        MID,
-        RECIPIENTS,
-      ),
+      () => store.markSentByTenantIdAndPauseId("default", "p1", RECIPIENTS),
+      () => store.resolveByTenantIdAndPauseId("default", "p2", APPROVED, MID, RECIPIENTS),
+      () =>
+        store.cancelByTenantIdAndPauseId(
+          "default",
+          "p3",
+          PauseResolution.Cancelled,
+          MID,
+          RECIPIENTS,
+        ),
+      () => store.expireByTenantIdAndPauseId("default", "p4", {}, late, RECIPIENTS),
+      () =>
+        store.extendByTenantIdAndPauseId(
+          "default",
+          "p5",
+          { expiresAt: "2026-01-05T12:00:00.000Z" },
+          MID,
+          RECIPIENTS,
+        ),
     ];
 
-    for (const attempt of refused) await expect(attempt).rejects.toThrow("disk full");
+    for (const attempt of refused) await expect(attempt()).rejects.toThrow("disk full");
     expect(await stateOf("p1")).toEqual({ status: PauseStatus.Pending, isSent: false });
     for (const id of ["p2", "p3", "p4", "p5"])
       expect(await stateOf(id)).toEqual({ status: PauseStatus.Pending, isSent: true });
@@ -101,12 +109,14 @@ describe("a change and its notices are one transaction", () => {
       () => "resolved",
       () => "killed",
     );
-    while (!(await isWaitingOnLock(database.url()))) await Promise.resolve();
+    const holderPid = await pidOf(holder);
+    while (!(await isWaitingOnLock(database.url(), holderPid))) await Promise.resolve();
     const [midway] = [await stateOf("held")];
     await onSchema(
       database.url(),
       `SELECT pg_terminate_backend(pid) FROM pg_stat_activity
-       WHERE datname = current_database() AND wait_event_type = 'Lock' AND pid <> pg_backend_pid()`,
+       WHERE $1 = ANY(pg_blocking_pids(pid))`,
+      [holderPid],
     );
     const result = await outcome;
     await holder.query("SELECT pg_advisory_unlock($1)", [HOLD_KEY]);

@@ -3,7 +3,7 @@ import type { PauseNoticeClaim } from "@agboss/core/stores";
 import { minutes } from "@agboss/core/units";
 import { describe, expect, it } from "vitest";
 import { onSchema, testDatabase } from "../support/database.js";
-import { blockedBefore, openTransaction } from "./pause-locks.js";
+import { blockedBefore, openTransaction, pidOf } from "./pause-locks.js";
 import { MID, RECIPIENTS, expiringPauseOf, instanceOn, pauseOf } from "./pause-fixtures.js";
 
 /**
@@ -72,7 +72,7 @@ describe("claiming mailboxes with SKIP LOCKED", () => {
     ]);
 
     const claiming = store.claimNoticesDue(MID, 10, CLAIM_FOR, ALL);
-    const isBlocked = await blockedBefore(database.url(), claiming);
+    const isBlocked = await blockedBefore(database.url(), await pidOf(holder), claiming);
     await holder.query("ROLLBACK");
     await holder.end();
 

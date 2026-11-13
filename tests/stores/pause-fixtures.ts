@@ -48,5 +48,5 @@ export const RECIPIENTS: PauseRecipients = {
 };
 
 /** A store on a connection of its own to `url`: two of them are two application instances. */
-export const instanceOn = (url: string): PostgresPausedExecutionRepository =>
-  new PostgresPausedExecutionRepository(connectionTo(url), new VirtualClock());
+export const instanceOn = (url: string, poolSize = 2): PostgresPausedExecutionRepository =>
+  new PostgresPausedExecutionRepository(connectionTo(url, poolSize), new VirtualClock());
