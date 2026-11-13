@@ -70,7 +70,7 @@ describe("agbossjs/agboss#962: the checkpoint index step", () => {
   it("AC1: three concurrent starts that migrate are not held by the build; the index follows", async () => {
     const { url } = await fresh();
     const connections = [1, 2, 3].map(
-      () => new PostgresConnection({ url, schemaSetup: SchemaSetup.MigrateOnStart }),
+      () => new PostgresConnection({ url, poolSize: 2, schemaSetup: SchemaSetup.MigrateOnStart }),
     );
     const [first] = connections;
     try {
