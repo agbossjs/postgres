@@ -8,7 +8,7 @@ tested against the `@agboss/core@X.Y.Z` on npm. Before 1.0 a minor release may b
 exact public surface is `api/postgres.api.md`. Issue numbers are agbossjs/agboss's, pull requests
 this repository's.
 
-## [Unreleased] — 0.1.1 (draft: the first release)
+## [0.1.1] — unreleased
 
 The first published version. An application runs on PostgreSQL alone: several instances — each its
 own process, no shared disk — share every store on one database.
