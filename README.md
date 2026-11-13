@@ -97,7 +97,7 @@ export class DeskApplication {}
 | `PostgresExecutionLeaseRepository`      | `ExecutionLeaseRepository`           | `agboss_execution_leases`                                                                            |
 | `PostgresExecutionRecordRepository`     | `ExecutionRecordRepository`          | `agboss_threads`, `agboss_execution_records`, … (`0002`)                                             |
 | `PostgresExecutionTreeRepository`       | `ExecutionTreeRepository`            | `agboss_execution_tree_keys`                                                                         |
-| `PostgresPausedExecutionRepository`     | `PausedExecutionRepository`          | `agboss_paused_executions`, `agboss_pauses`                                                          |
+| `PostgresPausedExecutionRepository`     | `PausedExecutionRepository`          | `agboss_paused_executions`, `agboss_pauses`, `agboss_pause_notices` (pause deadlines and notices)    |
 | `PostgresChildExecutionQueueRepository` | `ChildExecutionQueueRepository`      | `agboss_child_execution_queue`                                                                       |
 | `PostgresCheckpointSaver`               | LangGraph `BaseCheckpointSaver`      | `checkpoints`, `checkpoint_blobs`, `checkpoint_writes`                                               |
 | `PostgresFencedEffectRepository`        | `FencedEffectRepository<PoolClient>` | `agboss_fenced_effect_marks`, `…_results`, `…_business_results`                                      |
@@ -380,6 +380,7 @@ Job, so a pod never waits on another's migration at start and needs no right to 
 | `0021_pause_answers_by_tree`             | `agboss_pause_answers` keyed per tree and step key: another tree's answer under the same step key is kept (agbossjs/agboss#676)                                                                                                                                       |
 | `0022_cost_ledger_entries`               | `agboss_cost_entries`: each tallied spend's `ledgerId` — the id of the pass that made it — so a write retried after a lost answer counts once (agbossjs/agboss#727; its header's "a step run again saves under the same ids" is corrected by 0023)                    |
 | `0023_cost_entries_pruned`               | `agboss_cost_entries.made_at` and `agboss_cost_entries_pruned`, the pruning mark: entries made longer ago than `retention.costLedgerEntries` are pruned by the sweep, a save of one it may have pruned refused (agbossjs/agboss#771; entries of before dated "never") |
+| `0031_pause_deadlines_and_notices`       | `agboss_pauses.expires_at`, `remind_at`, `channel` and their partial indexes; `agboss_pause_notices`: one ordered mailbox per pause and receiver (agbossjs/agboss#936)                                                                                                |
 | LangGraph                                | `checkpoints`, `checkpoint_blobs`, `checkpoint_writes`, `checkpoint_migrations`                                                                                                                                                                                       |
 
 ## Text with a NUL character

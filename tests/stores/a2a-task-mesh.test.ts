@@ -75,6 +75,7 @@ describe("agbossjs/agboss#810: the mesh's fields of an A2A task on PostgreSQL", 
           "0028_a2a_task_mesh_body_hash.sql": null,
           "0029_execution_lease_token.sql": null,
           "0030_a2a_direct_messages.sql": null,
+          "0031_pause_deadlines_and_notices.sql": null,
         }),
       ),
     );
@@ -89,7 +90,7 @@ describe("agbossjs/agboss#810: the mesh's fields of an A2A task on PostgreSQL", 
     );
 
     expect((await migratePostgres({ url })).applied.map((file) => file.version)).toEqual([
-      28, 29, 30,
+      28, 29, 30, 31,
     ]);
 
     const old = await tasksOn(url).findById(keyOf("old"));

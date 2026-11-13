@@ -168,6 +168,13 @@ export class PostgresExecutionRecordRepository extends ExecutionRecordRepository
   ): Promise<void> {
     return writes.savePauseAnswer(this.connection.pool, tenantId, rootExecutionId, answer);
   }
+  markPauseAnswerNotTaken(
+    tenantId: string,
+    rootExecutionId: string,
+    answer: PauseAnswerRecord,
+  ): Promise<void> {
+    return writes.markPauseAnswerNotTaken(this.connection.pool, tenantId, rootExecutionId, answer);
+  }
   async findPauseAnswersByTenantIdAndRootExecutionId(
     tenantId: string,
     rootExecutionId: string,

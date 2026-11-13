@@ -1,184 +1,152 @@
 import {
   Clock,
   Injectable,
-  PausedExecutionRepository,
-  PauseResolution,
-  PauseStatus,
   type PauseAnswer,
   type PauseCancellation,
-  type PausedExecution,
   type PauseRecord,
 } from "@agboss/core";
-import { z } from "zod";
+import type {
+  PauseExpiry,
+  PauseExtension,
+  PauseNoticeFacts,
+  PauseNoticeKind,
+  PauseRecipients,
+  PauseUntakenResolution,
+} from "@agboss/core/stores";
 import { PostgresConnection } from "../connection/postgres-connection.js";
-import { changesOf, firstRowOf, rowsOf } from "../connection/query.js";
-import { pausedRunJsonOf, pausedRunOfJson, pauseRecordOf } from "./framework-json.js";
-import { PauseRows } from "./paused/pause-rows.js";
-
-const PausedRow = z.object({
-  thread_id: z.string(),
-  run_id: z.string(),
-  run: z.string(),
-  workflow_version: z.string(),
-  config_hash: z.string(),
-});
+import { PauseChanges } from "./paused/pause-changes.js";
+import { PauseTimerChanges } from "./paused/pause-timer-changes.js";
+import { PostgresPauseQueryRepository } from "./postgres-pause-queries.repository.js";
 
 /**
- * `PausedExecutionRepository` on PostgreSQL (#265, #267 S35, #482): one row per thread of a tenant
- * — the paused run and the versions it paused under — and one row per pause, the record as
- * `jsonb` with its status and resolution time as columns. Every transition of a pending pause is
- * one compare-and-set `UPDATE … WHERE status = 'pending' RETURNING`, so of two resumes on two
- * instances exactly one records its decision; the other gets nothing back — `NotPausedError`
- * from the core. With `PostgresCheckpointSaver` a pause made on one instance is resumed on any.
- * Listed in `@Application({ providers })` with `postgresUrl`.
+ * `PausedExecutionRepository` on PostgreSQL, contract v2 (#265, #267 S35, #482, agbossjs/agboss#936):
+ * one row per thread of a tenant — the paused run and the versions it paused under — one row per
+ * pause, the record as `jsonb` with its status, resolution time, deadline, reminder and channel as
+ * columns, and one row per pause and receiver for its notices. Every transition of a pending pause
+ * is one compare-and-set `UPDATE … WHERE status = 'pending' [AND <deadline>] RETURNING` — of two
+ * resumes on two instances exactly one records its decision, and none at or after the deadline —
+ * in one `READ COMMITTED` transaction with the notices it writes: a notice is never without its
+ * change nor a change without its notice. Delivery claims a mailbox with `FOR UPDATE SKIP LOCKED`,
+ * so two instances never claim one. With `PostgresCheckpointSaver` a pause made on one instance is
+ * resumed on any. Listed in `@Application({ providers })` with `postgresUrl`.
  */
 @Injectable({ deps: [PostgresConnection, Clock] })
-export class PostgresPausedExecutionRepository extends PausedExecutionRepository {
-  readonly #pauses: PauseRows;
-
-  constructor(
-    private readonly connection: PostgresConnection,
-    private readonly clock: Clock,
-  ) {
-    super();
-    this.#pauses = new PauseRows(connection.pool);
-  }
-
-  ping(): Promise<void> {
-    return this.connection.ping();
-  }
-
-  async findByTenantIdAndThreadId(
-    tenantId: string,
-    threadId: string,
-  ): Promise<PausedExecution | undefined> {
-    const row = await firstRowOf(
-      this.connection.pool,
-      `SELECT thread_id, run_id, run, workflow_version, config_hash FROM agboss_paused_executions
-       WHERE tenant_id = $1 AND thread_id = $2`,
-      [tenantId, threadId],
-    );
-    if (row === undefined) return undefined;
-    const stored = PausedRow.parse(row);
-    return {
-      run: pausedRunOfJson(stored.run, { threadId: stored.thread_id, runId: stored.run_id }),
-      workflowVersion: stored.workflow_version,
-      configHash: stored.config_hash,
-    };
-  }
-
-  async save(paused: PausedExecution): Promise<void> {
-    const { run } = paused;
-    await changesOf(
-      this.connection.pool,
-      `INSERT INTO agboss_paused_executions
-         (tenant_id, thread_id, run_id, run, workflow_version, config_hash, paused_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
-       ON CONFLICT (tenant_id, thread_id) DO UPDATE SET run_id = EXCLUDED.run_id,
-         run = EXCLUDED.run, workflow_version = EXCLUDED.workflow_version,
-         config_hash = EXCLUDED.config_hash, paused_at = EXCLUDED.paused_at`,
-      [
-        run.tenantId,
-        run.threadId,
-        run.runId,
-        pausedRunJsonOf(run),
-        paused.workflowVersion,
-        paused.configHash,
-        this.clock.now(),
-      ],
-    );
-  }
-
-  async deleteByTenantIdAndThreadId(tenantId: string, threadId: string): Promise<void> {
-    await changesOf(
-      this.connection.pool,
-      "DELETE FROM agboss_paused_executions WHERE tenant_id = $1 AND thread_id = $2",
-      [tenantId, threadId],
-    );
-  }
-
-  findOrCreateByStepKey(pause: PauseRecord): Promise<PauseRecord> {
-    return this.#pauses.findOrCreate(pause);
-  }
-
-  async findByTenantIdAndPauseId(
+export class PostgresPausedExecutionRepository extends PostgresPauseQueryRepository {
+  markSentByTenantIdAndPauseId(
     tenantId: string,
     pauseId: string,
-  ): Promise<PauseRecord | undefined> {
-    const row = await firstRowOf(
-      this.connection.pool,
-      "SELECT record FROM agboss_pauses WHERE tenant_id = $1 AND pause_id = $2",
-      [tenantId, pauseId],
-    );
-    return row === undefined ? undefined : this.#pauses.recordOfRow(row);
+    recipients: PauseRecipients,
+  ): Promise<boolean> {
+    return new PauseTimerChanges(this.connection.pool).markSent(tenantId, pauseId, recipients);
   }
 
-  async findAllByTenantIdAndRootExecutionId(
-    tenantId: string,
-    rootExecutionId: string,
-  ): Promise<readonly PauseRecord[]> {
-    const rows = await rowsOf(
-      this.connection.pool,
-      `SELECT record FROM agboss_pauses WHERE tenant_id = $1 AND root_execution_id = $2
-       ORDER BY seq`,
-      [tenantId, rootExecutionId],
-    );
-    return rows.map((row) => this.#pauses.recordOfRow(row));
-  }
-
-  markSentByTenantIdAndPauseId(tenantId: string, pauseId: string): Promise<boolean> {
-    return this.#pauses.markSent(tenantId, pauseId);
-  }
-
-  async resolveByTenantIdAndPauseId(
+  resolveByTenantIdAndPauseId(
     tenantId: string,
     pauseId: string,
     answer: PauseAnswer,
     at: Date,
+    recipients: PauseRecipients,
   ): Promise<PauseRecord | undefined> {
-    const closed = await this.#pauses.close(tenantId, pauseId, {
-      status: PauseStatus.Resolved,
+    return new PauseChanges(this.connection.pool).resolve(
+      tenantId,
+      pauseId,
       answer,
-      resolution: PauseResolution.Replied,
       at,
-    });
-    return closed === undefined ? undefined : pauseRecordOf(closed);
+      recipients,
+    );
   }
 
-  async decideByTenantIdAndPauseId(
+  decideByTenantIdAndPauseId(
     tenantId: string,
     pauseId: string,
     answer: PauseAnswer,
     at: Date,
   ): Promise<boolean> {
-    const closed = await this.#pauses.close(tenantId, pauseId, {
-      status: PauseStatus.Taken,
-      answer,
-      resolution: PauseResolution.Decided,
-      at,
-    });
-    return closed !== undefined;
+    return new PauseChanges(this.connection.pool).decide(tenantId, pauseId, answer, at);
   }
 
-  async cancelByTenantIdAndPauseId(
+  cancelByTenantIdAndPauseId(
     tenantId: string,
     pauseId: string,
     resolution: PauseCancellation,
     at: Date,
-  ): Promise<boolean> {
-    const closed = await this.#pauses.close(tenantId, pauseId, {
-      status: PauseStatus.Cancelled,
+    recipients: PauseRecipients,
+  ): Promise<PauseRecord | undefined> {
+    return new PauseChanges(this.connection.pool).cancel(
+      tenantId,
+      pauseId,
       resolution,
       at,
-    });
-    return closed !== undefined;
+      recipients,
+    );
   }
 
-  markTakenByTenantIdAndPauseId(tenantId: string, pauseId: string): Promise<void> {
-    return this.#pauses.markTaken(tenantId, pauseId);
+  expireByTenantIdAndPauseId(
+    tenantId: string,
+    pauseId: string,
+    expiry: PauseExpiry,
+    at: Date,
+    recipients: PauseRecipients,
+  ): Promise<PauseRecord | undefined> {
+    return new PauseChanges(this.connection.pool).expire(tenantId, pauseId, expiry, at, recipients);
   }
 
-  deleteByResolvedAtBefore(cutoff: Date): Promise<void> {
-    return this.#pauses.deleteByResolvedAtBefore(cutoff);
+  closeUntakenByTenantIdAndPauseId(
+    tenantId: string,
+    pauseId: string,
+    resolution: PauseUntakenResolution,
+    at: Date,
+    recipients: PauseRecipients,
+  ): Promise<PauseRecord | undefined> {
+    return new PauseChanges(this.connection.pool).closeUntaken(
+      tenantId,
+      pauseId,
+      resolution,
+      at,
+      recipients,
+    );
+  }
+
+  extendByTenantIdAndPauseId(
+    tenantId: string,
+    pauseId: string,
+    change: PauseExtension,
+    at: Date,
+    recipients: PauseRecipients,
+  ): Promise<PauseRecord | undefined> {
+    return new PauseTimerChanges(this.connection.pool).extend(
+      tenantId,
+      pauseId,
+      change,
+      at,
+      recipients,
+    );
+  }
+
+  remindByTenantIdAndPauseId(
+    tenantId: string,
+    pauseId: string,
+    at: Date,
+    recipients: PauseRecipients,
+  ): Promise<boolean> {
+    return new PauseTimerChanges(this.connection.pool).remind(tenantId, pauseId, at, recipients);
+  }
+
+  noticeOnceByTenantIdAndPauseId(
+    tenantId: string,
+    pauseId: string,
+    kind: PauseNoticeKind,
+    facts: PauseNoticeFacts,
+    at: Date,
+    recipients: PauseRecipients,
+  ): Promise<boolean> {
+    return new PauseTimerChanges(this.connection.pool).noticeOnce(
+      tenantId,
+      pauseId,
+      kind,
+      facts,
+      at,
+      recipients,
+    );
   }
 }

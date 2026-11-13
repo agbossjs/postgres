@@ -119,6 +119,26 @@ export async function savePauseAnswer(
   );
 }
 
+/**
+ * Keeps that a pause's answer was not taken (I12): over the entry of the same step key, which keeps
+ * its `seq` and `asked_at` — its place in the order — or as a new entry; a `savePauseAnswer` after
+ * it is ignored, so in either order the entry says *not taken*.
+ */
+export async function markPauseAnswerNotTaken(
+  database: Queryable,
+  tenantId: string,
+  rootExecutionId: string,
+  answer: PauseAnswerRecord,
+): Promise<void> {
+  await changesOf(
+    database,
+    `INSERT INTO agboss_pause_answers (tenant_id, root_execution_id, step_key, asked_at, record)
+     VALUES ($1, $2, $3, $4, $5) ON CONFLICT (tenant_id, root_execution_id, step_key)
+     DO UPDATE SET record = EXCLUDED.record`,
+    [tenantId, rootExecutionId, answer.step.idempotencyKey, answer.askedAt, JSON.stringify(answer)],
+  );
+}
+
 /** The stored JSON of a tree's resolved pauses, in the order asked (ties in the order kept). */
 export async function pauseAnswerTextsOf(
   database: Queryable,
