@@ -15,6 +15,11 @@ own process, no shared disk — share every store on one database.
 
 ### Changed
 
+- **`answeredBy` is who answered, `answerer` is who may** (agbossjs/agboss#934) — a pause's record,
+  its answer, the answer log and the kept history read as the core names them now; rows written by
+  0.1.0 (`answeredBy` the kind, `responder` the person) read with the new names, nothing is migrated.
+  `PauseAnswerRecord.answeredBy` is the person now: see the core's "Breaking (silent)".
+
 - **One options object for every error, `Turn` to the end** (agbossjs/agboss#906, completing #890) —
   every error of the package is made from one options object whose keys are its own properties, with a
   `cause` (kept as `.cause`) and a literal instance `code`: `PostgresMigrationChangedError({ version, migration })` (the option was `name`, the field is `.migration`); an error with only its text takes
