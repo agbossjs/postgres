@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 import { PostgresExecutionLeaseRepository } from "../../src/index.js";
 import { onSchema, testDatabase } from "../support/database.js";
 import { TestApplicationContext } from "../support/application-context.js";
-import { connectionTo } from "../support/stores.js";
+import { connectionTo, endConnections } from "../support/stores.js";
 
 /**
  * Acceptance corner cases of a yielded lease on PostgreSQL (agbossjs/agboss#516): its row says
@@ -93,6 +93,8 @@ describe("#516 acceptance: a yielded lease on PostgreSQL", () => {
       second.acquire("default", root, LEASE),
       held && first.reclaim(held, LEASE),
     ]);
+    // #978: the round's pools end with it, not with the test's rounds
+    await endConnections();
     return [taken, reclaimed].filter((lease) => lease !== undefined).length;
   };
 

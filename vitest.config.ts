@@ -7,6 +7,9 @@ export default defineConfig({
     exclude: ["tests/faults/**", "node_modules/**"],
     // a test that asserts nothing proves nothing (the core's #180)
     expect: { requireAssertions: true },
+    // #978: at most this many files at once, each within its connection budget (tests/support/stores.ts):
+    // 3 forks at most (VITEST_MAX_FORKS, as the rule for `npm run check`), 4 on a runner that sets none
+    maxWorkers: Number(process.env.VITEST_MAX_FORKS ?? "4"),
     // every test file needs AGBOSS_POSTGRES_TEST_URL: it fails without it, never skips
     globalSetup: ["./tests/support/global-setup.ts"],
     testTimeout: 20_000,

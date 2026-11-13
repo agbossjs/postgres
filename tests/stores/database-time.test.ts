@@ -42,13 +42,21 @@ describe("#847: in StoreTimeSource.Database a lease is decided by the database's
     const lease = await leases.acquire("default", "db-time-1", LEASE);
     const after = await databaseNow();
 
-    // `remaining` reads clock_timestamp() again after `expires_at` was set: a millisecond less at most
-    expect(lease?.remaining).toBeGreaterThanOrEqual(LEASE - 1);
-    expect(lease?.remaining).toBeLessThanOrEqual(LEASE);
+    // The clock contract: the expiry is the database's time at the statement plus the lease, so it
+    // lies between the database's time before and after the call (plus the lease); `remaining` is
+    // read from the same clock a moment later, so it is at most the lease and at least the lease
+    // less what the database's own clock says the call took (a millisecond more for the rounding).
+    // No bound is a number of milliseconds a loaded machine could break.
     expect(lease?.expiresAt.getTime()).toBeGreaterThanOrEqual(before + LEASE);
     expect(lease?.expiresAt.getTime()).toBeLessThanOrEqual(after + LEASE);
+    expect(lease?.remaining).toBeLessThanOrEqual(LEASE);
+    expect(lease?.remaining).toBeGreaterThanOrEqual(LEASE - (after - before) - 1);
     if (lease === undefined) return;
-    expect(await leases.renew(lease, LEASE)).toBeGreaterThanOrEqual(LEASE - 1);
+    const beforeRenew = await databaseNow();
+    const renewed = await leases.renew(lease, LEASE);
+    const afterRenew = await databaseNow();
+    expect(renewed).toBeLessThanOrEqual(LEASE);
+    expect(renewed).toBeGreaterThanOrEqual(LEASE - (afterRenew - beforeRenew) - 1);
     expect(await leases.yield(lease)).toBeLessThanOrEqual(LEASE);
     const reclaimed = await leases.reclaim(lease, LEASE);
     expect(reclaimed).toMatchObject({ token: lease.token + 1 });

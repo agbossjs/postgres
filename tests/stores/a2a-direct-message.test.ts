@@ -39,7 +39,7 @@ const newMessage = (extra: Partial<NewA2ADirectMessage> = {}): NewA2ADirectMessa
 });
 
 const KEY = { tenantId: "acme", ownerId: "alice", messageId: "m-1" };
-const messagesOn = () => new PostgresA2ADirectMessageRepository(connectionTo(database.url()));
+const messagesOn = () => new PostgresA2ADirectMessageRepository(connectionTo(database.url(), 2));
 
 const WaitingRow = z.object({ waiting: z.number() });
 
@@ -85,7 +85,7 @@ describe("agbossjs/agboss#860: the direct messages on PostgreSQL", () => {
 
     expect(await sweep).toEqual([]);
     expect((await messages.findByKey(KEY))?.attemptId).toBe("run-2");
-    const task = await new PostgresA2ATaskRepository(connectionTo(database.url())).saveIfAbsent({
+    const task = await new PostgresA2ATaskRepository(connectionTo(database.url(), 2)).saveIfAbsent({
       tenantId: "acme",
       taskId: "t-1",
       ownerId: "alice",
