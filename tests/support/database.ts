@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
 import pg from "pg";
 import { afterAll, beforeAll } from "vitest";
 import { migratePostgres } from "../../src/index.js";
+import { DROP_BOUND_MS, dropOnServer } from "./drop-schemas.js";
 
 /**
  * The database of one test file: a schema of its own (`t_<random>`) on `AGBOSS_POSTGRES_TEST_URL`,
@@ -43,9 +44,11 @@ export async function createSchema(): Promise<{ readonly schema: string; readonl
   return { schema, url: urlOnSchema(serverUrl(), schema) };
 }
 
-/** Drops a test's schema and everything in it. */
+/** Drops a test's schema and everything in it, within `DROP_BOUND_MS` (agbossjs/agboss#985); a failure names it. */
 export const dropSchema = (schema: string): Promise<void> =>
-  onServer(`DROP SCHEMA IF EXISTS ${schema} CASCADE`);
+  dropOnServer(serverUrl())(schema, DROP_BOUND_MS).catch((error: unknown) => {
+    throw new Error(`dropping the test schema ${schema}: ${String(error)}`, { cause: error });
+  });
 
 /** What a test file's database gives: its URL (after `beforeAll`), its schema. */
 export interface TestDatabase {
