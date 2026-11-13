@@ -127,31 +127,31 @@ describe("agbossjs/agboss#962: the checkpoint index step", () => {
     await populate(url, 1_000_000);
     const saver = new PostgresCheckpointSaver(connectionTo(url));
     const run = { building: true };
-    const latencies: number[] = [];
+    const watcher = new pg.Client({ connectionString: url });
+    await watcher.connect();
+    let duringBuild = 0;
     const writer = (async () => {
       for (let step = 0; run.building; step += 1) {
-        const started = performance.now();
         await saver.put(
           { configurable: { thread_id: "live", checkpoint_ns: "" } },
           { ...emptyCheckpoint(), id: `live-${String(step).padStart(6, "0")}` },
           { source: "loop", step, parents: {} },
           {},
         );
-        latencies.push(performance.now() - started);
+        // this write is acknowledged while PostgreSQL still reports an index build in progress
+        const progress = await watcher.query("SELECT 1 FROM pg_stat_progress_create_index");
+        if (progress.rowCount === 1) duringBuild += 1;
         await new Promise((resolve) => setTimeout(resolve, 5));
       }
     })();
 
-    const buildStarted = performance.now();
     await migratePostgres({ url });
-    const built = performance.now() - buildStarted;
     run.building = false;
     await writer;
+    await watcher.end();
 
-    const slowest = Math.max(...latencies);
     expect(await stateOf(url)).toMatchObject({ valid: true });
-    expect(latencies.length).toBeGreaterThan(5);
-    // a plain CREATE INDEX holds every write for the whole build; here none waits for a fraction of it
-    expect(slowest).toBeLessThan(Math.max(500, built / 4));
+    // a plain CREATE INDEX holds every write until it ends: none would be acknowledged inside it
+    expect(duringBuild).toBeGreaterThanOrEqual(5);
   }, 180_000);
 });
