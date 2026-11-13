@@ -3,8 +3,8 @@
  * each its own process with no shared disk, share execution trees, budgets, history, rate limits
  * and mesh requests on one database: a whole application on PostgreSQL alone.
  * List the stores in `@Application({ providers })` — all of them `...POSTGRES_STORES`; the
- * environment gives `postgresUrl` (a `Secret`), optionally `postgresPoolSize`, `postgresSchema` and
- * `postgresSchemaSetup`. The schema is migrated explicitly: `agboss-postgres migrate [--schema
+ * environment gives `postgresUrl` (a `Secret`), optionally `postgresPoolSize`, `postgresSchema`,
+ * `postgresSchemaSetup` and `postgresWatchLivenessSeconds`. The schema is migrated explicitly: `agboss-postgres migrate [--schema
  * <name>]` with `POSTGRES_URL` set in its environment (a Kubernetes Job), or
  * `migratePostgres({ url, schema })` — never the URL on a command line.
  */
@@ -13,6 +13,7 @@ export { DEFAULT_CONNECT_TIMEOUT } from "./connection/connect-timeout.js";
 export {
   DEFAULT_POOL_SIZE,
   DEFAULT_SCHEMA,
+  DEFAULT_WATCH_LIVENESS_SECONDS,
   type PostgresConnectionSettings,
 } from "./connection/settings.js";
 // what the start does with the schema (agbossjs/agboss#891): the core's, shared with @agboss/mongodb

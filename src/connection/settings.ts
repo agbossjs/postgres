@@ -6,6 +6,13 @@ import { PostgresSettingsError } from "../errors.js";
 export const DEFAULT_POOL_SIZE = 10;
 
 /**
+ * How long a dead `LISTEN` connection may go unnoticed (agbossjs/agboss#789) when the environment
+ * does not set `postgresWatchLivenessSeconds`: a ping every half of it, an answer due within the
+ * other half.
+ */
+export const DEFAULT_WATCH_LIVENESS_SECONDS = 10;
+
+/**
  * The schema the stores' tables are in when neither `schema` nor the URL's `search_path` names one
  * (agbossjs/agboss#891): PostgreSQL's own default.
  */
@@ -23,6 +30,14 @@ export interface PostgresConnectionSettings {
    * `migratePostgres({ url, schema })` / `agboss-postgres migrate --schema <name>`.
    */
   readonly schema?: string;
+  /**
+   * The longest a silently dead `LISTEN` connection of the child queue's watch (a half-open TCP
+   * connection: no FIN, no RST) goes unnoticed, in seconds (agbossjs/agboss#789; default
+   * `DEFAULT_WATCH_LIVENESS_SECONDS`, 10, at least 2): the watch pings its connection every half of
+   * it and gives the answer the other half, then warns, listens again on a new connection and wakes
+   * once.
+   */
+  readonly watchLivenessSeconds?: number;
   /** What the start does with the schema (default `SchemaSetup.Check`: it is migrated explicitly). */
   readonly schemaSetup?: SchemaSetup;
 }
@@ -49,6 +64,11 @@ const PostgresEnvironment = z.object({
     .number({ message: "postgresPoolSize must be a number" })
     .int("postgresPoolSize must be a whole number")
     .min(1, "postgresPoolSize must be at least 1")
+    .optional(),
+  postgresWatchLivenessSeconds: z
+    .number({ message: "postgresWatchLivenessSeconds must be a number" })
+    .int("postgresWatchLivenessSeconds must be a whole number")
+    .min(2, "postgresWatchLivenessSeconds must be at least 2")
     .optional(),
   postgresSchema: z.string({ message: "postgresSchema must be a text" }).optional(),
   postgresSchemaSetup: z
@@ -88,7 +108,8 @@ export const searchPathOptionOf = (schema: string): string =>
 
 /**
  * The connection settings an application's environment gives: `postgresUrl` (required, a
- * `Secret`), `postgresPoolSize`, `postgresSchema` and `postgresSchemaSetup` (optional). A missing or
+ * `Secret`), `postgresPoolSize`, `postgresWatchLivenessSeconds`, `postgresSchema` and
+ * `postgresSchemaSetup` (optional). A missing or
  * mistyped field fails with `PostgresSettingsError`, naming it — the URL itself is never printed.
  */
 export function settingsOfEnvironment(environment: unknown): PostgresConnectionSettings {
@@ -103,11 +124,13 @@ export function settingsOfEnvironment(environment: unknown): PostgresConnectionS
     });
   }
   const { postgresUrl, postgresPoolSize, postgresSchema, postgresSchemaSetup } = parsed.data;
+  const { postgresWatchLivenessSeconds } = parsed.data;
   const url = postgresUrl.reveal();
   if (url.length === 0) throw new PostgresSettingsError({ message: "postgresUrl is empty" });
   return {
     url,
     poolSize: postgresPoolSize,
+    watchLivenessSeconds: postgresWatchLivenessSeconds,
     schema: checkedSchemaOf(postgresSchema),
     schemaSetup: postgresSchemaSetup,
   };

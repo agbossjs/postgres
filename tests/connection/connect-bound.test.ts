@@ -67,7 +67,10 @@ describe("#989: a database that never answers the connection's start", () => {
     // libpq's connect_timeout, in seconds: the bound a URL sets for itself
     const url = `postgres://app:secret@127.0.0.1:${String(silentPort)}/app?connect_timeout=1`;
     const connection = new PostgresConnection({ url, poolSize: 2 });
-    const listening = { channel: "agboss_probe", payload: "probe", clock: new VirtualClock() };
+    const listening = {
+      ...{ channel: "agboss_probe", payload: "probe", clock: new VirtualClock() },
+      warn: () => undefined,
+    };
     const outcomes = await Promise.allSettled([
       connection.ping(),
       inPoolTransaction(connection.pool, async (client) => client.query("SELECT 1")),
