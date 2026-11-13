@@ -14,6 +14,8 @@ import type {
   PauseUntakenResolution,
 } from "@agboss/core/stores";
 import { PostgresConnection } from "../connection/postgres-connection.js";
+import { PauseChanges } from "./paused/pause-changes.js";
+import { PauseTimerChanges } from "./paused/pause-timer-changes.js";
 import { PostgresPauseQueryRepository } from "./postgres-pause-queries.repository.js";
 
 /**
@@ -35,7 +37,7 @@ export class PostgresPausedExecutionRepository extends PostgresPauseQueryReposit
     pauseId: string,
     recipients: PauseRecipients,
   ): Promise<boolean> {
-    return this.timers.markSent(tenantId, pauseId, recipients);
+    return new PauseTimerChanges(this.connection.pool).markSent(tenantId, pauseId, recipients);
   }
 
   resolveByTenantIdAndPauseId(
@@ -45,7 +47,13 @@ export class PostgresPausedExecutionRepository extends PostgresPauseQueryReposit
     at: Date,
     recipients: PauseRecipients,
   ): Promise<PauseRecord | undefined> {
-    return this.changes.resolve(tenantId, pauseId, answer, at, recipients);
+    return new PauseChanges(this.connection.pool).resolve(
+      tenantId,
+      pauseId,
+      answer,
+      at,
+      recipients,
+    );
   }
 
   decideByTenantIdAndPauseId(
@@ -54,7 +62,7 @@ export class PostgresPausedExecutionRepository extends PostgresPauseQueryReposit
     answer: PauseAnswer,
     at: Date,
   ): Promise<boolean> {
-    return this.changes.decide(tenantId, pauseId, answer, at);
+    return new PauseChanges(this.connection.pool).decide(tenantId, pauseId, answer, at);
   }
 
   cancelByTenantIdAndPauseId(
@@ -64,7 +72,13 @@ export class PostgresPausedExecutionRepository extends PostgresPauseQueryReposit
     at: Date,
     recipients: PauseRecipients,
   ): Promise<PauseRecord | undefined> {
-    return this.changes.cancel(tenantId, pauseId, resolution, at, recipients);
+    return new PauseChanges(this.connection.pool).cancel(
+      tenantId,
+      pauseId,
+      resolution,
+      at,
+      recipients,
+    );
   }
 
   expireByTenantIdAndPauseId(
@@ -74,7 +88,7 @@ export class PostgresPausedExecutionRepository extends PostgresPauseQueryReposit
     at: Date,
     recipients: PauseRecipients,
   ): Promise<PauseRecord | undefined> {
-    return this.changes.expire(tenantId, pauseId, expiry, at, recipients);
+    return new PauseChanges(this.connection.pool).expire(tenantId, pauseId, expiry, at, recipients);
   }
 
   closeUntakenByTenantIdAndPauseId(
@@ -84,7 +98,13 @@ export class PostgresPausedExecutionRepository extends PostgresPauseQueryReposit
     at: Date,
     recipients: PauseRecipients,
   ): Promise<PauseRecord | undefined> {
-    return this.changes.closeUntaken(tenantId, pauseId, resolution, at, recipients);
+    return new PauseChanges(this.connection.pool).closeUntaken(
+      tenantId,
+      pauseId,
+      resolution,
+      at,
+      recipients,
+    );
   }
 
   extendByTenantIdAndPauseId(
@@ -94,7 +114,13 @@ export class PostgresPausedExecutionRepository extends PostgresPauseQueryReposit
     at: Date,
     recipients: PauseRecipients,
   ): Promise<PauseRecord | undefined> {
-    return this.timers.extend(tenantId, pauseId, change, at, recipients);
+    return new PauseTimerChanges(this.connection.pool).extend(
+      tenantId,
+      pauseId,
+      change,
+      at,
+      recipients,
+    );
   }
 
   remindByTenantIdAndPauseId(
@@ -103,7 +129,7 @@ export class PostgresPausedExecutionRepository extends PostgresPauseQueryReposit
     at: Date,
     recipients: PauseRecipients,
   ): Promise<boolean> {
-    return this.timers.remind(tenantId, pauseId, at, recipients);
+    return new PauseTimerChanges(this.connection.pool).remind(tenantId, pauseId, at, recipients);
   }
 
   noticeOnceByTenantIdAndPauseId(
@@ -114,6 +140,13 @@ export class PostgresPausedExecutionRepository extends PostgresPauseQueryReposit
     at: Date,
     recipients: PauseRecipients,
   ): Promise<boolean> {
-    return this.timers.noticeOnce(tenantId, pauseId, kind, facts, at, recipients);
+    return new PauseTimerChanges(this.connection.pool).noticeOnce(
+      tenantId,
+      pauseId,
+      kind,
+      facts,
+      at,
+      recipients,
+    );
   }
 }

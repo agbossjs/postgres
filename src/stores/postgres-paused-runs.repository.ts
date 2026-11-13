@@ -8,10 +8,7 @@ import { z } from "zod";
 import { PostgresConnection } from "../connection/postgres-connection.js";
 import { changesOf, firstRowOf } from "../connection/query.js";
 import { pausedRunJsonOf, pausedRunOfJson } from "./framework-json.js";
-import { PauseChanges } from "./paused/pause-changes.js";
 import { PauseRows, recordOfRow } from "./paused/pause-rows.js";
-import { PauseScans } from "./paused/pause-scans.js";
-import { PauseTimerChanges } from "./paused/pause-timer-changes.js";
 
 const PausedRow = z.object({
   thread_id: z.string(),
@@ -27,20 +24,11 @@ const PausedRow = z.object({
  * pauses are in `paused/`; the connection and the clock are what the leaf class is given.
  */
 export abstract class PostgresPausedRunRepository extends PausedExecutionRepository {
-  protected readonly rows: PauseRows;
-  protected readonly changes: PauseChanges;
-  protected readonly timers: PauseTimerChanges;
-  protected readonly scans: PauseScans;
-
   constructor(
     protected readonly connection: PostgresConnection,
     private readonly clock: Clock,
   ) {
     super();
-    this.rows = new PauseRows(connection.pool);
-    this.changes = new PauseChanges(connection.pool);
-    this.timers = new PauseTimerChanges(connection.pool);
-    this.scans = new PauseScans(connection.pool);
   }
 
   ping(): Promise<void> {
@@ -111,18 +99,18 @@ export abstract class PostgresPausedRunRepository extends PausedExecutionReposit
   }
 
   findOrCreateByStepKey(pause: PauseRecord): Promise<PauseRecord> {
-    return this.rows.findOrCreate(pause);
+    return new PauseRows(this.connection.pool).findOrCreate(pause);
   }
 
   findByTenantIdAndPauseId(tenantId: string, pauseId: string): Promise<PauseRecord | undefined> {
-    return this.rows.findById(tenantId, pauseId);
+    return new PauseRows(this.connection.pool).findById(tenantId, pauseId);
   }
 
   findAllByTenantIdAndRootExecutionId(
     tenantId: string,
     rootExecutionId: string,
   ): Promise<readonly PauseRecord[]> {
-    return this.rows.findAllByRoot(tenantId, rootExecutionId);
+    return new PauseRows(this.connection.pool).findAllByRoot(tenantId, rootExecutionId);
   }
 
   async findByTenantIdAndRootExecutionIdAndStepKey(
@@ -130,11 +118,15 @@ export abstract class PostgresPausedRunRepository extends PausedExecutionReposit
     rootExecutionId: string,
     stepKey: string,
   ): Promise<PauseRecord | undefined> {
-    const row = await this.rows.findByStepKey(tenantId, rootExecutionId, stepKey);
+    const row = await new PauseRows(this.connection.pool).findByStepKey(
+      tenantId,
+      rootExecutionId,
+      stepKey,
+    );
     return row === undefined ? undefined : recordOfRow(row);
   }
 
   markTakenByTenantIdAndPauseId(tenantId: string, pauseId: string): Promise<void> {
-    return this.rows.markTaken(tenantId, pauseId);
+    return new PauseRows(this.connection.pool).markTaken(tenantId, pauseId);
   }
 }

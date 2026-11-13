@@ -83,19 +83,17 @@ import { PauseAnswerRecord } from '@agboss/core';
 import { PauseCancellation } from '@agboss/core';
 import { PausedExecution } from '@agboss/core';
 import { PausedExecutionRepository } from '@agboss/core';
-import { PauseExpiry } from '@agboss/core/stores';
-import { PauseExtension } from '@agboss/core/stores';
+import type { PauseExpiry } from '@agboss/core/stores';
+import type { PauseExtension } from '@agboss/core/stores';
 import type { PauseFilter } from '@agboss/core/stores';
-import { PauseNotice } from '@agboss/core/stores';
 import type { PauseNoticeClaim } from '@agboss/core/stores';
 import type { PauseNoticeCounts } from '@agboss/core/stores';
-import { PauseNoticeFacts } from '@agboss/core/stores';
-import { PauseNoticeKind } from '@agboss/core/stores';
+import type { PauseNoticeFacts } from '@agboss/core/stores';
+import type { PauseNoticeKind } from '@agboss/core/stores';
 import type { PausePage } from '@agboss/core/stores';
-import { PauseRecipients } from '@agboss/core/stores';
+import type { PauseRecipients } from '@agboss/core/stores';
 import { PauseRecord } from '@agboss/core';
-import { PauseStatus } from '@agboss/core';
-import { PauseUntakenResolution } from '@agboss/core/stores';
+import type { PauseUntakenResolution } from '@agboss/core/stores';
 import { PendingWrite } from '@langchain/langgraph-checkpoint';
 import pg from 'pg';
 import type { PoolClient } from 'pg';
@@ -500,8 +498,6 @@ export class PostgresOutboundCallRepository extends OutboundCallRepository {
     static readonly store: StoreDescriptor_2;
 }
 
-// Warning: (ae-forgotten-export) The symbol "PostgresPauseQueryRepository" needs to be exported by the entry point index.d.ts
-//
 // @public
 export class PostgresPausedExecutionRepository extends PostgresPauseQueryRepository {
     // (undocumented)
@@ -522,6 +518,60 @@ export class PostgresPausedExecutionRepository extends PostgresPauseQueryReposit
     remindByTenantIdAndPauseId(tenantId: string, pauseId: string, at: Date, recipients: PauseRecipients): Promise<boolean>;
     // (undocumented)
     resolveByTenantIdAndPauseId(tenantId: string, pauseId: string, answer: PauseAnswer, at: Date, recipients: PauseRecipients): Promise<PauseRecord | undefined>;
+}
+
+// @public
+export abstract class PostgresPausedRunRepository extends PausedExecutionRepository {
+    constructor(connection: PostgresConnection, clock: Clock);
+    // (undocumented)
+    protected readonly connection: PostgresConnection;
+    // (undocumented)
+    deleteByTenantIdAndThreadId(tenantId: string, threadId: string): Promise<void>;
+    deleteByTenantIdAndThreadIdAndRunId(tenantId: string, threadId: string, runId: string): Promise<void>;
+    // (undocumented)
+    findAllByTenantIdAndRootExecutionId(tenantId: string, rootExecutionId: string): Promise<readonly PauseRecord[]>;
+    // (undocumented)
+    findByTenantIdAndPauseId(tenantId: string, pauseId: string): Promise<PauseRecord | undefined>;
+    // (undocumented)
+    findByTenantIdAndRootExecutionIdAndStepKey(tenantId: string, rootExecutionId: string, stepKey: string): Promise<PauseRecord | undefined>;
+    // (undocumented)
+    findByTenantIdAndThreadId(tenantId: string, threadId: string): Promise<PausedExecution | undefined>;
+    // (undocumented)
+    findOrCreateByStepKey(pause: PauseRecord): Promise<PauseRecord>;
+    // (undocumented)
+    markTakenByTenantIdAndPauseId(tenantId: string, pauseId: string): Promise<void>;
+    // (undocumented)
+    ping(): Promise<void>;
+    // (undocumented)
+    save(paused: PausedExecution): Promise<void>;
+}
+
+// @public
+export abstract class PostgresPauseQueryRepository extends PostgresPausedRunRepository {
+    // (undocumented)
+    ackNotice(claim: PauseNoticeClaim, at: Date): Promise<PauseNoticeClaim | undefined>;
+    // (undocumented)
+    claimNoticesDue(at: Date, limit: number, claimFor: Milliseconds, recipients: readonly string[]): Promise<readonly PauseNoticeClaim[]>;
+    // (undocumented)
+    countNotices(): Promise<PauseNoticeCounts>;
+    // (undocumented)
+    deleteByResolvedAtBefore(cutoff: Date): Promise<void>;
+    // (undocumented)
+    findClosedByResolvedAtBefore(cutoff: Date, limit: number): Promise<readonly PauseRecord[]>;
+    // (undocumented)
+    findOpenAfter(after: string | undefined, limit: number): Promise<PausePage>;
+    // (undocumented)
+    findPageByTenantId(tenantId: string, filter: PauseFilter, limit: number, after?: string): Promise<PausePage>;
+    // (undocumented)
+    findPendingByExpiresAtBefore(at: Date, limit: number): Promise<readonly PauseRecord[]>;
+    // (undocumented)
+    findPendingByRemindAtBefore(at: Date, limit: number): Promise<readonly PauseRecord[]>;
+    // (undocumented)
+    retryNotice(claim: PauseNoticeClaim, nextAttemptAt: Date, problem: string): Promise<boolean>;
+    // (undocumented)
+    setAsideNotices(claim: PauseNoticeClaim, _at: Date, problem: string): Promise<boolean>;
+    // (undocumented)
+    setAsideStaleNoticesBefore(writtenBefore: Date, at: Date, problem: string, limit: number): Promise<readonly SetAsideMailbox[]>;
 }
 
 // @public
@@ -739,15 +789,37 @@ export interface SchemaVersions {
 // src/stores/postgres-outbound-call.repository.ts:161:9 - (ae-undocumented) Missing documentation for "findAllByTenantIdAndRootExecutionId".
 // src/stores/postgres-outbound-call.repository.ts:192:9 - (ae-undocumented) Missing documentation for "deleteByEndedAtBefore".
 // src/stores/postgres-outbound-call.repository.ts:200:3 - (ae-undocumented) Missing documentation for "leaseStateOf".
-// src/stores/postgres-paused-execution.repository.ts:33:3 - (ae-undocumented) Missing documentation for "markSentByTenantIdAndPauseId".
-// src/stores/postgres-paused-execution.repository.ts:41:3 - (ae-undocumented) Missing documentation for "resolveByTenantIdAndPauseId".
-// src/stores/postgres-paused-execution.repository.ts:51:3 - (ae-undocumented) Missing documentation for "decideByTenantIdAndPauseId".
-// src/stores/postgres-paused-execution.repository.ts:60:3 - (ae-undocumented) Missing documentation for "cancelByTenantIdAndPauseId".
-// src/stores/postgres-paused-execution.repository.ts:70:3 - (ae-undocumented) Missing documentation for "expireByTenantIdAndPauseId".
-// src/stores/postgres-paused-execution.repository.ts:80:3 - (ae-undocumented) Missing documentation for "closeUntakenByTenantIdAndPauseId".
-// src/stores/postgres-paused-execution.repository.ts:90:3 - (ae-undocumented) Missing documentation for "extendByTenantIdAndPauseId".
-// src/stores/postgres-paused-execution.repository.ts:100:3 - (ae-undocumented) Missing documentation for "remindByTenantIdAndPauseId".
-// src/stores/postgres-paused-execution.repository.ts:109:3 - (ae-undocumented) Missing documentation for "noticeOnceByTenantIdAndPauseId".
+// src/stores/postgres-pause-queries.repository.ts:24:9 - (ae-undocumented) Missing documentation for "findPendingByExpiresAtBefore".
+// src/stores/postgres-pause-queries.repository.ts:29:9 - (ae-undocumented) Missing documentation for "findPendingByRemindAtBefore".
+// src/stores/postgres-pause-queries.repository.ts:34:9 - (ae-undocumented) Missing documentation for "findOpenAfter".
+// src/stores/postgres-pause-queries.repository.ts:39:9 - (ae-undocumented) Missing documentation for "findPageByTenantId".
+// src/stores/postgres-pause-queries.repository.ts:55:9 - (ae-undocumented) Missing documentation for "findClosedByResolvedAtBefore".
+// src/stores/postgres-pause-queries.repository.ts:60:3 - (ae-undocumented) Missing documentation for "deleteByResolvedAtBefore".
+// src/stores/postgres-pause-queries.repository.ts:64:9 - (ae-undocumented) Missing documentation for "claimNoticesDue".
+// src/stores/postgres-pause-queries.repository.ts:74:3 - (ae-undocumented) Missing documentation for "ackNotice".
+// src/stores/postgres-pause-queries.repository.ts:78:3 - (ae-undocumented) Missing documentation for "retryNotice".
+// src/stores/postgres-pause-queries.repository.ts:82:3 - (ae-undocumented) Missing documentation for "setAsideNotices".
+// src/stores/postgres-pause-queries.repository.ts:86:9 - (ae-undocumented) Missing documentation for "setAsideStaleNoticesBefore".
+// src/stores/postgres-pause-queries.repository.ts:96:3 - (ae-undocumented) Missing documentation for "countNotices".
+// src/stores/postgres-paused-execution.repository.ts:35:3 - (ae-undocumented) Missing documentation for "markSentByTenantIdAndPauseId".
+// src/stores/postgres-paused-execution.repository.ts:43:3 - (ae-undocumented) Missing documentation for "resolveByTenantIdAndPauseId".
+// src/stores/postgres-paused-execution.repository.ts:59:3 - (ae-undocumented) Missing documentation for "decideByTenantIdAndPauseId".
+// src/stores/postgres-paused-execution.repository.ts:68:3 - (ae-undocumented) Missing documentation for "cancelByTenantIdAndPauseId".
+// src/stores/postgres-paused-execution.repository.ts:84:3 - (ae-undocumented) Missing documentation for "expireByTenantIdAndPauseId".
+// src/stores/postgres-paused-execution.repository.ts:94:3 - (ae-undocumented) Missing documentation for "closeUntakenByTenantIdAndPauseId".
+// src/stores/postgres-paused-execution.repository.ts:110:3 - (ae-undocumented) Missing documentation for "extendByTenantIdAndPauseId".
+// src/stores/postgres-paused-execution.repository.ts:126:3 - (ae-undocumented) Missing documentation for "remindByTenantIdAndPauseId".
+// src/stores/postgres-paused-execution.repository.ts:135:3 - (ae-undocumented) Missing documentation for "noticeOnceByTenantIdAndPauseId".
+// src/stores/postgres-paused-runs.repository.ts:28:5 - (ae-undocumented) Missing documentation for "connection".
+// src/stores/postgres-paused-runs.repository.ts:34:3 - (ae-undocumented) Missing documentation for "ping".
+// src/stores/postgres-paused-runs.repository.ts:38:9 - (ae-undocumented) Missing documentation for "findByTenantIdAndThreadId".
+// src/stores/postgres-paused-runs.repository.ts:57:9 - (ae-undocumented) Missing documentation for "save".
+// src/stores/postgres-paused-runs.repository.ts:79:9 - (ae-undocumented) Missing documentation for "deleteByTenantIdAndThreadId".
+// src/stores/postgres-paused-runs.repository.ts:101:3 - (ae-undocumented) Missing documentation for "findOrCreateByStepKey".
+// src/stores/postgres-paused-runs.repository.ts:105:3 - (ae-undocumented) Missing documentation for "findByTenantIdAndPauseId".
+// src/stores/postgres-paused-runs.repository.ts:109:3 - (ae-undocumented) Missing documentation for "findAllByTenantIdAndRootExecutionId".
+// src/stores/postgres-paused-runs.repository.ts:116:9 - (ae-undocumented) Missing documentation for "findByTenantIdAndRootExecutionIdAndStepKey".
+// src/stores/postgres-paused-runs.repository.ts:129:3 - (ae-undocumented) Missing documentation for "markTakenByTenantIdAndPauseId".
 // src/stores/postgres-rate-limit.repository.ts:54:3 - (ae-undocumented) Missing documentation for "ping".
 // src/stores/postgres-rate-limit.repository.ts:58:3 - (ae-undocumented) Missing documentation for "acquire".
 // src/stores/postgres-rate-limit.repository.ts:80:9 - (ae-undocumented) Missing documentation for "renew".

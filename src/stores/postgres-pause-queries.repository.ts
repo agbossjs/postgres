@@ -8,7 +8,12 @@ import type {
 } from "@agboss/core/stores";
 import type { Milliseconds } from "@agboss/core/units";
 import * as mailboxes from "./paused/pause-delivery-rows.js";
-import { assertPauseFilter, assertScanLimit, seqOfCursor } from "./paused/pause-scans.js";
+import {
+  assertPauseFilter,
+  assertScanLimit,
+  PauseScans,
+  seqOfCursor,
+} from "./paused/pause-scans.js";
 import { PostgresPausedRunRepository } from "./postgres-paused-runs.repository.js";
 
 /**
@@ -18,17 +23,17 @@ import { PostgresPausedRunRepository } from "./postgres-paused-runs.repository.j
 export abstract class PostgresPauseQueryRepository extends PostgresPausedRunRepository {
   async findPendingByExpiresAtBefore(at: Date, limit: number): Promise<readonly PauseRecord[]> {
     assertScanLimit(limit);
-    return this.scans.pendingDue("expires_at", at, limit);
+    return new PauseScans(this.connection.pool).pendingDue("expires_at", at, limit);
   }
 
   async findPendingByRemindAtBefore(at: Date, limit: number): Promise<readonly PauseRecord[]> {
     assertScanLimit(limit);
-    return this.scans.pendingDue("remind_at", at, limit);
+    return new PauseScans(this.connection.pool).pendingDue("remind_at", at, limit);
   }
 
   async findOpenAfter(after: string | undefined, limit: number): Promise<PausePage> {
     assertScanLimit(limit);
-    return this.scans.open(seqOfCursor(after), limit);
+    return new PauseScans(this.connection.pool).open(seqOfCursor(after), limit);
   }
 
   async findPageByTenantId(
@@ -39,16 +44,21 @@ export abstract class PostgresPauseQueryRepository extends PostgresPausedRunRepo
   ): Promise<PausePage> {
     assertScanLimit(limit);
     assertPauseFilter(filter);
-    return this.scans.ofTenant(tenantId, filter, seqOfCursor(after), limit);
+    return new PauseScans(this.connection.pool).ofTenant(
+      tenantId,
+      filter,
+      seqOfCursor(after),
+      limit,
+    );
   }
 
   async findClosedByResolvedAtBefore(cutoff: Date, limit: number): Promise<readonly PauseRecord[]> {
     assertScanLimit(limit);
-    return this.scans.closedBefore(cutoff, limit);
+    return new PauseScans(this.connection.pool).closedBefore(cutoff, limit);
   }
 
   deleteByResolvedAtBefore(cutoff: Date): Promise<void> {
-    return this.scans.deleteClosedBefore(cutoff);
+    return new PauseScans(this.connection.pool).deleteClosedBefore(cutoff);
   }
 
   async claimNoticesDue(

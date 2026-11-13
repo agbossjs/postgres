@@ -38,6 +38,9 @@ export {
 } from "./errors.js";
 export { PostgresExecutionRecordRepository } from "./stores/postgres-execution-record.repository.js";
 export { PostgresPausedExecutionRepository } from "./stores/postgres-paused-execution.repository.js";
+// the layers `PostgresPausedExecutionRepository` is built on (its public type names them)
+export { PostgresPauseQueryRepository } from "./stores/postgres-pause-queries.repository.js";
+export { PostgresPausedRunRepository } from "./stores/postgres-paused-runs.repository.js";
 export { PostgresChildExecutionQueueRepository } from "./stores/postgres-child-execution-queue.repository.js";
 export { PostgresCheckpointSaver } from "./stores/postgres-checkpoint-saver.js";
 export { PostgresFencedEffectRepository } from "./stores/postgres-fenced-effect.repository.js";
