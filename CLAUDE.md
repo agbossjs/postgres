@@ -68,3 +68,6 @@ clock_timestamp())`, the parameter the test's clock only when `StoreClock.source
   nothing left out (`without`); every migration path and every error has a test. Tests fail
   without a database, never skip.
 - Conveyor, labels, branches and PRs as agbossjs/agboss (see CONTRIBUTING.md).
+- Changelog: a fragment `changes/<issue>-<slug>.md` (`section:` + `issue:` header, entry mentioning
+  `agbossjs/agboss#<issue>`; see `changes/README.md`), never an edit of `CHANGELOG.md` (CI fails it
+  outside a `release/*` branch).
