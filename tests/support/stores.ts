@@ -7,12 +7,27 @@ import { TestApplicationContext } from "./application-context.js";
 /** The connections a test opened, ended after it. */
 const opened: PostgresConnection[] = [];
 
-afterEach(async () => {
-  for (const connection of opened.splice(0)) await connection.onDestroy();
-});
+/**
+ * The most connections a test file's pools may hold open at once (agbossjs/agboss#978 AC1): the
+ * run's files go on in parallel, the server's `max_connections` is 100 — a file that needs more
+ * ends a round's pools (`endConnections`) before it opens the next round's.
+ */
+export const FILE_CONNECTION_BUDGET = 12;
 
-/** A connection of this test to `url` (ended after the test). */
+/** Ends every connection this test opened so far (a test with rounds ends each round's). */
+export async function endConnections(): Promise<void> {
+  for (const connection of opened.splice(0)) await connection.onDestroy();
+}
+
+afterEach(endConnections);
+
+/** A connection of this test to `url` (ended after the test, or by `endConnections`). */
 export function connectionTo(url: string, poolSize = 4): PostgresConnection {
+  const held = opened.reduce((sum, open) => sum + open.pool.options.max, 0);
+  if (held + poolSize > FILE_CONNECTION_BUDGET)
+    throw new Error(
+      `a test file's pools would hold ${String(held + poolSize)} connections, over its budget of ${String(FILE_CONNECTION_BUDGET)}: end a round's before the next (endConnections)`,
+    );
   const connection = new PostgresConnection({ url, poolSize });
   opened.push(connection);
   return connection;

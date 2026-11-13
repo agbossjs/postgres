@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import pg from "pg";
-import { afterAll, beforeAll } from "vitest";
+import { afterAll, beforeAll, expect } from "vitest";
 import { migratePostgres } from "../../src/index.js";
 import { DROP_BOUND_MS, dropOnServer } from "./drop-schemas.js";
 
@@ -16,12 +16,29 @@ export const serverUrl = (): string => {
   return url;
 };
 
-/** `url` with every connection's `search_path` set to `schema`. */
+/**
+ * The server's bounds on a test's session (agbossjs/agboss#978): a statement that waits for a lock
+ * a leaked transaction holds, or a session left idle inside a transaction, ends with an error that
+ * names it — never a test file hung until its 17-minute timeout (a gate on a loaded machine, with
+ * 276 schedules of the lease explorer that take 7 s on an idle one). Far above any wait a test
+ * means to make; a bound the database keeps, not a threshold a test asserts.
+ */
+const SESSION_BOUNDS =
+  "-c lock_timeout=60000 -c statement_timeout=120000 -c idle_in_transaction_session_timeout=120000";
+
+/** `url` with every connection's `search_path` set to `schema`, and the session bounds. */
 export function urlOnSchema(url: string, schema: string): string {
   const parsed = new URL(url);
-  parsed.searchParams.set("options", `-c search_path=${schema}`);
+  parsed.searchParams.set("options", `-c search_path=${schema} ${SESSION_BOUNDS}`);
   return parsed.toString();
 }
+
+/** The running test file's name: what its connections are called on the server (`application_name`). */
+const fileOf = (): string =>
+  (expect.getState().testPath ?? "")
+    .split("/")
+    .pop()
+    ?.replace(/\.test\.ts$/u, "") ?? "";
 
 /** A new schema name, unique to this run. */
 export const newSchemaName = (): string => `t_${randomBytes(6).toString("hex")}`;
@@ -41,7 +58,10 @@ export async function onServer(sql: string): Promise<void> {
 export async function createSchema(): Promise<{ readonly schema: string; readonly url: string }> {
   const schema = newSchemaName();
   await onServer(`CREATE SCHEMA ${schema}`);
-  return { schema, url: urlOnSchema(serverUrl(), schema) };
+  const url = new URL(urlOnSchema(serverUrl(), schema));
+  // #978: the peak of connections says which file held them
+  url.searchParams.set("application_name", fileOf().slice(0, 63));
+  return { schema, url: url.toString() };
 }
 
 /** Drops a test's schema and everything in it, within `DROP_BOUND_MS` (agbossjs/agboss#985); a failure names it. */

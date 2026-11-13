@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 import { PostgresExecutionLeaseRepository } from "../../src/index.js";
 import { TestApplicationContext } from "../support/application-context.js";
 import { onSchema, testDatabase } from "../support/database.js";
-import { connectionTo } from "../support/stores.js";
+import { connectionTo, endConnections } from "../support/stores.js";
 
 /**
  * agbossjs/agboss#520 on PostgreSQL, beyond the contract's two instances: six connections racing
@@ -79,6 +79,19 @@ function sentInOrder<T>(round: number, calls: readonly (() => Promise<T>)[]): Pr
  * at the holder's epoch and refused for good.
  */
 async function raceRound(
+  root: string,
+  round: number,
+  isExpired: boolean,
+): Promise<"taken" | "finished"> {
+  try {
+    return await racedWithin(root, round, isExpired);
+  } finally {
+    // #978: a round's six pools end with it, not with the test's fifteen rounds
+    await endConnections();
+  }
+}
+
+async function racedWithin(
   root: string,
   round: number,
   isExpired: boolean,

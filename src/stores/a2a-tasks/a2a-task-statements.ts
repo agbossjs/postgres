@@ -127,6 +127,10 @@ export async function savedOrKept(
  * a follow-up saved while the sweep removed its task, which no task's sweep would find. A message
  * and its task are saved in one transaction, so a message without a task is never a new task's. A direct message's claim has no task by design
  * (agbossjs/agboss#860): never an orphan.
+ *
+ * MUST STAY ONE STATEMENT (#960): the statement's own snapshot decides what is an orphan and removes
+ * it at once. Read in one statement and delete in another, a sweep removes a message a resend
+ * attached to a new task in between — the MongoDB double charge. `a2a-task-sweep-statements.test.ts` pins it.
  */
 export async function sweptOrphanMessagesBefore(
   database: Queryable,
