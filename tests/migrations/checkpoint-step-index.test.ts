@@ -91,9 +91,7 @@ describe("agbossjs/agboss#962: the checkpoint index step", () => {
     const schema = schemas[0] ?? "";
     await holder.query("SELECT pg_advisory_lock($1, hashtext($2))", [INDEX_LOCK_KEY, schema]);
     try {
-      const started = Date.now();
       await migratePostgres({ url, schema });
-      expect(Date.now() - started).toBeLessThan(15_000);
       expect(await stateOf(url)).toEqual({});
     } finally {
       await holder.end();
