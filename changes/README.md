@@ -38,8 +38,8 @@ The version's section in `CHANGELOG.md` is one of three, and the script handles 
   fragment goes under the `### <heading>` of its section inside it, after the entries already there;
   a heading that is not there yet is created in the order Breaking (headed `Changed — breaking`),
   Changed, Added, Fixed, Deprecated, Security. Other subheadings (`Fixed — other`, `Docs`, …) stay
-  as they are. The heading's `unreleased` becomes the date. Keep the unreleased section in the
-  `## [<version>] — unreleased` form, so there is one.
+  as they are. The heading, in either form, becomes `## [<version>] — <date>`; no PR edits it
+  before (CI), so the draft heading stays as it is until the release PR.
 - **Absent**: a new dated section is written above the newest release; the file is created if the
   repository has none.
 - **Released** (a date in the heading): a fragment that is not in it yet fails the run. Fix the
