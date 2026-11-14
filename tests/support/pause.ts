@@ -1,4 +1,7 @@
 import { execFileSync } from "node:child_process";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { createServer, Socket } from "node:net";
 import { Clock } from "@agboss/core";
 import type { Milliseconds } from "@agboss/core/units";
@@ -109,6 +112,54 @@ export async function startPostgres(): Promise<PausableServer> {
   return serverOf(name, `postgres://postgres:pw@127.0.0.1:${String(port)}/postgres`);
 }
 
+/**
+ * A PostgreSQL with `ssl=on` and a self-signed certificate (made here with `openssl`), its own
+ * container: a client of `sslmode=no-verify` upgrades its socket to TLS (agbossjs/agboss#954).
+ */
+export async function startPostgresTls(): Promise<PausableServer> {
+  const name = `agboss-954-postgres-tls-${String(process.pid)}`;
+  const port = await freePort();
+  const dir = mkdtempSync(join(tmpdir(), "agboss-954-tls-"));
+  execFileSync(
+    "openssl",
+    ["req", "-new", "-x509", "-days", "2", "-nodes", "-subj", "/CN=127.0.0.1"].concat([
+      "-out",
+      join(dir, "server.crt"),
+      "-keyout",
+      join(dir, "server.key"),
+    ]),
+    { stdio: "ignore" },
+  );
+  // the key must belong to the server's user with mode 0600: copied inside, the mount is read-only
+  const prepare =
+    "cp /tls/server.crt /tls/server.key /var/lib/postgresql/ && chown postgres /var/lib/postgresql/server.* && chmod 600 /var/lib/postgresql/server.key && exec docker-entrypoint.sh postgres -c ssl=on -c ssl_cert_file=/var/lib/postgresql/server.crt -c ssl_key_file=/var/lib/postgresql/server.key";
+  docker(
+    ...[
+      "run",
+      "-d",
+      "--name",
+      name,
+      "--cpus",
+      process.env.AGBOSS_PAUSE_CPUS ?? "1",
+      "--memory",
+      "512m",
+    ],
+    ...["-e", "POSTGRES_PASSWORD=pw", "-v", `${dir}:/tls:ro`],
+    ...["-p", `127.0.0.1:${String(port)}:5432`, "--entrypoint", "sh", "postgres:16", "-c", prepare],
+  );
+  await untilReady(() => {
+    docker("exec", name, "pg_isready", "-U", "postgres", "-h", "127.0.0.1");
+  });
+  await sleep(2000);
+  await untilReady(() => {
+    docker("exec", name, "pg_isready", "-U", "postgres", "-h", "127.0.0.1");
+  });
+  return serverOf(
+    name,
+    `postgres://postgres:pw@127.0.0.1:${String(port)}/postgres?sslmode=no-verify`,
+  );
+}
+
 /** `"returned"` when `work` ended first, `"hung"` when `limit` ms passed (a race of events, not a duration). */
 export async function endsWithin(
   work: Promise<unknown>,
@@ -170,19 +221,22 @@ export class RealClock extends Clock {
  */
 export function trackSockets(port: number): { open(): number; stop(): void } {
   const sockets: Socket[] = [];
-  const connect = Socket.prototype.connect;
-  Socket.prototype.connect = function (this: Socket, ...args: unknown[]): Socket {
+  const original: unknown = Reflect.get(Socket.prototype, "connect");
+  if (typeof original !== "function") throw new Error("net.Socket has no connect");
+  const patched = function (this: Socket, ...args: unknown[]): Socket {
     // a client passes the port itself (pg) or its options, alone or in an array (node-redis)
     const first: unknown = Array.isArray(args[0]) ? (args[0] as unknown[])[0] : args[0];
     const target =
       typeof first === "object" && first !== null ? (first as { port?: number }).port : first;
     if (target === port) sockets.push(this);
-    return (connect as (...call: unknown[]) => Socket).apply(this, args);
-  } as typeof Socket.prototype.connect;
+    Reflect.apply(original, this, args);
+    return this;
+  };
+  Reflect.set(Socket.prototype, "connect", patched);
   return {
     open: () => sockets.filter((socket) => !socket.destroyed).length,
     stop: () => {
-      Socket.prototype.connect = connect;
+      Reflect.set(Socket.prototype, "connect", original);
     },
   };
 }

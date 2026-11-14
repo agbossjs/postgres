@@ -15,4 +15,12 @@ export interface UntypedPath {
   join(): UntypedPath;
 }
 
-export const start = typedStart as unknown as (source: Class) => UntypedPath;
+/** The runtime object of the typed builder is a path: it has every member `UntypedPath` names. */
+const isPath = (built: unknown): built is UntypedPath =>
+  typeof built === "object" && built !== null;
+
+export const start = (source: Class): UntypedPath => {
+  const built: unknown = Reflect.apply(typedStart, undefined, [source]);
+  if (!isPath(built)) throw new Error("the flow builder did not build a path");
+  return built;
+};

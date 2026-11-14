@@ -6,6 +6,7 @@
  * Connections are counted by their sockets (`destroyed`). The server is a container of the test's
  * own (`tests/support/pause.ts`); without Docker, skipped.
  */
+import { TLSSocket } from "node:tls";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { createApp } from "@agboss/core";
 import { seconds } from "@agboss/core/units";
@@ -17,6 +18,7 @@ import {
   RealClock,
   sleep,
   startPostgres,
+  startPostgresTls,
   trackSockets,
   watchUnhandled,
 } from "../support/pause.js";
@@ -27,8 +29,8 @@ beforeAll(async () => {
   if (!HAS_DOCKER) return;
   server = await startPostgres();
   await migratePostgres({ url: server.url });
-  process.env["AGBOSS_STOP_DATABASE_URL"] = server.url;
-  process.env["AGBOSS_STOP_OPENROUTER_KEY"] = "placeholder";
+  process.env.AGBOSS_STOP_DATABASE_URL = server.url;
+  process.env.AGBOSS_STOP_OPENROUTER_KEY = "placeholder";
 }, 120_000);
 afterEach(() => {
   if (HAS_DOCKER) server.unpause();
@@ -94,20 +96,20 @@ describe.skipIf(!HAS_DOCKER)("#954: a listener that reconnects while the connect
     readonly sockets: ReturnType<typeof trackSockets>;
   }> {
     const connection = new PostgresConnection({ url: server.url, watchLivenessSeconds: 2 });
-    let lost = false;
+    const lost: string[] = [];
     const sockets = trackSockets(Number(new URL(server.url).port));
     await listenerOf(connection, {
       channel: "i954_channel",
       payload: "i954",
       clock: new RealClock(),
       warn: () => {
-        lost = true;
+        lost.push("lost");
       },
       onNotify: () => undefined,
     });
     server.pause();
-    for (let waited = 0; !lost && waited < 10_000; waited += 100) await sleep(100);
-    expect(lost).toBe(true);
+    for (let waited = 0; lost.length === 0 && waited < 10_000; waited += 100) await sleep(100);
+    expect(lost.length).toBeGreaterThan(0);
     return { connection, sockets };
   }
 
@@ -117,10 +119,11 @@ describe.skipIf(!HAS_DOCKER)("#954: a listener that reconnects while the connect
     try {
       await sleep(1500); // past the 1 s pause: the new connection is opening to the quiet server
 
-      await connection.onDestroy();
-      await sleep(300);
-
+      const destroying = connection.onDestroy();
+      // at once, not microtasks later: the new connection's socket is dropped by the call itself
       expect(sockets.open()).toBe(0);
+      await destroying;
+
       expect(unhandled.seen).toEqual([]);
     } finally {
       sockets.stop();
@@ -148,6 +151,66 @@ describe.skipIf(!HAS_DOCKER)("#954: a listener that reconnects while the connect
     } finally {
       sockets.stop();
       server.unpause();
+    }
+  }, 60_000);
+});
+
+describe.skipIf(!HAS_DOCKER)("#954: a client checked out of the pool by its holder", () => {
+  it("a statement in flight on a raw pool.connect() client with no error listener (as LangGraph's saver holds one): the stop does not crash the process, the statement rejects", async () => {
+    const crashes: unknown[] = [];
+    const onCrash = (error: unknown): void => {
+      crashes.push(error);
+    };
+    process.on("uncaughtException", onCrash);
+    const unhandled = watchUnhandled();
+    const connection = new PostgresConnection({ url: server.url });
+    try {
+      const client = await connection.pool.connect();
+      server.pause();
+      await sleep(300);
+      const statement = client.query("SELECT 1").then(
+        () => "answered",
+        () => "rejected",
+      );
+
+      await connection.onDestroy();
+      await sleep(500);
+
+      expect(await statement).toBe("rejected");
+      expect(crashes).toEqual([]);
+      expect(unhandled.seen).toEqual([]);
+    } finally {
+      process.off("uncaughtException", onCrash);
+      unhandled.stop();
+      server.unpause();
+    }
+  }, 60_000);
+});
+
+describe.skipIf(!HAS_DOCKER)("#954: a client whose socket was upgraded to TLS", () => {
+  let tls: PausableServer;
+  beforeAll(async () => {
+    tls = await startPostgresTls();
+  }, 120_000);
+  afterAll(() => {
+    tls.remove();
+  });
+
+  it("the stop destroys the TLS stream pg works over, not only the socket it was given", async () => {
+    const connection = new PostgresConnection({ url: tls.url });
+    try {
+      const client = await connection.pool.connect();
+      const stream: unknown = Reflect.get(Reflect.get(client, "connection"), "stream");
+      expect(stream).toBeInstanceOf(TLSSocket);
+      tls.pause();
+      await sleep(300);
+      client.query("SELECT 1").catch((): undefined => undefined);
+
+      await connection.onDestroy();
+
+      expect((stream as TLSSocket).destroyed).toBe(true);
+    } finally {
+      tls.unpause();
     }
   }, 60_000);
 });

@@ -5,12 +5,11 @@ import {
   type OnDestroy,
   type OnInit,
 } from "@agboss/core";
-import { Socket } from "node:net";
-import type { Duplex } from "node:stream";
 import pg from "pg";
 import { z } from "zod";
 import { migrationsIn } from "../migrations/files.js";
 import { PostgresConnectionClosedError } from "../errors.js";
+import { trackedClientOf } from "./tracked-client.js";
 import { once } from "./once.js";
 import { connectTimeoutOf } from "./connect-timeout.js";
 import { PostgresListener, type PostgresListenerOptions } from "./listener.js";
@@ -110,28 +109,8 @@ export class PostgresConnection implements OnInit, OnDestroy {
     LISTENERS.set(this, new Set());
     const schema = checkedSchemaOf(this.#settings.schema);
     const clients = this.#clients;
-    // a client of the pool whose socket is ours to drop: `pg`'s graceful `end()` waits for a server
-    // that does not answer, and `pool.end()` for every client's `end()`
-    class TrackedClient extends pg.Client {
-      constructor(config?: string | pg.ClientConfig) {
-        const given = typeof config === "string" ? { connectionString: config } : (config ?? {});
-        let socket: Duplex | undefined;
-        super({
-          ...given,
-          stream: () => {
-            socket = typeof given.stream === "function" ? given.stream() : new Socket();
-            return socket;
-          },
-        });
-        const drop = (): void => {
-          socket?.destroy();
-        };
-        clients.add(drop);
-        this.once("end", () => clients.delete(drop));
-      }
-    }
     this.pool = new pg.Pool({
-      Client: TrackedClient,
+      Client: trackedClientOf(clients),
       connectionString: this.#settings.url,
       max: this.#settings.poolSize ?? DEFAULT_POOL_SIZE,
       // agbossjs/agboss#989: a connection that never answers rejects the call, never hangs it
