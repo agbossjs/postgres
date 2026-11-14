@@ -86,3 +86,19 @@ async function buildLocked(client: pg.Client, schema: string): Promise<StepIndex
   );
   return "built";
 }
+
+/**
+ * The index step of a migration run, after its lock is released: what it did, or `undefined` when
+ * it runs in the background (a failed build there is a slower read; the next run builds it).
+ */
+export async function stepIndexAfter(
+  options: { readonly url: string; readonly signal?: AbortSignal | undefined },
+  schema: string,
+  inBackground: boolean,
+): Promise<StepIndexResult | undefined> {
+  options.signal?.throwIfAborted();
+  const build = buildStepIndex({ url: options.url, schema });
+  if (!inBackground) return build;
+  build.catch(() => undefined);
+  return undefined;
+}

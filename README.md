@@ -333,7 +333,11 @@ leaves an INVALID index (`\d desk.checkpoints` shows it): the next run that hold
 (`DROP INDEX CONCURRENTLY`) and builds it again. `CONCURRENTLY` waits for the transactions open in
 the database when it starts (an application's long transaction delays the build, never the writes).
 
-A second run prints `nothing to apply: public is at migration 21`. Exit codes: `0` done, `1` the
+The command's last line says what the index step did: `built index checkpoints_latest_by_step (public)`,
+`index checkpoints_latest_by_step (public) is ready` (found valid) or, when another run holds the
+build's lock, `skipped index checkpoints_latest_by_step (public): another run holds its build lock; run
+migrate again when it ends` (`migratePostgres` returns the same as `MigrationReport.stepIndex`). A
+second run prints `nothing to apply: public is at migration 21` and the ready line. Exit codes: `0` done, `1` the
 migration failed (the reason on stderr, any password in it masked), `2` a usage error. The command
 reads `POSTGRES_URL`; `--url <url>` overrides it, but puts the URL — its password included — in the
 process list and the shell history, so prefer the variable; `DATABASE_URL` (the name before agbossjs/agboss#891) is still read when

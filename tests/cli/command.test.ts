@@ -59,6 +59,7 @@ describe("agboss-postgres migrate", () => {
     expect(first.lines[31]).toMatch(/^applied \d+ LangGraph checkpoint migration\(s\)$/);
     expect(second.lines).toEqual([
       expect.stringMatching(/^nothing to apply: t_\w+ is at migration 31$/),
+      expect.stringMatching(/^index checkpoints_latest_by_step \(t_\w+\) is ready$/),
     ]);
     expect([...first.errors, ...second.errors]).toEqual([]);
   });
@@ -68,7 +69,7 @@ describe("agboss-postgres migrate", () => {
     const io = ioOf({ POSTGRES_URL: url });
 
     expect(await runCommand(["migrate"], io)).toBe(ExitCode.Ok);
-    expect(io.lines).toHaveLength(32);
+    expect(io.lines).toHaveLength(33);
   });
 
   it("agbossjs/agboss#891: DATABASE_URL is still read for one release, when POSTGRES_URL is unset", async () => {
@@ -76,7 +77,7 @@ describe("agboss-postgres migrate", () => {
     const io = ioOf({ DATABASE_URL: url });
 
     expect(await runCommand(["migrate"], io)).toBe(ExitCode.Ok);
-    expect(io.lines).toHaveLength(32);
+    expect(io.lines).toHaveLength(33);
     expect(USAGE).toContain("DATABASE_URL is still read when POSTGRES_URL is unset");
   });
 

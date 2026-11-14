@@ -157,6 +157,7 @@ export interface MigrationReport {
     readonly applied: readonly AppliedMigrationReport[];
     readonly checkpointMigrations: number;
     readonly schema: string;
+    readonly stepIndex?: StepIndexResult;
     readonly version: number;
 }
 
@@ -661,6 +662,9 @@ export interface SchemaVersions {
     readonly cause?: unknown;
     readonly expected: number;
 }
+
+// @public
+export type StepIndexResult = "built" | "present" | "skipped";
 
 // Warnings were encountered during analysis:
 //
