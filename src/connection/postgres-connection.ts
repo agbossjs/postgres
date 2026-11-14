@@ -14,6 +14,7 @@ import { PostgresListener, type PostgresListenerOptions } from "./listener.js";
 import { checkSchema } from "../migrations/schema-check.js";
 import {
   checkedSchemaOf,
+  checkedWatchLivenessOf,
   DEFAULT_POOL_SIZE,
   DEFAULT_WATCH_LIVENESS_SECONDS,
   searchPathOptionOf,
@@ -74,6 +75,7 @@ export class PostgresConnection implements OnInit, OnDestroy {
   constructor(source: ApplicationContext | PostgresConnectionSettings) {
     this.#settings =
       source instanceof ApplicationContext ? settingsOfEnvironment(source.environment) : source;
+    checkedWatchLivenessOf(this.#settings.watchLivenessSeconds);
     SETTINGS.set(this, this.#settings);
     const schema = checkedSchemaOf(this.#settings.schema);
     this.pool = new pg.Pool({
