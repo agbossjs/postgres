@@ -13,6 +13,19 @@ export const DEFAULT_POOL_SIZE = 10;
 export const DEFAULT_WATCH_LIVENESS_SECONDS = 10;
 
 /**
+ * `seconds` when the child queue's watch can run on it — a whole number of at least 2, as the
+ * environment's field is checked —, else `PostgresSettingsError` naming `watchLivenessSeconds`
+ * (agbossjs/agboss#1029): a settings object a script or a provider builds is trusted no more than
+ * the environment.
+ */
+export function checkedWatchLivenessOf(seconds: number | undefined): number | undefined {
+  if (seconds === undefined || (Number.isInteger(seconds) && seconds >= 2)) return seconds;
+  throw new PostgresSettingsError({
+    message: `watchLivenessSeconds must be a whole number of at least 2, got ${String(seconds)}`,
+  });
+}
+
+/**
  * The schema the stores' tables are in when neither `schema` nor the URL's `search_path` names one
  * (agbossjs/agboss#891): PostgreSQL's own default.
  */
@@ -36,6 +49,8 @@ export interface PostgresConnectionSettings {
    * `DEFAULT_WATCH_LIVENESS_SECONDS`, 10, at least 2): the watch pings its connection every half of
    * it and gives the answer the other half, then warns, listens again on a new connection and wakes
    * once.
+   * Another value (0, 1, a negative or a fractional number) is a `PostgresSettingsError` at construction
+   * (agbossjs/agboss#1029), as in the environment.
    */
   readonly watchLivenessSeconds?: number;
   /** What the start does with the schema (default `SchemaSetup.Check`: it is migrated explicitly). */

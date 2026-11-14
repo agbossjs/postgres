@@ -289,7 +289,9 @@ does not answer is dropped, `child-queue.watch-connection-lost` is logged at `wa
 listens again on a new one after its first pause (1 s), waking the claimers once — so a child queued
 during the gap waits for neither the sweep nor the next `NOTIFY`: the worst case is the bound, plus
 1 s, plus a connection (a new connection that is swallowed too is dropped at the bound and tried
-again, 2 s later, doubling up to 30 s). The cost is one `SELECT 1` per instance per 5 s on an empty queue.
+again, 2 s later, doubling up to 30 s). The cost is one `SELECT 1` per instance per 5 s on an empty queue. The bound of a settings object
+(`watchLivenessSeconds`) is checked as the environment's is: a whole number of at least 2, else
+`PostgresSettingsError` at construction (agbossjs/agboss#1029).
 Behind a transaction-mode pooler (PgBouncer `pool_mode = transaction`) a `LISTEN` hears
 nothing: the children are still claimed, at the sweep — point the URL at the server or a
 session-mode pool for the wake-ups.
