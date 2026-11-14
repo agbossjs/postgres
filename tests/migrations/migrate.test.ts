@@ -85,7 +85,13 @@ describe("migratePostgres (AC5)", () => {
     expect(first.applied.map((m) => `${String(m.version)}:${m.name}`)).toEqual(PACKAGE_MIGRATIONS);
     expect(first.version).toBe(31);
     expect(first.checkpointMigrations).toBeGreaterThan(0);
-    expect(second).toEqual({ ...first, applied: [], checkpointMigrations: 0 });
+    expect(first.stepIndex).toBe("built");
+    expect(second).toEqual({
+      ...first,
+      applied: [],
+      checkpointMigrations: 0,
+      stepIndex: "present",
+    });
     expect(await schemaDumpOf(url)).toBe(dumped);
     expect(await historyOf(url)).toEqual(PACKAGE_MIGRATIONS);
   });

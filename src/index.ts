@@ -27,6 +27,7 @@ export {
   type MigratePostgresOptions,
   type MigrationReport,
 } from "./migrations/migrate.js";
+export type { StepIndexResult } from "./migrations/checkpoint-step-index.js";
 export {
   PostgresLedgerMarkMissingError,
   PostgresMigrationChangedError,

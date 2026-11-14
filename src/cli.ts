@@ -3,12 +3,14 @@ import {
   type MigratePostgresOptions,
   type MigrationReport,
 } from "./migrations/migrate.js";
+import { STEP_INDEX_NAME, type StepIndexResult } from "./migrations/checkpoint-step-index.js";
 import { withoutPasswords } from "./redaction.js";
 
 /**
  * `agboss-postgres` — the package's command: `migrate [--url <url>] [--schema <name>]` applies the
  * migrations not yet applied and lists them; a second run lists none. Without `--url` it reads
- * `POSTGRES_URL`, else `DATABASE_URL` (agbossjs/agboss#891: read for one more release, then gone). Usable as a Kubernetes Job:
+ * `POSTGRES_URL`, else `DATABASE_URL` (agbossjs/agboss#891: read for one more release, then gone). The last
+ * line says what it did to the checkpoint index: built, found ready, or skipped. Usable as a Kubernetes Job:
  * exit code 0 when the schema is current, 1 when the run failed, 2 for a wrong command line.
  */
 
@@ -89,6 +91,14 @@ function targetOf(args: readonly string[], env: CommandIo["env"]): MigratePostgr
   return schema === undefined ? { url } : { url, schema };
 }
 
+/** What the checkpoint index step did (agbossjs/agboss#962), said in one line. */
+function indexLine(result: StepIndexResult, schema: string): string {
+  const index = `${STEP_INDEX_NAME} (${schema})`;
+  if (result === "built") return `built index ${index}`;
+  if (result === "present") return `index ${index} is ready`;
+  return `skipped index ${index}: another run holds its build lock; run migrate again when it ends`;
+}
+
 /** The lines a run prints: what it applied, or that nothing was left. */
 function reportLines(report: MigrationReport): readonly string[] {
   const lines = report.applied.map(
@@ -99,6 +109,7 @@ function reportLines(report: MigrationReport): readonly string[] {
     lines.push(`applied ${String(report.checkpointMigrations)} LangGraph checkpoint migration(s)`);
   if (lines.length === 0)
     lines.push(`nothing to apply: ${report.schema} is at migration ${String(report.version)}`);
+  if (report.stepIndex !== undefined) lines.push(indexLine(report.stepIndex, report.schema));
   return lines;
 }
 
