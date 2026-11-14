@@ -56,6 +56,11 @@ export class PostgresListener {
     return listener;
   }
 
+  /** Whether `close()` or `destroy()` was called. */
+  get closed(): boolean {
+    return this.#stopped.signal.aborted;
+  }
+
   /** Stops listening and ends the connection; a reconnect under way stops too. */
   async close(): Promise<void> {
     this.#stopped.abort();
@@ -64,6 +69,19 @@ export class PostgresListener {
     this.#client = undefined;
     await this.#reconnecting;
     if (client !== undefined) await this.#ended(client, this.#socket);
+  }
+
+  /**
+   * Drops the connection now, without waiting for the server (agbossjs/agboss#954): what the stop
+   * does with a listener whose owner it gave up on. A listener closed or dropped is left alone.
+   */
+  destroy(): void {
+    this.#stopped.abort();
+    this.#beat.abort();
+    const client = this.#client;
+    this.#client = undefined;
+    this.#socket?.destroy();
+    void client?.end().catch(() => undefined);
   }
 
   /**

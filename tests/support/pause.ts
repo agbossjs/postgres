@@ -1,5 +1,7 @@
 import { execFileSync } from "node:child_process";
-import { createServer } from "node:net";
+import { createServer, Socket } from "node:net";
+import { Clock } from "@agboss/core";
+import type { Milliseconds } from "@agboss/core/units";
 
 /**
  * A server of the stop tests' own (agbossjs/agboss#923): a container started for the test file,
@@ -85,7 +87,16 @@ export async function startPostgres(): Promise<PausableServer> {
   const name = `agboss-923-postgres-${String(process.pid)}`;
   const port = await freePort();
   docker(
-    ...["run", "-d", "--name", name, "--cpus", "1", "--memory", "512m"],
+    ...[
+      "run",
+      "-d",
+      "--name",
+      name,
+      "--cpus",
+      process.env.AGBOSS_PAUSE_CPUS ?? "1",
+      "--memory",
+      "512m",
+    ],
     ...["-e", "POSTGRES_PASSWORD=pw", "-p", `127.0.0.1:${String(port)}:5432`, "postgres:16"],
   );
   await untilReady(() => {
@@ -127,6 +138,51 @@ export function watchUnhandled(): { readonly seen: unknown[]; stop(): void } {
     seen,
     stop: () => {
       process.off("unhandledRejection", onUnhandled);
+    },
+  };
+}
+
+/** The system's time, as the application's clock is in production (the core's own is not exported). */
+export class RealClock extends Clock {
+  now(): Date {
+    return new Date();
+  }
+
+  sleep(delay: Milliseconds, signal?: AbortSignal): Promise<void> {
+    return new Promise((resolve) => {
+      const timer = setTimeout(resolve, delay);
+      signal?.addEventListener(
+        "abort",
+        () => {
+          clearTimeout(timer);
+          resolve();
+        },
+        { once: true },
+      );
+    });
+  }
+}
+
+/**
+ * The sockets this process opens to `port` from now on, counted by the sockets themselves
+ * (`destroyed`), not by a client's own `isOpen` (false while a client is closing, its socket still
+ * up: agbossjs/agboss#954).
+ */
+export function trackSockets(port: number): { open(): number; stop(): void } {
+  const sockets: Socket[] = [];
+  const connect = Socket.prototype.connect;
+  Socket.prototype.connect = function (this: Socket, ...args: unknown[]): Socket {
+    // a client passes the port itself (pg) or its options, alone or in an array (node-redis)
+    const first: unknown = Array.isArray(args[0]) ? (args[0] as unknown[])[0] : args[0];
+    const target =
+      typeof first === "object" && first !== null ? (first as { port?: number }).port : first;
+    if (target === port) sockets.push(this);
+    return (connect as (...call: unknown[]) => Socket).apply(this, args);
+  } as typeof Socket.prototype.connect;
+  return {
+    open: () => sockets.filter((socket) => !socket.destroyed).length,
+    stop: () => {
+      Socket.prototype.connect = connect;
     },
   };
 }
