@@ -1,13 +1,9 @@
-import { PostgresSaver } from "@langchain/langgraph-checkpoint-postgres";
 import pg from "pg";
 import { z } from "zod";
 import { migrationsIn, newestVersionOf, type MigrationFile } from "./files.js";
-import {
-  appliedMigrationsOf,
-  HISTORY_TABLE,
-  isUndefinedTable,
-  pendingMigrations,
-} from "./history.js";
+import { appliedMigrationsOf, HISTORY_TABLE, pendingMigrations } from "./history.js";
+import { buildStepIndex } from "./checkpoint-step-index.js";
+import { setupCheckpoints } from "./checkpoint-setup.js";
 import { inTransaction } from "../connection/transaction.js";
 import { checkedSchemaOf, quotedIdentifier, searchPathOptionOf } from "../connection/settings.js";
 import { connectTimeoutOf } from "../connection/connect-timeout.js";
@@ -53,7 +49,6 @@ export interface MigrationReport {
 export const MIGRATION_LOCK_KEY = 0x41474253;
 
 const SchemaRow = z.object({ schema: z.string().nullable() });
-const VersionRow = z.object({ newest: z.number().nullable() });
 
 /**
  * Applies this package's migrations (`migrations/NNNN_<name>.sql`) not yet applied to the
@@ -67,10 +62,16 @@ export function migratePostgres(options: MigratePostgresOptions): Promise<Migrat
   return migrateWith(options, migrationsIn());
 }
 
-/** `migratePostgres` with the migrations given (a test's folder). */
+/**
+ * `migratePostgres` with the migrations given (a test's folder). After them, the migration lock
+ * released, the checkpoint index is built (`buildStepIndex`, agbossjs/agboss#962): awaited — a
+ * command is done when its index is —, or `indexInBackground` (a start that migrates: the pod
+ * serves while it builds; a failed build is a slower read, the next run builds it).
+ */
 export async function migrateWith(
   options: MigratePostgresOptions,
   files: readonly MigrationFile[],
+  indexInBackground = false,
 ): Promise<MigrationReport> {
   options.signal?.throwIfAborted();
   const schema = checkedSchemaOf(options.schema);
@@ -91,7 +92,9 @@ export async function migrateWith(
     try {
       if (schema !== undefined) await createSchema(client, schema);
       const run = { pool, client, files, schema, signal: options.signal };
-      return await underLock(client, () => migrateLocked(run));
+      const report = await underLock(client, () => migrateLocked(run));
+      await indexAfter(options, report.schema, indexInBackground);
+      return report;
     } finally {
       client.off("error", onLost);
       client.release();
@@ -99,6 +102,18 @@ export async function migrateWith(
   } finally {
     await pool.end();
   }
+}
+
+/** The index step, after the migration lock is released. */
+async function indexAfter(
+  options: MigratePostgresOptions,
+  schema: string,
+  inBackground: boolean,
+): Promise<void> {
+  options.signal?.throwIfAborted();
+  const build = buildStepIndex({ url: options.url, schema });
+  if (inBackground) build.catch(() => undefined);
+  else await build;
 }
 
 /** PostgreSQL's codes when a concurrent `CREATE SCHEMA IF NOT EXISTS` made it first. */
@@ -182,26 +197,4 @@ async function currentSchemaOf(client: pg.PoolClient): Promise<string> {
   if (schema === null)
     throw new Error("the connection's search_path names no existing schema: create it first");
   return schema;
-}
-
-/** LangGraph's checkpoint tables in `schema`, set up by its saver; how many of its migrations ran. */
-async function setupCheckpoints(
-  pool: pg.Pool,
-  client: pg.PoolClient,
-  schema: string,
-): Promise<number> {
-  const before = await checkpointVersionOf(client);
-  await new PostgresSaver(pool, undefined, { schema }).setup();
-  return (await checkpointVersionOf(client)) - before;
-}
-
-/** The newest of LangGraph's checkpoint migrations applied (-1: none, its table absent). */
-async function checkpointVersionOf(client: pg.PoolClient): Promise<number> {
-  try {
-    const { rows } = await client.query("SELECT max(v) AS newest FROM checkpoint_migrations");
-    return VersionRow.parse(rows[0]).newest ?? -1;
-  } catch (error) {
-    if (isUndefinedTable(error)) return -1;
-    throw error;
-  }
 }

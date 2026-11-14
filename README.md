@@ -316,6 +316,21 @@ applied 0021_pause_answers_by_tree (public)
 applied 6 LangGraph checkpoint migration(s)
 ```
 
+After LangGraph's tables, every run builds one index of its own on `checkpoints`
+(`checkpoints_latest_by_step`, agbossjs/agboss#962: a thread's newest checkpoint by step, which a
+thread whose host clock stepped back reads on every continuation). It is `CREATE INDEX
+CONCURRENTLY`: a populated table keeps taking checkpoint writes while it builds (1 000 000 rows: a
+1.5 s build, no write held longer than 90 ms). It is a step of its own after the migrations, on a
+session of its own outside any transaction, behind a session-level `pg_try_advisory_lock` that never
+waits: a run that does not get it (another is building) skips the step and goes on, and one that
+finds the index does nothing. A start that migrates (`SchemaSetup.MigrateOnStart`) does not wait
+for the build — the pod serves while it runs; `agboss-postgres migrate` and `migratePostgres` return
+when it is done. Nothing depends on the index: `latestByStep` answers the same without it, only
+slower, so a failed or skipped build costs a slower read until the next run. A build that crashed
+leaves an INVALID index (`\d desk.checkpoints` shows it): the next run that holds the lock drops it
+(`DROP INDEX CONCURRENTLY`) and builds it again. `CONCURRENTLY` waits for the transactions open in
+the database when it starts (an application's long transaction delays the build, never the writes).
+
 A second run prints `nothing to apply: public is at migration 21`. Exit codes: `0` done, `1` the
 migration failed (the reason on stderr, any password in it masked), `2` a usage error. The command
 reads `POSTGRES_URL`; `--url <url>` overrides it, but puts the URL — its password included — in the

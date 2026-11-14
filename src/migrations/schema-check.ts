@@ -45,5 +45,7 @@ export async function checkSchema(check: SchemaCheck): Promise<void> {
   await migrateWith(
     check.schema === undefined ? { url: check.url } : { url: check.url, schema: check.schema },
     check.files,
+    // the pod serves while the index builds (agbossjs/agboss#962)
+    true,
   );
 }

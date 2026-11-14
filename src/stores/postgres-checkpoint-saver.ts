@@ -10,6 +10,7 @@ import {
   type PendingWrite,
 } from "@langchain/langgraph-checkpoint";
 import { PostgresSaver } from "@langchain/langgraph-checkpoint-postgres";
+import { latestByStepSql } from "../migrations/checkpoint-step-index.js";
 import { PostgresConnection } from "../connection/postgres-connection.js";
 import { once } from "../connection/once.js";
 
@@ -43,6 +44,28 @@ export class PostgresCheckpointSaver extends BaseCheckpointSaver {
 
   async getTuple(config: RunnableConfig): Promise<CheckpointTuple | undefined> {
     return (await this.#saver()).getTuple(config);
+  }
+
+  /**
+   * The checkpoint of the thread and namespace newest by `(step, id)` (agbossjs/agboss#962, the
+   * core's optional `latestByStep`): one walk of `checkpoints_latest_by_step` for its id, then the
+   * saver's own read of it. The step is in the row `put` writes in one statement, so the answer is
+   * never stale or half-written.
+   */
+  async latestByStep(config: RunnableConfig): Promise<CheckpointTuple | undefined> {
+    const threadId: unknown = config.configurable?.thread_id;
+    const namespace: unknown = config.configurable?.checkpoint_ns ?? "";
+    if (typeof threadId !== "string" || typeof namespace !== "string") return undefined;
+    const schema = await this.connection.schema();
+    const { rows } = await this.connection.pool.query<{ checkpoint_id: string }>(
+      latestByStepSql(schema),
+      [threadId, namespace],
+    );
+    const id = rows[0]?.checkpoint_id;
+    if (id === undefined) return undefined;
+    return (await this.#saver()).getTuple({
+      configurable: { thread_id: threadId, checkpoint_ns: namespace, checkpoint_id: id },
+    });
   }
 
   async *list(
