@@ -218,12 +218,13 @@ const [takeover] = await app.auditLogOf({ tenantId: "default", rootExecutionId }
 
 `PostgresConnection` declares the fields it reads, so the core checks them at assembly:
 
-| Field                 | Type          | Default                                   | What                                                    |
-| --------------------- | ------------- | ----------------------------------------- | ------------------------------------------------------- |
-| `postgresUrl`         | `Secret`      | —                                         | the database: `postgres://user:password@host:5432/db`   |
-| `postgresPoolSize`    | `number`      | `DEFAULT_POOL_SIZE` (`10`)                | the most connections this instance's pool opens         |
-| `postgresSchema`      | `string`      | the URL's `search_path`, `DEFAULT_SCHEMA` | the schema of the stores' tables (one per application)  |
-| `postgresSchemaSetup` | `SchemaSetup` | `SchemaSetup.Check`                       | what the start does with the schema (Migrations, below) |
+| Field                          | Type          | Default                                   | What                                                                        |
+| ------------------------------ | ------------- | ----------------------------------------- | --------------------------------------------------------------------------- |
+| `postgresUrl`                  | `Secret`      | —                                         | the database: `postgres://user:password@host:5432/db`                       |
+| `postgresPoolSize`             | `number`      | `DEFAULT_POOL_SIZE` (`10`)                | the most connections this instance's pool opens                             |
+| `postgresWatchLivenessSeconds` | `number`      | `DEFAULT_WATCH_LIVENESS_SECONDS` (`10`)   | the longest a silently dead `LISTEN` connection goes unnoticed (at least 2) |
+| `postgresSchema`               | `string`      | the URL's `search_path`, `DEFAULT_SCHEMA` | the schema of the stores' tables (one per application)                      |
+| `postgresSchemaSetup`          | `SchemaSetup` | `SchemaSetup.Check`                       | what the start does with the schema (Migrations, below)                     |
 
 ```ts
 // environments/app.environment.ts — the contract
@@ -233,6 +234,7 @@ import type { SchemaSetup } from "@agboss/postgres";
 export class AppEnvironment {
   postgresUrl!: Secret; // required as soon as one PostgreSQL store is listed
   postgresPoolSize?: number;
+  postgresWatchLivenessSeconds?: number;
   postgresSchema?: string;
   postgresSchemaSetup?: SchemaSetup;
 }
@@ -277,7 +279,18 @@ Each instance holds one more connection than its pool (agbossjs/agboss#777): the
 `LISTEN agboss_child_queued`, so a child another pod queues wakes this one at once instead of at its
 next sweep (30 s). It is idle while nothing is queued — the server pushes each `NOTIFY`, nothing is
 polled — and reconnects on its own (1 s, doubling up to 30 s), waking the claimers once when it is
-back. Behind a transaction-mode pooler (PgBouncer `pool_mode = transaction`) a `LISTEN` hears
+back.
+
+**A connection that dies silently** (agbossjs/agboss#789) — a half-open TCP connection behind a NAT
+or a load balancer: no FIN, no RST, the wake-ups just stop — is noticed within
+`postgresWatchLivenessSeconds` (default 10 s): the connection runs a `SELECT 1` every half of it
+(5 s) and the answer is due within the other half; TCP keepalive is on as well. A connection that
+does not answer is dropped, `child-queue.watch-connection-lost` is logged at `warn`, and the watch
+listens again on a new one after its first pause (1 s), waking the claimers once — so a child queued
+during the gap waits for neither the sweep nor the next `NOTIFY`: the worst case is the bound, plus
+1 s, plus a connection (a new connection that is swallowed too is dropped at the bound and tried
+again, 2 s later, doubling up to 30 s). The cost is one `SELECT 1` per instance per 5 s on an empty queue.
+Behind a transaction-mode pooler (PgBouncer `pool_mode = transaction`) a `LISTEN` hears
 nothing: the children are still claimed, at the sweep — point the URL at the server or a
 session-mode pool for the wake-ups.
 

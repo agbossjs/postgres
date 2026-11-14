@@ -12,6 +12,7 @@ import { minutes, seconds } from "@agboss/core/units";
 import pg from "pg";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { PostgresChildExecutionQueueRepository } from "../../src/index.js";
+import { RecordingLogger } from "../support/recording-logger.js";
 import { TestApplicationContext } from "../support/application-context.js";
 import { onSchema, serverUrl, testDatabase } from "../support/database.js";
 import { connectionTo } from "../support/stores.js";
@@ -36,6 +37,7 @@ const queueOf = (instanceId: string): PostgresChildExecutionQueueRepository =>
     connectionTo(namedUrl(), 2),
     clock,
     new TestApplicationContext({}, instanceId),
+    new RecordingLogger(),
   );
 
 const child = (executionId: string) => ({
@@ -131,14 +133,22 @@ describe("agbossjs/agboss#777: the child queue's LISTEN", () => {
     });
   });
 
-  it("idle on an empty queue: one connection on its LISTEN, nothing run while time passes", async () => {
+  it("idle on an empty queue: one connection, pinged once per half of the bound and nothing else", async () => {
     await watching(queueOf("instance-2"));
     const [before] = await listenersNow();
+    expect(before).toMatchObject({ state: "idle", query: "LISTEN agboss_child_queued" });
 
+    // one jump wakes the heartbeat once: its ping (`SELECT 1`) is the only statement the backend ran
     await clock.advance(minutes(10));
 
-    expect(await listenersNow()).toEqual([before]);
-    expect(before).toMatchObject({ state: "idle", query: "LISTEN agboss_child_queued" });
+    await vi.waitFor(async () => {
+      const backends = await onSchema(
+        database.url(),
+        `SELECT pid, state, query FROM pg_stat_activity WHERE application_name = $1 AND pid = $2`,
+        [database.schema(), before?.pid],
+      );
+      expect(backends.rows).toEqual([{ pid: before?.pid, state: "idle", query: "SELECT 1" }]);
+    });
   });
 
   it("close() ends its connection", async () => {

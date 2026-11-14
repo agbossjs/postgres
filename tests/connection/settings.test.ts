@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_POOL_SIZE, PostgresSettingsError, SchemaSetup } from "../../src/index.js";
+import {
+  DEFAULT_POOL_SIZE,
+  DEFAULT_WATCH_LIVENESS_SECONDS,
+  PostgresSettingsError,
+  SchemaSetup,
+} from "../../src/index.js";
 import { searchPathOptionOf, settingsOfEnvironment } from "../../src/connection/settings.js";
 import { revealing } from "../support/application-context.js";
 
@@ -10,10 +15,12 @@ describe("the environment fields of the PostgreSQL stores", () => {
     expect(settingsOfEnvironment({ postgresUrl: revealing(URL) })).toEqual({
       url: URL,
       poolSize: undefined,
+      watchLivenessSeconds: undefined,
       schema: undefined,
       schemaSetup: undefined,
     });
     expect(DEFAULT_POOL_SIZE).toBe(10);
+    expect(DEFAULT_WATCH_LIVENESS_SECONDS).toBe(10);
   });
 
   it("agbossjs/agboss#891: postgresPoolSize, postgresSchema and postgresSchemaSetup are read when set", () => {
@@ -27,9 +34,16 @@ describe("the environment fields of the PostgreSQL stores", () => {
     expect(settings).toEqual({
       url: URL,
       poolSize: 3,
+      watchLivenessSeconds: undefined,
       schema: "app_a",
       schemaSetup: SchemaSetup.MigrateOnStart,
     });
+  });
+
+  it("agbossjs/agboss#789: postgresWatchLivenessSeconds is read when set", () => {
+    expect(
+      settingsOfEnvironment({ postgresUrl: revealing(URL), postgresWatchLivenessSeconds: 6 }),
+    ).toMatchObject({ watchLivenessSeconds: 6 });
   });
 
   it("agbossjs/agboss#891: the search_path option names the schema quoted", () => {
@@ -60,6 +74,9 @@ describe("the environment fields of the PostgreSQL stores", () => {
     [{ postgresPoolSize: 0 }, /postgresPoolSize must be at least 1/],
     [{ postgresPoolSize: 2.5 }, /postgresPoolSize must be a whole number/],
     [{ postgresPoolSize: "10" }, /postgresPoolSize must be a number/],
+    [{ postgresWatchLivenessSeconds: 1 }, /postgresWatchLivenessSeconds must be at least 2/],
+    [{ postgresWatchLivenessSeconds: 2.5 }, /postgresWatchLivenessSeconds must be a whole number/],
+    [{ postgresWatchLivenessSeconds: "5" }, /postgresWatchLivenessSeconds must be a number/],
     [{ postgresSchemaSetup: true }, /postgresSchemaSetup must be one of: check, migrate-on-start/],
     [
       { postgresSchemaSetup: "migrate" },

@@ -4,6 +4,8 @@ import {
   Clock,
   ExecutionRecordStatus,
   Injectable,
+  Logger,
+  LogLevel,
   type ChildExecutionEnd,
   type ChildExecutionQueueWatch,
   type ChildExecutionQueueCounts,
@@ -112,12 +114,13 @@ const DepthRow = z.object({ queued: z.number(), running: z.number(), oldest: z.d
  * nothing is queued; behind a transaction-mode pooler (PgBouncer) notifications do not arrive, and
  * the children are claimed at the sweep. Listed in `@Application({ providers })` with `postgresUrl`.
  */
-@Injectable({ deps: [PostgresConnection, Clock, ApplicationContext] })
+@Injectable({ deps: [PostgresConnection, Clock, ApplicationContext, Logger] })
 export class PostgresChildExecutionQueueRepository extends ChildExecutionQueueRepository {
   constructor(
     private readonly connection: PostgresConnection,
     private readonly clock: Clock,
     private readonly applicationContext: ApplicationContext,
+    private readonly logger: Logger,
   ) {
     super();
   }
@@ -142,12 +145,24 @@ export class PostgresChildExecutionQueueRepository extends ChildExecutionQueueRe
     return saved === 1;
   }
 
-  /** Wakes `onQueued` whenever any instance queues a child in this schema (agbossjs/agboss#777). */
+  /**
+   * Wakes `onQueued` whenever any instance queues a child in this schema (agbossjs/agboss#777). A
+   * connection that dies silently is noticed within `postgresWatchLivenessSeconds` (agbossjs/agboss#789):
+   * a warning (`child-queue.watch-connection-lost`), a new connection and one wake-up.
+   */
   override async watchQueued(onQueued: () => void): Promise<ChildExecutionQueueWatch> {
     const listener = await listenerOf(this.connection, {
       channel: CHILD_QUEUED_CHANNEL,
       payload: await this.connection.schema(),
       clock: this.clock,
+      warn: (message) => {
+        this.logger.write({
+          level: LogLevel.Warn,
+          code: "child-queue.watch-connection-lost",
+          message,
+          time: this.clock.now(),
+        });
+      },
       onNotify: onQueued,
     });
     return { close: () => listener.close() };

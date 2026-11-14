@@ -1,3 +1,4 @@
+import { RecordingLogger } from "../support/recording-logger.js";
 import { FencedEffectSettings, RandomIdGenerator } from "@agboss/core";
 import {
   storeConformance,
@@ -101,7 +102,12 @@ storeConformance<PoolClient>({
       ...postgresStore(
         database,
         (connection, seam) =>
-          new PostgresChildExecutionQueueRepository(connection, seam.clock, seam.application),
+          new PostgresChildExecutionQueueRepository(
+            connection,
+            seam.clock,
+            seam.application,
+            new RecordingLogger(),
+          ),
       ),
       capabilities: [StoreCapability.WatchQueued],
     },
