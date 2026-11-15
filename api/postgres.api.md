@@ -95,6 +95,7 @@ import type { PauseNoticeKind } from '@agboss/core/stores';
 import type { PausePage } from '@agboss/core/stores';
 import type { PauseRecipients } from '@agboss/core/stores';
 import { PauseRecord } from '@agboss/core';
+import type { PauseReplacement } from '@agboss/core/stores';
 import type { PauseScanAfter } from '@agboss/core/stores';
 import type { PauseUntakenResolution } from '@agboss/core/stores';
 import { PendingWrite } from '@langchain/langgraph-checkpoint';
@@ -564,6 +565,8 @@ export class PostgresPausedExecutionRepository extends PostgresPauseQueryReposit
     // (undocumented)
     noticeOnceByTenantIdAndPauseId(tenantId: string, pauseId: string, kind: PauseNoticeKind, facts: PauseNoticeFacts, at: Date, recipients: PauseRecipients): Promise<boolean>;
     // (undocumented)
+    reassignByTenantIdAndPauseId(tenantId: string, pauseId: string, replacement: PauseReplacement, at: Date, recipients: PauseRecipients): Promise<PauseRecord | undefined>;
+    // (undocumented)
     remindByTenantIdAndPauseId(tenantId: string, pauseId: string, at: Date, recipients: PauseRecipients): Promise<boolean>;
     // (undocumented)
     resolveByTenantIdAndPauseId(tenantId: string, pauseId: string, answer: PauseAnswer, at: Date, recipients: PauseRecipients): Promise<PauseRecord | undefined>;
@@ -615,6 +618,8 @@ export abstract class PostgresPauseQueryRepository extends PostgresPausedRunRepo
     findPendingByExpiresAtBefore(at: Date, limit: number, after?: PauseScanAfter): Promise<readonly PauseRecord[]>;
     // (undocumented)
     findPendingByRemindAtBefore(at: Date, limit: number, after?: PauseScanAfter): Promise<readonly PauseRecord[]>;
+    // (undocumented)
+    findPendingUnsentReassignedBefore(cutoff: Date, limit: number, after?: PauseScanAfter): Promise<readonly PauseRecord[]>;
     // (undocumented)
     renewNotice(claim: PauseNoticeClaim, at: Date, claimFor: Milliseconds): Promise<PauseNoticeClaim | undefined>;
     // (undocumented)
@@ -881,6 +886,7 @@ export type StepIndexResult = "built" | "present" | "skipped";
 // src/stores/postgres-pause-queries.repository.ts - (ae-undocumented) Missing documentation for "findPageByTenantId".
 // src/stores/postgres-pause-queries.repository.ts - (ae-undocumented) Missing documentation for "findClosedByResolvedAtBefore".
 // src/stores/postgres-pause-queries.repository.ts - (ae-undocumented) Missing documentation for "deleteByResolvedAtBefore".
+// src/stores/postgres-pause-queries.repository.ts - (ae-undocumented) Missing documentation for "findPendingUnsentReassignedBefore".
 // src/stores/postgres-pause-queries.repository.ts - (ae-undocumented) Missing documentation for "claimNoticesDue".
 // src/stores/postgres-pause-queries.repository.ts - (ae-undocumented) Missing documentation for "ackNotice".
 // src/stores/postgres-pause-queries.repository.ts - (ae-undocumented) Missing documentation for "renewNotice".
@@ -894,6 +900,7 @@ export type StepIndexResult = "built" | "present" | "skipped";
 // src/stores/postgres-paused-execution.repository.ts - (ae-undocumented) Missing documentation for "cancelByTenantIdAndPauseId".
 // src/stores/postgres-paused-execution.repository.ts - (ae-undocumented) Missing documentation for "expireByTenantIdAndPauseId".
 // src/stores/postgres-paused-execution.repository.ts - (ae-undocumented) Missing documentation for "closeUntakenByTenantIdAndPauseId".
+// src/stores/postgres-paused-execution.repository.ts - (ae-undocumented) Missing documentation for "reassignByTenantIdAndPauseId".
 // src/stores/postgres-paused-execution.repository.ts - (ae-undocumented) Missing documentation for "extendByTenantIdAndPauseId".
 // src/stores/postgres-paused-execution.repository.ts - (ae-undocumented) Missing documentation for "remindByTenantIdAndPauseId".
 // src/stores/postgres-paused-execution.repository.ts - (ae-undocumented) Missing documentation for "noticeOnceByTenantIdAndPauseId".

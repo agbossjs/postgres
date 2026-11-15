@@ -6,7 +6,7 @@ import {
 } from "@agboss/core/stores";
 import type pg from "pg";
 import { z } from "zod";
-import { firstRowOf, rowsOf } from "../../connection/query.js";
+import { firstRowOf, rowsOf, type Queryable } from "../../connection/query.js";
 import { inPoolTransaction } from "../../connection/transaction.js";
 import { escapedJsonOf } from "../nul-escape.js";
 import { closedNotices } from "./pause-notice-plan.js";
@@ -48,6 +48,24 @@ const replacementOf = (
   reassignedFrom: old.pauseId,
 });
 
+/** The replacement's row: its deadline and reminder columns mirror its record. */
+async function insertedReplacement(database: Queryable, made: PauseRecord): Promise<void> {
+  await firstRowOf(
+    database,
+    `INSERT INTO agboss_pauses (tenant_id, pause_id, step_key, root_execution_id, status,
+       expires_at, remind_at, record) VALUES ($1, $2, $3, $4, 'pending', $5, $6, $7::jsonb)`,
+    [
+      made.tenantId,
+      made.pauseId,
+      made.stepKey,
+      made.rootExecutionId,
+      made.expiresAt ?? null,
+      made.remindAt ?? null,
+      escapedJsonOf(made),
+    ],
+  );
+}
+
 /** `old` moved to `replacement`'s addressee; the replacement, or `undefined` when the pause is not open at `at`. */
 export function reassigned(
   pool: pg.Pool,
@@ -87,20 +105,7 @@ export function reassigned(
     if (after.isSent)
       await appendNotices(database, tenantId, pauseId, closedNotices(after, at, recipients));
     const made = replacementOf(old, replacement, replacementStepKeyOf(old, taken), at);
-    await firstRowOf(
-      database,
-      `INSERT INTO agboss_pauses (tenant_id, pause_id, step_key, root_execution_id, status,
-         expires_at, remind_at, record) VALUES ($1, $2, $3, $4, 'pending', $5, $6, $7::jsonb)`,
-      [
-        tenantId,
-        made.pauseId,
-        made.stepKey,
-        made.rootExecutionId,
-        made.expiresAt ?? null,
-        made.remindAt ?? null,
-        escapedJsonOf(made),
-      ],
-    );
+    await insertedReplacement(database, made);
     return made;
   });
 }
