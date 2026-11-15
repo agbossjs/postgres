@@ -1,4 +1,5 @@
 import { AGBossError } from "@agboss/core";
+import type { MigrationReport } from "./migrations/migrate.js";
 
 /**
  * The errors of `@agboss/postgres`: each an `AGBossError` with a stable `code`, so an operator's
@@ -137,5 +138,38 @@ export class PostgresLedgerMarkMissingError extends AGBossError {
       "the ledger's pruning mark is missing (agboss_cost_entries_pruned has no row): nothing was added — insert it with a mark no lower than any prune's cutoff, e.g. INSERT INTO agboss_cost_entries_pruned VALUES (true, now())",
       { cause: options.cause },
     );
+  }
+}
+
+/** What a failed index step takes: what the run did before it, and why the step failed. */
+export interface PostgresStepIndexErrorOptions {
+  /** The numbered migrations and LangGraph's setup the run committed before the index step. */
+  readonly report: MigrationReport;
+  readonly cause: unknown;
+}
+
+/**
+ * The migrations of a `migratePostgres` run are applied and committed, but its last step, the build of
+ * the checkpoint index `checkpoints_latest_by_step` (agbossjs/agboss#962), failed: the build was
+ * cancelled, or the role does not own `checkpoints`. The schema IS migrated (`report` lists what
+ * this run applied) and every read answers correctly, `latestByStep` slower. An INVALID index the
+ * failed build left is dropped when the session allows it; the next `migrate` drops it if not,
+ * and builds the index again. A script tells "schema not migrated" (any other error) from "index not
+ * built" (this one).
+ */
+export class PostgresStepIndexError extends AGBossError {
+  static override readonly code = "postgres.step-index-failed" as const;
+  declare readonly code: typeof PostgresStepIndexError.code;
+  override name = "PostgresStepIndexError";
+  /** What the run committed before the index step failed. */
+  readonly report: MigrationReport;
+
+  constructor(options: PostgresStepIndexErrorOptions) {
+    const reason = options.cause instanceof Error ? options.cause.message : String(options.cause);
+    super(
+      `index checkpoints_latest_by_step (${options.report.schema}) failed: ${reason}; the migrations are applied and reads stay correct; the next migrate run rebuilds the index (an INVALID one is dropped first)`,
+      { cause: options.cause },
+    );
+    this.report = options.report;
   }
 }

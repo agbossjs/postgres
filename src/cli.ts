@@ -4,6 +4,7 @@ import {
   type MigrationReport,
 } from "./migrations/migrate.js";
 import { STEP_INDEX_NAME, type StepIndexResult } from "./migrations/checkpoint-step-index.js";
+import { PostgresStepIndexError } from "./errors.js";
 import { withoutPasswords } from "./redaction.js";
 
 /**
@@ -128,6 +129,12 @@ export async function runCommand(args: readonly string[], io: CommandIo): Promis
     for (const line of reportLines(await migratePostgres(target))) io.out(line);
     return ExitCode.Ok;
   } catch (error) {
+    if (error instanceof PostgresStepIndexError) {
+      // the migrations committed: list them, then say the index step is what failed (#1102)
+      for (const line of reportLines(error.report)) io.out(line);
+      io.err(withoutPasswords(error.message));
+      return ExitCode.Failed;
+    }
     const reason = error instanceof Error ? error.message : String(error);
     io.err(`agboss-postgres: the migration failed — ${withoutPasswords(reason)}`);
     return ExitCode.Failed;

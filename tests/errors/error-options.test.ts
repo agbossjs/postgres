@@ -13,6 +13,9 @@ const FIXTURES: Readonly<Record<string, object>> = {
   PostgresSchemaMissingError: { applied: 1, expected: 4 },
   PostgresSchemaTooNewError: { applied: 5, expected: 4 },
   PostgresSettingsError: { message: "postgresUrl is empty" },
+  PostgresStepIndexError: {
+    report: { schema: "s", applied: [], version: 31, checkpointMigrations: 0 },
+  },
 };
 
 type ErrorClass = abstract new (options: never) => Error;
