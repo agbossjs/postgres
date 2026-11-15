@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 import { PostgresExecutionLeaseRepository } from "../../src/index.js";
 import { onSchema, testDatabase } from "../support/database.js";
 import { TestApplicationContext } from "../support/application-context.js";
-import { connectionTo } from "../support/stores.js";
+import { connectionsScopedTo, connectionTo } from "../support/stores.js";
 
 /**
  * Acceptance corner cases of a yielded lease on PostgreSQL (agbossjs/agboss#516): its row says
@@ -98,7 +98,8 @@ describe("#516 acceptance: a yielded lease on PostgreSQL", () => {
 
   it("AC4: an expired yielded lease, reclaimed and taken at once, has exactly one holder (10 rounds)", async () => {
     for (let round = 0; round < 10; round += 1) {
-      expect(await holdersAfterRace(String(round))).toBe(1);
+      // the round's stores end with it (agbossjs/agboss#978): 20 pools of the file would not
+      expect(await connectionsScopedTo(() => holdersAfterRace(String(round)))).toBe(1);
       expect(await rowOf(`root-race-${String(round)}`)).toMatchObject({ token: 2 });
     }
   });

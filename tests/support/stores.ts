@@ -18,6 +18,21 @@ export function connectionTo(url: string, poolSize = 4): PostgresConnection {
   return connection;
 }
 
+/**
+ * Runs `body`, then ends every connection `connectionTo` made during it, however it ended
+ * (agbossjs/agboss#978): a round of a race that builds its stores anew each time holds its
+ * connections until the round is over, not until the test is — fifteen rounds of six were ninety
+ * connections of one file at once, on a server that refuses at a hundred.
+ */
+export async function connectionsScopedTo<T>(body: () => Promise<T>): Promise<T> {
+  const mark = opened.length;
+  try {
+    return await body();
+  } finally {
+    for (const connection of opened.splice(mark)) await connection.onDestroy();
+  }
+}
+
 /** Thread ids `thread-1`, `thread-2`, … */
 export class CountingIdGenerator extends IdGenerator {
   #threads = 0;
