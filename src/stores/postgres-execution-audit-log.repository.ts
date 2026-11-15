@@ -1,3 +1,4 @@
+import { inLongTransaction } from "../connection/transaction.js";
 import {
   ExecutionAuditLogRepository,
   Injectable,
@@ -50,10 +51,10 @@ export class PostgresExecutionAuditLogRepository extends ExecutionAuditLogReposi
   }
 
   async deleteByOccurredAtBefore(cutoff: Date): Promise<void> {
-    await changesOf(
-      this.connection.pool,
-      "DELETE FROM agboss_execution_lease_events WHERE occurred_at < $1",
-      [cutoff],
+    await inLongTransaction(this.connection.pool, (client) =>
+      changesOf(client, "DELETE FROM agboss_execution_lease_events WHERE occurred_at < $1", [
+        cutoff,
+      ]),
     );
   }
 }

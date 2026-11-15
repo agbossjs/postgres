@@ -1,9 +1,9 @@
 import type { PauseRecord } from "@agboss/core";
-import type { PauseFilter, PausePage } from "@agboss/core/stores";
+import type { PauseFilter, PausePage, PauseScanAfter } from "@agboss/core/stores";
 import type pg from "pg";
 import { z } from "zod";
 import { rowsOf } from "../../connection/query.js";
-import { inPoolTransaction } from "../../connection/transaction.js";
+import { inLongTransaction } from "../../connection/transaction.js";
 import { recordOfRow } from "./pause-rows.js";
 
 /**
@@ -66,12 +66,17 @@ export class PauseScans {
     column: "expires_at" | "remind_at",
     at: Date,
     limit: number,
+    after?: PauseScanAfter,
   ): Promise<readonly PauseRecord[]> {
+    // the keyset (agbossjs/agboss#1070): past the last pause of the page before, in the scan's order
     const rows = await rowsOf(
       this.pool,
       `SELECT record FROM agboss_pauses WHERE status = 'pending' AND ${column} IS NOT NULL
-         AND ${column} <= $1 ORDER BY ${column}, tenant_id COLLATE "C", pause_id COLLATE "C" LIMIT $2`,
-      [at, limit],
+         AND ${column} <= $1
+         AND ($3::timestamptz IS NULL OR (${column}, tenant_id COLLATE "C", pause_id COLLATE "C")
+           > ($3::timestamptz, $4::text COLLATE "C", $5::text COLLATE "C"))
+         ORDER BY ${column}, tenant_id COLLATE "C", pause_id COLLATE "C" LIMIT $2`,
+      [at, limit, after?.at ?? null, after?.tenantId ?? null, after?.pauseId ?? null],
     );
     return rows.map(recordOfRow);
   }
@@ -132,7 +137,7 @@ export class PauseScans {
    * mailboxes after the lock: a pause with a notice just written is kept.
    */
   deleteClosedBefore(cutoff: Date): Promise<void> {
-    return inPoolTransaction(this.pool, async (database) => {
+    return inLongTransaction(this.pool, async (database) => {
       const candidates = KeysOf.parse(
         await rowsOf(
           database,

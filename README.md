@@ -218,13 +218,15 @@ const [takeover] = await app.auditLogOf({ tenantId: "default", rootExecutionId }
 
 `PostgresConnection` declares the fields it reads, so the core checks them at assembly:
 
-| Field                          | Type          | Default                                   | What                                                                       |
-| ------------------------------ | ------------- | ----------------------------------------- | -------------------------------------------------------------------------- |
-| `postgresUrl`                  | `Secret`      | —                                         | the database: `postgres://user:password@host:5432/db`                      |
-| `postgresPoolSize`             | `number`      | `DEFAULT_POOL_SIZE` (`10`)                | the most connections this instance's pool opens                            |
-| `postgresWatchLivenessSeconds` | `number`      | `DEFAULT_WATCH_LIVENESS_SECONDS` (`10`)   | the longest a silently dead `LISTEN` connection goes unnoticed (2 to 3600) |
-| `postgresSchema`               | `string`      | the URL's `search_path`, `DEFAULT_SCHEMA` | the schema of the stores' tables (one per application)                     |
-| `postgresSchemaSetup`          | `SchemaSetup` | `SchemaSetup.Check`                       | what the start does with the schema (Migrations, below)                    |
+| Field                                | Type          | Default                                         | What                                                                       |
+| ------------------------------------ | ------------- | ----------------------------------------------- | -------------------------------------------------------------------------- |
+| `postgresUrl`                        | `Secret`      | —                                               | the database: `postgres://user:password@host:5432/db`                      |
+| `postgresPoolSize`                   | `number`      | `DEFAULT_POOL_SIZE` (`10`)                      | the most connections this instance's pool opens                            |
+| `postgresWatchLivenessSeconds`       | `number`      | `DEFAULT_WATCH_LIVENESS_SECONDS` (`10`)         | the longest a silently dead `LISTEN` connection goes unnoticed (2 to 3600) |
+| `postgresCommandTimeoutMs`           | `number`      | `DEFAULT_COMMAND_TIMEOUT` (`10000`)             | how long a store command may run, ms (100 to 30 000; 0 is refused)         |
+| `postgresIdleInTransactionTimeoutMs` | `number`      | `DEFAULT_IDLE_IN_TRANSACTION_TIMEOUT` (`10000`) | how long a session may idle inside a transaction, ms (100 to 30 000)       |
+| `postgresSchema`                     | `string`      | the URL's `search_path`, `DEFAULT_SCHEMA`       | the schema of the stores' tables (one per application)                     |
+| `postgresSchemaSetup`                | `SchemaSetup` | `SchemaSetup.Check`                             | what the start does with the schema (Migrations, below)                    |
 
 ```ts
 // environments/app.environment.ts — the contract
@@ -235,6 +237,8 @@ export class AppEnvironment {
   postgresUrl!: Secret; // required as soon as one PostgreSQL store is listed
   postgresPoolSize?: number;
   postgresWatchLivenessSeconds?: number;
+  postgresCommandTimeoutMs?: number;
+  postgresIdleInTransactionTimeoutMs?: number;
   postgresSchema?: string;
   postgresSchemaSetup?: SchemaSetup;
 }
@@ -260,11 +264,26 @@ a pool size of 0) fails the start with `PostgresSettingsError`, naming the field
 **No connection waits forever** (agbossjs/agboss#989): a statement waits for its connection — a free
 one of the pool, or a new one up to the server's first answer — at most the URL's `connect_timeout`
 (libpq's parameter, whole seconds, at most 3600: `postgres://…/db?connect_timeout=5`), else
-`DEFAULT_CONNECT_TIMEOUT` (10 s); then it rejects with `pg`'s connection timeout. libpq's `0` ("wait
-forever") keeps the default. A peer that takes the socket and never answers — a black-holed
+`DEFAULT_CONNECT_TIMEOUT` (10 s); then it rejects with `pg`'s connection timeout. `connect_timeout=0`
+("wait forever") and a negative value are a `PostgresSettingsError`; `1` is 2 s, as in libpq. A peer that takes the socket and never answers — a black-holed
 network, a proxy that drops the forward — fails the call instead of hanging it; the same bound holds
 for the child queue's `LISTEN` connection and for `migratePostgres`. A statement's own run time is
-not bounded yet (agbossjs/agboss#928).
+bounded by the command timeout, below.
+
+**Every command is bounded** (agbossjs/agboss#928): each connection of the pool runs under
+`statement_timeout` = `postgresCommandTimeoutMs` (default 10 s, lock waits included) and the client
+gives up a second later (`query_timeout`) on a server that does not answer. A command past it fails
+as `StoreCallTimeoutError` (`store.call-timeout`, source `Command`, the driver's error as the
+cause): its outcome is unknown — under a lease the holder hands the tree over, elsewhere the caller
+gets the error. A connection lost under a COMMIT or a single write is `StoreOutcomeUnknownError`
+(source `Transport`, agbossjs/agboss#1017); a statement inside a transaction before its COMMIT, or a
+read, stays an ordinary error. After a client-side timeout the socket is destroyed and no
+`ROLLBACK` queues behind the hung statement. Retention deletes (`delete…Before`) run under
+`LONG_COMMAND_TIMEOUT` (5 min). A session idle in a transaction is ended by the server after
+`postgresIdleInTransactionTimeoutMs` (default 10 s): a frozen holder's row lock is freed, so
+`app.cancel` and a takeover are not held by it; a fenced work that idles longer between its
+statements fails rolled back, a known outcome. Migrations run on their own connections with no
+command timeout.
 
 **One schema per application** (agbossjs/agboss#891): `postgresSchema` (or
 `PostgresConnectionSettings.schema`) puts every connection of the pool in that schema

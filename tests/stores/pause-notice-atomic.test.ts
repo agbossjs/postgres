@@ -4,7 +4,14 @@ import pg from "pg";
 import { describe, expect, it } from "vitest";
 import { onSchema, testDatabase } from "../support/database.js";
 import { isWaitingOnLock, pidOf } from "./pause-locks.js";
-import { APPROVED, MID, RECIPIENTS, expiringPauseOf, instanceOn } from "./pause-fixtures.js";
+import {
+  APPROVED,
+  DEADLINE,
+  MID,
+  RECIPIENTS,
+  expiringPauseOf,
+  instanceOn,
+} from "./pause-fixtures.js";
 
 /**
  * agbossjs/agboss#936 AC1 (I7): a notice and its change are one transaction. The contract suite sees
@@ -63,7 +70,7 @@ describe("a change and its notices are one transaction", () => {
         store.extendByTenantIdAndPauseId(
           "default",
           "p5",
-          { expiresAt: "2026-01-05T12:00:00.000Z" },
+          { expiresAt: "2026-01-05T12:00:00.000Z", previousExpiresAt: DEADLINE.toISOString() },
           MID,
           RECIPIENTS,
         ),

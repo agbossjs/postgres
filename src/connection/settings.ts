@@ -37,6 +37,50 @@ export function checkedWatchLivenessOf(seconds: number | undefined): number | un
 }
 
 /**
+ * How long a store command may run when the environment does not set `postgresCommandTimeoutMs`
+ * (agbossjs/agboss#928): the server cancels a statement past it (`statement_timeout`), the client
+ * gives up on a silent server a second later (`query_timeout`). Below the framework's own 15 s
+ * bound, so a command that does not answer ends as `StoreCallTimeoutError` with the driver's error
+ * as its cause, never as the framework's give-up.
+ */
+export const DEFAULT_COMMAND_TIMEOUT = 10_000;
+
+/**
+ * How long a retention's delete (`delete…Before`) may run (agbossjs/agboss#928), in ms: 5 minutes,
+ * the framework's own bound of those calls. Not configurable: a retention that needs longer deletes
+ * in smaller steps.
+ */
+export const LONG_COMMAND_TIMEOUT = 300_000;
+
+/**
+ * How long a session may sit idle inside a transaction when the environment does not set
+ * `postgresIdleInTransactionTimeoutMs` (agbossjs/agboss#928, #909): the server ends the session and
+ * frees what it locked. A frozen or abandoned lease holder inside a fencing transaction holds the
+ * lease row's lock; `requestCancel` and a takeover wait on that row and `app.cancel` is bounded at
+ * 15 s, so the default is 10 s, not the lease. A fenced work that idles longer between its
+ * statements is ended and fails rolled back (a known outcome).
+ */
+export const DEFAULT_IDLE_IN_TRANSACTION_TIMEOUT = 10_000;
+
+/** The range of a command timeout, in ms: below it nothing could finish, above it the framework's bound fires first. */
+export const MIN_COMMAND_TIMEOUT = 100;
+export const MAX_COMMAND_TIMEOUT = 30_000;
+
+/**
+ * `value` when it is a whole number of ms from `MIN_COMMAND_TIMEOUT` to `MAX_COMMAND_TIMEOUT`, else
+ * `PostgresSettingsError` naming `field` (agbossjs/agboss#928): 0 waits forever, which the stores
+ * never do. A settings object is trusted no more than the environment.
+ */
+export function checkedTimeoutOf(field: string, value: number | undefined): number | undefined {
+  if (value === undefined) return undefined;
+  if (Number.isInteger(value) && value >= MIN_COMMAND_TIMEOUT && value <= MAX_COMMAND_TIMEOUT)
+    return value;
+  throw new PostgresSettingsError({
+    message: `${field} must be a whole number of milliseconds from ${String(MIN_COMMAND_TIMEOUT)} to ${String(MAX_COMMAND_TIMEOUT)}, got ${String(value)}`,
+  });
+}
+
+/**
  * The schema the stores' tables are in when neither `schema` nor the URL's `search_path` names one
  * (agbossjs/agboss#891): PostgreSQL's own default.
  */
@@ -64,6 +108,19 @@ export interface PostgresConnectionSettings {
    * (agbossjs/agboss#1029), as in the environment.
    */
   readonly watchLivenessSeconds?: number;
+  /**
+   * How long a store command may run, in ms (agbossjs/agboss#928; default `DEFAULT_COMMAND_TIMEOUT`,
+   * 10 000; 100 to 30 000): the pool's `statement_timeout`, and `query_timeout` a second later. A
+   * command past it fails as `StoreCallTimeoutError` (`store.call-timeout`, source `Command`), its
+   * outcome unknown. Another value (0, a negative or a fractional number) is a `PostgresSettingsError`.
+   */
+  readonly commandTimeout?: number;
+  /**
+   * How long a session may idle inside a transaction, in ms (agbossjs/agboss#928; default
+   * `DEFAULT_IDLE_IN_TRANSACTION_TIMEOUT`, 10 000; 100 to 30 000): the pool's
+   * `idle_in_transaction_session_timeout`.
+   */
+  readonly idleInTransactionTimeout?: number;
   /** What the start does with the schema (default `SchemaSetup.Check`: it is migrated explicitly). */
   readonly schemaSetup?: SchemaSetup;
 }
@@ -99,6 +156,12 @@ const PostgresEnvironment = z.object({
       MAX_WATCH_LIVENESS_SECONDS,
       `postgresWatchLivenessSeconds must be at most ${String(MAX_WATCH_LIVENESS_SECONDS)}`,
     )
+    .optional(),
+  postgresCommandTimeoutMs: z
+    .number({ message: "postgresCommandTimeoutMs must be a number" })
+    .optional(),
+  postgresIdleInTransactionTimeoutMs: z
+    .number({ message: "postgresIdleInTransactionTimeoutMs must be a number" })
     .optional(),
   postgresSchema: z.string({ message: "postgresSchema must be a text" }).optional(),
   postgresSchemaSetup: z
@@ -139,7 +202,7 @@ export const searchPathOptionOf = (schema: string): string =>
 /**
  * The connection settings an application's environment gives: `postgresUrl` (required, a
  * `Secret`), `postgresPoolSize`, `postgresWatchLivenessSeconds`, `postgresSchema` and
- * `postgresSchemaSetup` (optional). A missing or
+ * `postgresSchemaSetup`, `postgresCommandTimeoutMs` and `postgresIdleInTransactionTimeoutMs` (optional). A missing or
  * mistyped field fails with `PostgresSettingsError`, naming it — the URL itself is never printed.
  */
 export function settingsOfEnvironment(environment: unknown): PostgresConnectionSettings {
@@ -155,12 +218,18 @@ export function settingsOfEnvironment(environment: unknown): PostgresConnectionS
   }
   const { postgresUrl, postgresPoolSize, postgresSchema, postgresSchemaSetup } = parsed.data;
   const { postgresWatchLivenessSeconds } = parsed.data;
+  const { postgresCommandTimeoutMs, postgresIdleInTransactionTimeoutMs } = parsed.data;
   const url = postgresUrl.reveal();
   if (url.length === 0) throw new PostgresSettingsError({ message: "postgresUrl is empty" });
   return {
     url,
     poolSize: postgresPoolSize,
     watchLivenessSeconds: postgresWatchLivenessSeconds,
+    commandTimeout: checkedTimeoutOf("postgresCommandTimeoutMs", postgresCommandTimeoutMs),
+    idleInTransactionTimeout: checkedTimeoutOf(
+      "postgresIdleInTransactionTimeoutMs",
+      postgresIdleInTransactionTimeoutMs,
+    ),
     schema: checkedSchemaOf(postgresSchema),
     schemaSetup: postgresSchemaSetup,
   };

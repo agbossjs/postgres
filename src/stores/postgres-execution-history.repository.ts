@@ -1,3 +1,4 @@
+import { inLongTransaction } from "../connection/transaction.js";
 import {
   ExecutionHistoryRepository,
   Injectable,
@@ -104,10 +105,12 @@ export class PostgresExecutionHistoryRepository extends ExecutionHistoryReposito
   }
 
   async deleteByEndedAtBefore(cutoff: Date): Promise<void> {
-    await changesOf(
-      this.connection.pool,
-      "DELETE FROM agboss_execution_history WHERE ended_at IS NOT NULL AND ended_at < $1",
-      [cutoff],
+    await inLongTransaction(this.connection.pool, (client) =>
+      changesOf(
+        client,
+        "DELETE FROM agboss_execution_history WHERE ended_at IS NOT NULL AND ended_at < $1",
+        [cutoff],
+      ),
     );
   }
 

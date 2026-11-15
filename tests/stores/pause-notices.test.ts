@@ -4,7 +4,14 @@ import { minutes } from "@agboss/core/units";
 import { describe, expect, it } from "vitest";
 import { onSchema, testDatabase } from "../support/database.js";
 import { blockedBefore, openTransaction, pidOf } from "./pause-locks.js";
-import { MID, RECIPIENTS, expiringPauseOf, instanceOn, pauseOf } from "./pause-fixtures.js";
+import {
+  DEADLINE,
+  MID,
+  RECIPIENTS,
+  expiringPauseOf,
+  instanceOn,
+  pauseOf,
+} from "./pause-fixtures.js";
 
 /**
  * agbossjs/agboss#936 AC1 on PostgreSQL, what the contract suite cannot reach: the claim is one
@@ -95,7 +102,11 @@ async function pausesWithManyNotices(count: number): Promise<void> {
       await store.extendByTenantIdAndPauseId(
         "default",
         id,
-        { expiresAt: `2026-01-05T${String(hour)}:00:00.000Z` },
+        {
+          expiresAt: `2026-01-05T${String(hour)}:00:00.000Z`,
+          previousExpiresAt:
+            hour === 11 ? DEADLINE.toISOString() : `2026-01-05T${String(hour - 1)}:00:00.000Z`,
+        },
         MID,
         RECIPIENTS,
       );

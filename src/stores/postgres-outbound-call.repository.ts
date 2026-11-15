@@ -18,7 +18,7 @@ import {
 import type { PoolClient } from "pg";
 import { PostgresConnection } from "../connection/postgres-connection.js";
 import { changesOf, firstRowOf, rowsOf } from "../connection/query.js";
-import { inPoolTransaction } from "../connection/transaction.js";
+import { inLongTransaction, inPoolTransaction } from "../connection/transaction.js";
 import { checkCancel, prunedCancels } from "./cancel-fence.js";
 import { checkFence } from "./fence.js";
 import { storeNowOf } from "./store-time.js";
@@ -184,12 +184,14 @@ export class PostgresOutboundCallRepository extends OutboundCallRepository {
   }
 
   async deleteByEndedAtBefore(cutoff: Date): Promise<void> {
-    await changesOf(
-      this.connection.pool,
-      "DELETE FROM agboss_outbound_calls WHERE ended_at IS NOT NULL AND ended_at < $1",
-      [cutoff],
-    );
-    await prunedCancels(this.connection.pool, cutoff); // agbossjs/agboss#909
+    await inLongTransaction(this.connection.pool, async (client) => {
+      await changesOf(
+        client,
+        "DELETE FROM agboss_outbound_calls WHERE ended_at IS NOT NULL AND ended_at < $1",
+        [cutoff],
+      );
+      await prunedCancels(client, cutoff); // agbossjs/agboss#909
+    });
   }
 
   leaseStateOf(lease: OutboundCallLease): Promise<OutboundCallLeaseState> {

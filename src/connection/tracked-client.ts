@@ -6,10 +6,13 @@ import { dropClient } from "./drop-client.js";
 /**
  * A client class for the pool whose socket is ours to drop (agbossjs/agboss#954): `pg`'s graceful
  * `end()` waits for a server that does not answer, and `pool.end()` for every client's `end()`.
- * Each client adds its drop to `clients` from its making (even while it connects) to its end.
+ * `Base` is the client class it extends (the pool's timed client, agbossjs/agboss#928). Each client adds its drop to `clients` from its making (even while it connects) to its end.
  */
-export function trackedClientOf(clients: Set<() => void>): typeof pg.Client {
-  class TrackedClient extends pg.Client {
+export function trackedClientOf(
+  clients: Set<() => void>,
+  Base: typeof pg.Client = pg.Client,
+): typeof pg.Client {
+  class TrackedClient extends Base {
     constructor(config?: string | pg.ClientConfig) {
       const given = typeof config === "string" ? { connectionString: config } : (config ?? {});
       let socket: Duplex | undefined;

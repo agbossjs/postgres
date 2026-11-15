@@ -1,7 +1,7 @@
 import { minutes } from "@agboss/core/units";
 import { describe, expect, it } from "vitest";
 import { onSchema, testDatabase } from "../support/database.js";
-import { MID, RECIPIENTS, expiringPauseOf, instanceOn } from "./pause-fixtures.js";
+import { DEADLINE, MID, RECIPIENTS, expiringPauseOf, instanceOn } from "./pause-fixtures.js";
 
 /**
  * agbossjs/agboss#936 AC1 (#935 rule 1, V3.1): the head time of a mailbox — `head_written_at`, what
@@ -30,7 +30,7 @@ describe("the head time of a mailbox", () => {
     await store.extendByTenantIdAndPauseId(
       "default",
       "p",
-      { expiresAt: "2026-01-05T11:00:00.000Z" },
+      { expiresAt: "2026-01-05T11:00:00.000Z", previousExpiresAt: DEADLINE.toISOString() },
       MID,
       RECIPIENTS,
     );
@@ -64,7 +64,7 @@ describe("the head time of a mailbox", () => {
     await store.extendByTenantIdAndPauseId(
       "default",
       "q",
-      { expiresAt: "2026-01-05T11:00:00.000Z" },
+      { expiresAt: "2026-01-05T11:00:00.000Z", previousExpiresAt: DEADLINE.toISOString() },
       MID,
       RECIPIENTS,
     );

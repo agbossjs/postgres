@@ -7,7 +7,7 @@ import {
 } from "@agboss/core";
 import type {
   PauseExpiry,
-  PauseExtension,
+  PauseDeadlineChange,
   PauseNoticeFacts,
   PauseNoticeKind,
   PauseRecipients,
@@ -110,7 +110,7 @@ export class PostgresPausedExecutionRepository extends PostgresPauseQueryReposit
   extendByTenantIdAndPauseId(
     tenantId: string,
     pauseId: string,
-    change: PauseExtension,
+    change: PauseDeadlineChange,
     at: Date,
     recipients: PauseRecipients,
   ): Promise<PauseRecord | undefined> {

@@ -12,7 +12,7 @@ import {
 import { replayedFromOf, storedKeyFactsOf } from "@agboss/core/stores";
 import type { PoolClient } from "pg";
 import { changesOf, firstRowOf } from "../connection/query.js";
-import { inPoolTransaction } from "../connection/transaction.js";
+import { inPoolTransaction, inLongTransaction } from "../connection/transaction.js";
 import { PostgresConnection } from "../connection/postgres-connection.js";
 import { checkCancel, prunedCancels } from "./cancel-fence.js";
 import { checkFence } from "./fence.js";
@@ -149,7 +149,7 @@ export class PostgresFencedEffectRepository extends FencedEffectRepository<PoolC
   }
 
   async deleteByStoredAtBefore(cutoff: Date): Promise<void> {
-    await inPoolTransaction(this.connection.pool, async (client) => {
+    await inLongTransaction(this.connection.pool, async (client) => {
       for (const table of [
         "agboss_fenced_effect_results",
         "agboss_fenced_effect_business_results",

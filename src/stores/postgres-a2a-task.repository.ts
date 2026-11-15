@@ -15,7 +15,7 @@ import {
 } from "@agboss/core";
 import { PostgresConnection } from "../connection/postgres-connection.js";
 import { changesOf, rowsOf } from "../connection/query.js";
-import { inPoolTransaction } from "../connection/transaction.js";
+import { inPoolTransaction, inLongTransaction } from "../connection/transaction.js";
 import { MESSAGE_KEY, messageKeyOf, TERMINAL_STATES, taskOf } from "./a2a-tasks/a2a-task-rows.js";
 import { pageOf } from "./a2a-tasks/a2a-task-pages.js";
 import {
@@ -149,7 +149,7 @@ export class PostgresA2ATaskRepository extends A2ATaskRepository {
 
   async deleteTerminalByStatusAtBefore(cutoff: Date): Promise<void> {
     const gone = "t.state = ANY($1::text[]) AND t.status_at < $2";
-    await inPoolTransaction(this.connection.pool, async (client) => {
+    await inLongTransaction(this.connection.pool, async (client) => {
       await changesOf(
         client,
         `DELETE FROM agboss_a2a_messages m USING agboss_a2a_tasks t

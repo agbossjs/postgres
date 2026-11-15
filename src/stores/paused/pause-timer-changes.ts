@@ -2,12 +2,11 @@ import { PauseStatus, type PauseRecord } from "@agboss/core";
 import {
   PauseExpiryBound,
   PauseNoticeKind,
-  type PauseExtension,
+  type PauseDeadlineChange,
   type PauseNoticeFacts,
   type PauseRecipients,
 } from "@agboss/core/stores";
 import type pg from "pg";
-import { z } from "zod";
 import { changesOf, firstRowOf } from "../../connection/query.js";
 import { inPoolTransaction } from "../../connection/transaction.js";
 import { escapedJsonOf } from "../nul-escape.js";
@@ -23,7 +22,6 @@ import { LOCKED_PAUSE, recordOfRow } from "./pause-rows.js";
  * mailbox of the pause is appended to by two at once — and the write is still a compare-and-set.
  */
 
-const PreviousRow = z.object({ previous: z.string().nullable() });
 export class PauseTimerChanges {
   constructor(private readonly pool: pg.Pool) {}
 
@@ -31,18 +29,11 @@ export class PauseTimerChanges {
   extend(
     tenantId: string,
     pauseId: string,
-    change: PauseExtension,
+    change: PauseDeadlineChange,
     at: Date,
     recipients: PauseRecipients,
   ): Promise<PauseRecord | undefined> {
     return whenHeard(this.pool, recipients, async (database) => {
-      const read = await firstRowOf(
-        database,
-        `SELECT record->>'expiresAt' AS previous FROM agboss_pauses
-         WHERE tenant_id = $1 AND pause_id = $2 FOR UPDATE`,
-        [tenantId, pauseId],
-      );
-      const previous = read === undefined ? null : PreviousRow.parse(read).previous;
       const patch = {
         expiresAt: change.expiresAt,
         expiryBound: PauseExpiryBound.Pause,
@@ -53,11 +44,20 @@ export class PauseTimerChanges {
         `UPDATE agboss_pauses SET expires_at = $3::timestamptz, remind_at = $4::timestamptz,
            record = (record - 'remindAt') || $5::jsonb
          WHERE tenant_id = $1 AND pause_id = $2 AND status = 'pending' AND expires_at IS NOT NULL
-           AND expires_at > $6 AND $3::timestamptz > $6 RETURNING record`,
-        [tenantId, pauseId, change.expiresAt, change.remindAt ?? null, escapedJsonOf(patch), at],
+           AND expires_at > $6 AND $3::timestamptz > $6
+           AND record->>'expiresAt' = $7 AND $3::timestamptz > expires_at RETURNING record`,
+        [
+          tenantId,
+          pauseId,
+          change.expiresAt,
+          change.remindAt ?? null,
+          escapedJsonOf(patch),
+          at,
+          change.previousExpiresAt,
+        ],
       );
-      if (row === undefined || previous === null) return undefined;
-      const facts = { expiresAt: change.expiresAt, previousExpiresAt: previous };
+      if (row === undefined) return undefined;
+      const facts = { expiresAt: change.expiresAt, previousExpiresAt: change.previousExpiresAt };
       await appendNotices(
         database,
         tenantId,
