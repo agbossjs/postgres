@@ -9,8 +9,12 @@ import pg from "pg";
 import { afterEach, describe, expect, it } from "vitest";
 import { ExitCode, runCommand, type CommandIo } from "../../src/cli.js";
 import { migratePostgres, PostgresStepIndexError } from "../../src/index.js";
+import { migrationsIn, newestVersionOf } from "../../src/migrations/files.js";
 import { STEP_INDEX_NAME } from "../../src/migrations/checkpoint-step-index.js";
 import { createSchema, dropSchema, onSchema, onServer, serverUrl } from "../support/database.js";
+
+/** The package's numbered migrations: what a fresh schema applies. */
+const MIGRATIONS = newestVersionOf(migrationsIn());
 
 const ioOf = (): CommandIo & { readonly out_: string[]; readonly err_: string[] } => {
   const out_: string[] = [];
@@ -116,7 +120,7 @@ describe("#1102: the index step fails after the migrations committed", () => {
     ]);
 
     expect(code).toBe(ExitCode.Failed);
-    expect(io.out_.filter((line) => line.startsWith("applied "))).toHaveLength(32);
+    expect(io.out_.filter((line) => line.startsWith("applied "))).toHaveLength(MIGRATIONS + 1);
     expect(io.out_.at(0)).toMatch(new RegExp(`^applied 0001_\\w+ \\(${schema}\\)$`));
     expect(io.out_.at(-1)).toMatch(/^applied \d+ LangGraph checkpoint migration\(s\)$/);
     expect(io.err_).toHaveLength(1);
@@ -127,7 +131,7 @@ describe("#1102: the index step fails after the migrations committed", () => {
     );
     expect(io.err_[0]).not.toContain("the migration failed");
     // the migrations are committed, and the failed build left no INVALID index
-    expect(await appliedCount(url)).toBe(31);
+    expect(await appliedCount(url)).toBe(MIGRATIONS);
     expect(await validityOf(url)).toBeUndefined();
   });
 
@@ -147,8 +151,8 @@ describe("#1102: the index step fails after the migrations committed", () => {
     const error = failure as PostgresStepIndexError;
     expect(error.code).toBe("postgres.step-index-failed");
     expect(error.report.schema).toBe(schema);
-    expect(error.report.applied).toHaveLength(31);
-    expect(error.report.version).toBe(31);
+    expect(error.report.applied).toHaveLength(MIGRATIONS);
+    expect(error.report.version).toBe(MIGRATIONS);
     for (const holder of holders.splice(0)) await holder.end();
 
     const next = await migratePostgres({ url });
@@ -166,7 +170,7 @@ describe("#1102: the index step fails after the migrations committed", () => {
 
     expect(await runCommand(["migrate", "--url", roleUrl], io)).toBe(ExitCode.Failed);
 
-    expect(io.out_).toEqual([`nothing to apply: ${schema} is at migration 31`]);
+    expect(io.out_).toEqual([`nothing to apply: ${schema} is at migration ${String(MIGRATIONS)}`]);
     expect(io.err_).toHaveLength(1);
     expect(io.err_[0]).toMatch(
       new RegExp(
