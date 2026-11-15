@@ -43,7 +43,10 @@ export async function checkSchema(check: SchemaCheck): Promise<void> {
   if (check.schemaSetup !== SchemaSetup.MigrateOnStart)
     throw new PostgresSchemaMissingError({ applied, expected });
   await migrateWith(
-    check.schema === undefined ? { url: check.url } : { url: check.url, schema: check.schema },
+    // a start that migrates is the operator's choice (`MigrateOnStart`): the live-lease guard is for the command
+    check.schema === undefined
+      ? { url: check.url, allowLiveLeases: true }
+      : { url: check.url, schema: check.schema, allowLiveLeases: true },
     check.files,
     // the pod serves while the index builds (agbossjs/agboss#962)
     true,

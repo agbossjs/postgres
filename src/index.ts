@@ -30,6 +30,7 @@ export {
 export type { StepIndexResult } from "./migrations/checkpoint-step-index.js";
 export {
   PostgresLedgerMarkMissingError,
+  PostgresLiveLeasesError,
   PostgresMigrationChangedError,
   PostgresSchemaMissingError,
   PostgresSchemaTooNewError,
@@ -37,6 +38,7 @@ export {
   PostgresStepIndexError,
   type ChangedMigration,
   type PostgresLedgerMarkMissingErrorOptions,
+  type PostgresLiveLeasesErrorOptions,
   type PostgresSettingsErrorOptions,
   type PostgresStepIndexErrorOptions,
   type SchemaVersions,

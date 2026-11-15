@@ -148,6 +148,7 @@ export function migratePostgres(options: MigratePostgresOptions): Promise<Migrat
 
 // @public
 export interface MigratePostgresOptions {
+    readonly allowLiveLeases?: boolean;
     readonly schema?: string;
     readonly signal?: AbortSignal;
     readonly url: string;
@@ -455,6 +456,29 @@ export interface PostgresLedgerMarkMissingErrorOptions {
 }
 
 // @public
+export class PostgresLiveLeasesError extends AGBossError {
+    constructor(options: PostgresLiveLeasesErrorOptions);
+    // (undocumented)
+    static readonly code: "postgres.live-leases";
+    // (undocumented)
+    readonly code: typeof PostgresLiveLeasesError.code;
+    // (undocumented)
+    readonly count: number;
+    // (undocumented)
+    readonly holders: readonly string[];
+    // (undocumented)
+    name: string;
+}
+
+// @public
+export interface PostgresLiveLeasesErrorOptions {
+    // (undocumented)
+    readonly cause?: unknown;
+    readonly count: number;
+    readonly holders: readonly string[];
+}
+
+// @public
 export class PostgresMeshRequestRepository extends MeshRequestRepository {
     constructor(connection: PostgresConnection);
     // (undocumented)
@@ -709,6 +733,12 @@ export type StepIndexResult = "built" | "present" | "skipped";
 // src/errors.ts - (ae-undocumented) Missing documentation for "name".
 // src/errors.ts - (ae-undocumented) Missing documentation for "version".
 // src/errors.ts - (ae-undocumented) Missing documentation for "migration".
+// src/errors.ts - (ae-undocumented) Missing documentation for "cause".
+// src/errors.ts - (ae-undocumented) Missing documentation for "code".
+// src/errors.ts - (ae-undocumented) Missing documentation for "code".
+// src/errors.ts - (ae-undocumented) Missing documentation for "name".
+// src/errors.ts - (ae-undocumented) Missing documentation for "count".
+// src/errors.ts - (ae-undocumented) Missing documentation for "holders".
 // src/errors.ts - (ae-undocumented) Missing documentation for "message".
 // src/errors.ts - (ae-undocumented) Missing documentation for "cause".
 // src/errors.ts - (ae-undocumented) Missing documentation for "code".

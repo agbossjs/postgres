@@ -9,7 +9,7 @@ import { escapedJsonOf, unescapedJson } from "../nul-escape.js";
  * The pauses of `PostgresPausedExecutionRepository` (#267 S35): one row per pause, unique per step
  * key of a tree (agbossjs/agboss#663: a step key names no tree, migration 0020), the record as
  * `jsonb` — it is where a pause's fields are, `isSent` and `resolution` included. The columns the
- * queries filter on (`status`, `resolved_at`, and since 0031 `expires_at`, `remind_at`, `channel`)
+ * queries filter on (`status`, `resolved_at`, and since 0031 `expires_at`, `remind_at`; `channel` is generated from the record, 0033, #1104)
  * are mirrored in it, so a read never needs them; `seq` is the monotonic insertion sequence the
  * pages follow. A transition of a pending pause is one statement — the status column compared and
  * set, the record patched with it — so of two instances exactly one changes it (`pause-changes.ts`).
@@ -33,8 +33,8 @@ export class PauseRows {
     const inserted = await firstRowOf(
       this.pool,
       `INSERT INTO agboss_pauses (tenant_id, pause_id, step_key, root_execution_id, status,
-         expires_at, remind_at, channel, record)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb)
+         expires_at, remind_at, record)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb)
        ON CONFLICT (tenant_id, root_execution_id, step_key) DO NOTHING RETURNING record`,
       [
         pause.tenantId,
@@ -44,7 +44,6 @@ export class PauseRows {
         pause.status,
         pause.expiresAt ?? null,
         pause.remindAt ?? null,
-        pause.channel,
         escapedJsonOf(pause),
       ],
     );

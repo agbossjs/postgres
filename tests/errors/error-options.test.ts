@@ -9,6 +9,7 @@ import * as entry from "../../src/index.js";
 
 const FIXTURES: Readonly<Record<string, object>> = {
   PostgresLedgerMarkMissingError: {},
+  PostgresLiveLeasesError: { count: 7, holders: ["pod-a", "pod-b"] },
   PostgresMigrationChangedError: { version: 3, migration: "0003_x.sql" },
   PostgresSchemaMissingError: { applied: 1, expected: 4 },
   PostgresSchemaTooNewError: { applied: 5, expected: 4 },

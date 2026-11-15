@@ -302,7 +302,7 @@ The schema is created by versioned SQL files (`migrations/NNNN_<name>.sql`, ship
 and LangGraph's own checkpoint tables (`PostgresSaver.setup()`), never implicitly. Run them in one
 of two ways.
 
-**A command** — before the new version of the application starts:
+**A command** — after the old version has stopped and before the new version of the application starts (see below):
 
 ```sh
 npx agboss-postgres migrate --schema desk   # the database: POSTGRES_URL from the environment
@@ -343,17 +343,59 @@ reads `POSTGRES_URL`; `--url <url>` overrides it, but puts the URL — its passw
 process list and the shell history, so prefer the variable; `DATABASE_URL` (the name before agbossjs/agboss#891) is still read when
 `POSTGRES_URL` is unset, for this release only.
 
-In Kubernetes, the command is a Job run before the Deployment rolls out (a Helm `pre-upgrade` hook,
-an Argo CD `PreSync` hook, or a step of the pipeline):
+### Upgrading across a schema change: stop, migrate, deploy
+
+A version that ships a migration (`migrate` prints `applied …`, not `nothing to apply`) is not
+rolled out over the old one. The sequence is:
+
+1. **Stop every instance of the old version** (scale the Deployment to zero and wait for the pods to
+   end; let their execution leases lapse — a lease lasts at most its TTL after its holder is gone).
+2. **Run `agboss-postgres migrate`** (the Job, or `migratePostgres`).
+3. **Start the new version.**
+
+There is no rolling upgrade across a schema change (agbossjs/agboss ADR-0034): an old instance that
+keeps running after the migration writes rows in the old shape, and the guarantees the new schema
+adds — the cancel fence of `0032` (ADR-0030), the pause notices and channel of `0031`, the lease
+`token` of `0029` — hold only when no old instance runs. The start check (`SchemaSetup.Check`)
+refuses a _new start_ of an old version over a migrated database
+(`PostgresSchemaTooNewError`); it cannot stop an old instance already running.
+
+`migrate` enforces what it can see. When migrations are pending and the schema is already migrated
+(not the first run), it looks for execution leases live on the **database's clock** — not released,
+finished or superseded, expiring after `clock_timestamp()`. If one exists it applies nothing and
+fails with `PostgresLiveLeasesError` (`code: "postgres.live-leases"`, exit code 1): the live-lease
+count and up to five holder instance ids are in the message and on the error (`count`, `holders`).
+Stop the old instances and run again, or override it on purpose:
+
+```sh
+npx agboss-postgres migrate --allow-live-leases     # in code: migratePostgres({ url, allowLiveLeases: true })
+```
+
+Two things the check does not do. A run with nothing to apply (`applied` equals the package's
+newest) is a no-op that exits `0` even with live leases, so a re-run over a healthy deployment is
+safe. And an **idle** old instance holds no lease — a pod between executions is invisible to it —
+so a clean check is not proof that every old pod is gone: stop them first, do not rely on the
+check. (A start with `SchemaSetup.MigrateOnStart` does not run the check: the operator chose to
+migrate at start.) One protection does not depend on any of this: a pause an old instance inserts
+after `0033` still has its channel (the column is generated from the record), so a channel-filtered
+page finds it.
+
+In Kubernetes, scale to zero, run the Job, then deploy — as steps of the pipeline or of a Helm
+release's upgrade script:
+
+```sh
+kubectl scale deployment/desk --replicas=0
+kubectl wait --for=delete pod -l app=desk --timeout=300s
+kubectl apply -f desk-migrate-job.yaml
+kubectl wait --for=condition=complete job/desk-migrate --timeout=600s
+kubectl apply -f desk.yaml                   # the new version
+```
 
 ```yaml
 apiVersion: batch/v1
 kind: Job
 metadata:
   name: desk-migrate
-  annotations:
-    helm.sh/hook: pre-install,pre-upgrade
-    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
 spec:
   backoffLimit: 2
   template:
@@ -368,6 +410,11 @@ spec:
               valueFrom:
                 secretKeyRef: { name: desk-postgres, key: url }
 ```
+
+A Helm `pre-upgrade` hook or an Argo CD `PreSync` Job runs while the old pods still serve, and a
+`RollingUpdate` then runs old and new pods together: use it **only for an upgrade that changes no
+schema** (`migrate` prints `nothing to apply`), never for one that ships a migration. Its guard
+fails the hook on a live lease, which is the point; do not add `--allow-live-leases` to it.
 
 **Or in code**, from a script of your own:
 
