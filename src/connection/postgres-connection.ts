@@ -73,8 +73,13 @@ export class PostgresConnection implements OnInit, OnDestroy {
   readonly #schema: () => Promise<string>;
 
   constructor(source: ApplicationContext | PostgresConnectionSettings) {
-    this.#settings =
-      source instanceof ApplicationContext ? settingsOfEnvironment(source.environment) : source;
+    // a copy: the caller changing its object after this line must not bypass the checks below, nor
+    // change what the pool, the start and the watch read later (agbossjs/agboss#1129)
+    this.#settings = Object.freeze({
+      ...(source instanceof ApplicationContext
+        ? settingsOfEnvironment(source.environment)
+        : source),
+    });
     checkedWatchLivenessOf(this.#settings.watchLivenessSeconds);
     SETTINGS.set(this, this.#settings);
     const schema = checkedSchemaOf(this.#settings.schema);

@@ -11,19 +11,29 @@ import { PostgresSettingsError } from "../errors.js";
 export const DEFAULT_CONNECT_TIMEOUT = 10_000;
 
 /**
+ * The longest `connect_timeout` the URL may set, in seconds (agbossjs/agboss#1129): an hour, far
+ * under the 2^31-1 ms a Node timer holds — beyond it `pg`'s timer fires at once.
+ */
+export const MAX_CONNECT_TIMEOUT_SECONDS = 3600;
+
+/**
  * The connect bound of `url`, in ms: its `connect_timeout` (libpq's parameter, whole seconds —
  * which `pg` itself ignores), else `DEFAULT_CONNECT_TIMEOUT`. libpq's `0` ("wait forever") keeps
- * the default: a store's connection never waits forever. Anything but a whole number fails with
- * `PostgresSettingsError`; the URL itself is never printed.
+ * the default: a store's connection never waits forever. Anything but a whole number of at most
+ * `MAX_CONNECT_TIMEOUT_SECONDS` fails with `PostgresSettingsError`; the URL itself is never printed.
  */
 export function connectTimeoutOf(url: string): number {
   const text = urlParameterOf(url, "connect_timeout");
   if (text === undefined) return DEFAULT_CONNECT_TIMEOUT;
-  if (!/^\d{1,9}$/u.test(text.trim()))
+  if (!/^\d+$/u.test(text.trim()))
     throw new PostgresSettingsError({
       message: "the URL's connect_timeout must be a whole number of seconds",
     });
   const seconds = Number(text.trim());
+  if (seconds > MAX_CONNECT_TIMEOUT_SECONDS)
+    throw new PostgresSettingsError({
+      message: `the URL's connect_timeout must be a whole number of seconds, at most ${String(MAX_CONNECT_TIMEOUT_SECONDS)}`,
+    });
   return seconds === 0 ? DEFAULT_CONNECT_TIMEOUT : seconds * 1000;
 }
 

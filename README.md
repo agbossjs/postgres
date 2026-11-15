@@ -218,13 +218,13 @@ const [takeover] = await app.auditLogOf({ tenantId: "default", rootExecutionId }
 
 `PostgresConnection` declares the fields it reads, so the core checks them at assembly:
 
-| Field                          | Type          | Default                                   | What                                                                        |
-| ------------------------------ | ------------- | ----------------------------------------- | --------------------------------------------------------------------------- |
-| `postgresUrl`                  | `Secret`      | —                                         | the database: `postgres://user:password@host:5432/db`                       |
-| `postgresPoolSize`             | `number`      | `DEFAULT_POOL_SIZE` (`10`)                | the most connections this instance's pool opens                             |
-| `postgresWatchLivenessSeconds` | `number`      | `DEFAULT_WATCH_LIVENESS_SECONDS` (`10`)   | the longest a silently dead `LISTEN` connection goes unnoticed (at least 2) |
-| `postgresSchema`               | `string`      | the URL's `search_path`, `DEFAULT_SCHEMA` | the schema of the stores' tables (one per application)                      |
-| `postgresSchemaSetup`          | `SchemaSetup` | `SchemaSetup.Check`                       | what the start does with the schema (Migrations, below)                     |
+| Field                          | Type          | Default                                   | What                                                                       |
+| ------------------------------ | ------------- | ----------------------------------------- | -------------------------------------------------------------------------- |
+| `postgresUrl`                  | `Secret`      | —                                         | the database: `postgres://user:password@host:5432/db`                      |
+| `postgresPoolSize`             | `number`      | `DEFAULT_POOL_SIZE` (`10`)                | the most connections this instance's pool opens                            |
+| `postgresWatchLivenessSeconds` | `number`      | `DEFAULT_WATCH_LIVENESS_SECONDS` (`10`)   | the longest a silently dead `LISTEN` connection goes unnoticed (2 to 3600) |
+| `postgresSchema`               | `string`      | the URL's `search_path`, `DEFAULT_SCHEMA` | the schema of the stores' tables (one per application)                     |
+| `postgresSchemaSetup`          | `SchemaSetup` | `SchemaSetup.Check`                       | what the start does with the schema (Migrations, below)                    |
 
 ```ts
 // environments/app.environment.ts — the contract
@@ -259,7 +259,7 @@ a pool size of 0) fails the start with `PostgresSettingsError`, naming the field
 
 **No connection waits forever** (agbossjs/agboss#989): a statement waits for its connection — a free
 one of the pool, or a new one up to the server's first answer — at most the URL's `connect_timeout`
-(libpq's parameter, whole seconds: `postgres://…/db?connect_timeout=5`), else
+(libpq's parameter, whole seconds, at most 3600: `postgres://…/db?connect_timeout=5`), else
 `DEFAULT_CONNECT_TIMEOUT` (10 s); then it rejects with `pg`'s connection timeout. libpq's `0` ("wait
 forever") keeps the default. A peer that takes the socket and never answers — a black-holed
 network, a proxy that drops the forward — fails the call instead of hanging it; the same bound holds
@@ -290,7 +290,7 @@ listens again on a new one after its first pause (1 s), waking the claimers once
 during the gap waits for neither the sweep nor the next `NOTIFY`: the worst case is the bound, plus
 1 s, plus a connection (a new connection that is swallowed too is dropped at the bound and tried
 again, 2 s later, doubling up to 30 s). The cost is one `SELECT 1` per instance per 5 s on an empty queue. The bound of a settings object
-(`watchLivenessSeconds`) is checked as the environment's is: a whole number of at least 2, else
+(`watchLivenessSeconds`) is checked as the environment's is: a whole number from 2 to 3600, else
 `PostgresSettingsError` at construction (agbossjs/agboss#1029).
 Behind a transaction-mode pooler (PgBouncer `pool_mode = transaction`) a `LISTEN` hears
 nothing: the children are still claimed, at the sweep — point the URL at the server or a
