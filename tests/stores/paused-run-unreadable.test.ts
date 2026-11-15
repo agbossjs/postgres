@@ -1,3 +1,4 @@
+import { StoredNamesUnreadableError } from "@agboss/core/stores";
 import { VirtualClock } from "@agboss/core/testing";
 import { describe, expect, it } from "vitest";
 import { PostgresPausedExecutionRepository } from "../../src/index.js";
@@ -99,7 +100,7 @@ describe("agbossjs/agboss#906 D4: PostgreSQL paused runs", () => {
     expect((error.cause as Error).message).not.toContain(SECRET);
   });
 
-  it("a stored text that is not JSON is refused by ids: no text, no parser message, no cause", async () => {
+  it("a stored text that is not JSON is the coded refusal (#1121): ids, no text, no parser message", async () => {
     // one character of a real stored run edited: the secret loses its quotes
     await insertRun(JSON.stringify(run).replace(`"${SECRET}"`, SECRET));
 
@@ -108,12 +109,15 @@ describe("agbossjs/agboss#906 D4: PostgreSQL paused runs", () => {
     expect(error.message).toContain("a stored paused run is not readable");
     expect(error.message).toContain("threadId thread-1");
     expect(error.message).toContain("runId run-1");
-    expect(error).not.toBeInstanceOf(SyntaxError);
+    expect(error).toBeInstanceOf(StoredNamesUnreadableError);
+    expect(error).toMatchObject({ code: "stored.unreadable", record: "paused run" });
+    // the cause is the parse's SyntaxError without the text it quotes
+    expect(error.cause).toBeInstanceOf(SyntaxError);
     for (let link: unknown = error; link instanceof Error; link = link.cause) {
       expect(link.message).not.toContain(SECRET);
       expect(link.message).not.toContain("startInput");
       expect(link.message).not.toContain("JSON.parse");
-      expect(link).not.toBeInstanceOf(SyntaxError);
+      expect(link.message).not.toContain("Unexpected");
     }
   });
 });
