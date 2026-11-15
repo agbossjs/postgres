@@ -2,7 +2,7 @@ import pg from "pg";
 import { z } from "zod";
 import { migrationsIn, newestVersionOf, type MigrationFile } from "./files.js";
 import { appliedMigrationsOf, HISTORY_TABLE, pendingMigrations } from "./history.js";
-import { stepIndexAfter, type StepIndexResult } from "./checkpoint-step-index.js";
+import { StepIndexFailure, stepIndexAfter, type StepIndexResult } from "./checkpoint-step-index.js";
 import { PostgresStepIndexError } from "../errors.js";
 import { setupCheckpoints } from "./checkpoint-setup.js";
 import { inTransaction } from "../connection/transaction.js";
@@ -102,9 +102,15 @@ export async function migrateWith(
       const run = { pool, client, files, schema, signal: options.signal };
       const report = await underLock(client, () => migrateLocked(run));
       const stepIndex = await stepIndexAfter(options, report.schema, indexInBackground).catch(
-        (cause: unknown) => {
+        (failure: unknown) => {
           // the migrations are committed: say so, with what this run applied (agbossjs/agboss#1102)
-          throw new PostgresStepIndexError({ report, cause });
+          throw failure instanceof StepIndexFailure
+            ? new PostgresStepIndexError({
+                report,
+                cause: failure.cause,
+                invalidIndexLeft: failure.invalidIndexLeft,
+              })
+            : new PostgresStepIndexError({ report, cause: failure });
         },
       );
       return stepIndex === undefined ? report : { ...report, stepIndex };

@@ -5,28 +5,27 @@
  * built", not "schema not migrated".
  */
 import { randomBytes } from "node:crypto";
-import pg from "pg";
 import { afterEach, describe, expect, it } from "vitest";
-import { ExitCode, runCommand, type CommandIo } from "../../src/cli.js";
+import { ExitCode, runCommand } from "../../src/cli.js";
 import { migratePostgres, PostgresStepIndexError } from "../../src/index.js";
 import { migrationsIn, newestVersionOf } from "../../src/migrations/files.js";
 import { STEP_INDEX_NAME } from "../../src/migrations/checkpoint-step-index.js";
 import { createSchema, dropSchema, onSchema, onServer, serverUrl } from "../support/database.js";
+import {
+  cancelBuild,
+  closeHolders,
+  holdSnapshot,
+  ioOf,
+  validityOf,
+} from "../support/step-index.js";
 
 /** The package's numbered migrations: what a fresh schema applies. */
 const MIGRATIONS = newestVersionOf(migrationsIn());
 
-const ioOf = (): CommandIo & { readonly out_: string[]; readonly err_: string[] } => {
-  const out_: string[] = [];
-  const err_: string[] = [];
-  return { env: {}, out_, err_, out: (line) => out_.push(line), err: (line) => err_.push(line) };
-};
-
 const schemas: string[] = [];
 const roles: string[] = [];
-const holders: pg.Client[] = [];
 afterEach(async () => {
-  for (const holder of holders.splice(0)) await holder.end().catch(() => undefined);
+  await closeHolders();
   for (const schema of schemas.splice(0)) await dropSchema(schema);
   for (const role of roles.splice(0))
     await onServer(`DROP OWNED BY ${role}; DROP ROLE IF EXISTS ${role}`);
@@ -38,57 +37,10 @@ async function fresh(): Promise<{ readonly schema: string; readonly url: string 
   return made;
 }
 
-/** The index's `indisvalid`; undefined when there is no index. */
-async function validityOf(url: string): Promise<boolean | undefined> {
-  const { rows } = await onSchema(
-    url,
-    `SELECT i.indisvalid AS valid FROM pg_class c JOIN pg_index i ON i.indexrelid = c.oid
-      WHERE c.relname = $1 AND c.relnamespace = current_schema()::regnamespace`,
-    [STEP_INDEX_NAME],
-  );
-  return rows[0] === undefined ? undefined : (rows[0] as { valid: boolean }).valid;
-}
-
 const appliedCount = async (url: string): Promise<number> =>
   Number(
     (await onSchema(url, "SELECT count(*)::int AS n FROM agboss_schema_migrations")).rows[0]?.n,
   );
-
-async function until(done: () => Promise<boolean>): Promise<void> {
-  for (let waited = 0; waited < 600; waited += 1) {
-    if (await done()) return;
-    await new Promise((resolve) => setTimeout(resolve, 100));
-  }
-  throw new Error("not within the time");
-}
-
-/** Holds an old snapshot open (a `CREATE INDEX CONCURRENTLY` waits for it) until the client ends. */
-async function holdSnapshot(url: string): Promise<void> {
-  const holder = new pg.Client({ connectionString: url });
-  holder.on("error", () => undefined);
-  holders.push(holder);
-  await holder.connect();
-  await holder.query("BEGIN ISOLATION LEVEL REPEATABLE READ");
-  await holder.query("SELECT count(*) FROM pg_class");
-}
-
-/** Cancels the statement of the build once it waits. */
-async function cancelBuild(schema: string): Promise<void> {
-  const canceller = new pg.Client({ connectionString: serverUrl() });
-  await canceller.connect();
-  try {
-    await until(async () => {
-      const { rows } = await canceller.query(
-        `SELECT pg_cancel_backend(pid) AS cancelled FROM pg_stat_activity
-          WHERE query LIKE 'CREATE INDEX CONCURRENTLY%' AND query LIKE $1 AND pid <> pg_backend_pid()`,
-        [`%${schema}%`],
-      );
-      return rows.length > 0;
-    });
-  } finally {
-    await canceller.end();
-  }
-}
 
 /** A role that may use and write the schema's tables but owns none of them. */
 async function nonOwnerUrl(schema: string): Promise<string> {
@@ -153,7 +105,7 @@ describe("#1102: the index step fails after the migrations committed", () => {
     expect(error.report.schema).toBe(schema);
     expect(error.report.applied).toHaveLength(MIGRATIONS);
     expect(error.report.version).toBe(MIGRATIONS);
-    for (const holder of holders.splice(0)) await holder.end();
+    await closeHolders();
 
     const next = await migratePostgres({ url });
     expect(next.applied).toEqual([]);
