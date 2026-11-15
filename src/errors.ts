@@ -146,6 +146,12 @@ export interface PostgresStepIndexErrorOptions {
   /** The numbered migrations and LangGraph's setup the run committed before the index step. */
   readonly report: MigrationReport;
   readonly cause: unknown;
+  /**
+   * An INVALID index the failed step could not drop (a transaction holding a lock on `checkpoints`
+   * did not end within the bound, agbossjs/agboss#1116) stays: the message says the next run drops
+   * and rebuilds it. Default false.
+   */
+  readonly invalidIndexLeft?: boolean;
 }
 
 /**
@@ -153,8 +159,9 @@ export interface PostgresStepIndexErrorOptions {
  * the checkpoint index `checkpoints_latest_by_step` (agbossjs/agboss#962), failed: the build was
  * cancelled, or the role does not own `checkpoints`. The schema IS migrated (`report` lists what
  * this run applied) and every read answers correctly, `latestByStep` slower. An INVALID index the
- * failed build left is dropped when the session allows it; the next `migrate` drops it if not,
- * and builds the index again. A script tells "schema not migrated" (any other error) from "index not
+ * failed build left is dropped when that is quick (the drop gives up after a few seconds on a
+ * transaction that holds a lock on `checkpoints`, #1116, and `invalidIndexLeft` says so); the next
+ * `migrate` drops it then, and builds the index again. A script tells "schema not migrated" (any other error) from "index not
  * built" (this one).
  */
 export class PostgresStepIndexError extends AGBossError {
@@ -163,13 +170,20 @@ export class PostgresStepIndexError extends AGBossError {
   override name = "PostgresStepIndexError";
   /** What the run committed before the index step failed. */
   readonly report: MigrationReport;
+  /** Whether an INVALID index stays for the next run to drop (see the options). */
+  readonly invalidIndexLeft: boolean;
 
   constructor(options: PostgresStepIndexErrorOptions) {
     const reason = options.cause instanceof Error ? options.cause.message : String(options.cause);
+    const next =
+      options.invalidIndexLeft === true
+        ? "an INVALID index checkpoints_latest_by_step stays: the next migrate run drops and rebuilds it"
+        : "the next migrate run rebuilds the index (an INVALID one is dropped first)";
     super(
-      `index checkpoints_latest_by_step (${options.report.schema}) failed: ${reason}; the migrations are applied and reads stay correct; the next migrate run rebuilds the index (an INVALID one is dropped first)`,
+      `index checkpoints_latest_by_step (${options.report.schema}) failed: ${reason}; the migrations are applied and reads stay correct; ${next}`,
       { cause: options.cause },
     );
     this.report = options.report;
+    this.invalidIndexLeft = options.invalidIndexLeft === true;
   }
 }

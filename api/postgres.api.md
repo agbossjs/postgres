@@ -664,6 +664,7 @@ export class PostgresStepIndexError extends AGBossError {
     static readonly code: "postgres.step-index-failed";
     // (undocumented)
     readonly code: typeof PostgresStepIndexError.code;
+    readonly invalidIndexLeft: boolean;
     // (undocumented)
     name: string;
     readonly report: MigrationReport;
@@ -673,6 +674,7 @@ export class PostgresStepIndexError extends AGBossError {
 export interface PostgresStepIndexErrorOptions {
     // (undocumented)
     readonly cause: unknown;
+    readonly invalidIndexLeft?: boolean;
     readonly report: MigrationReport;
 }
 
