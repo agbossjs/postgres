@@ -657,6 +657,25 @@ export interface PostgresSettingsErrorOptions {
     readonly message: string;
 }
 
+// @public
+export class PostgresStepIndexError extends AGBossError {
+    constructor(options: PostgresStepIndexErrorOptions);
+    // (undocumented)
+    static readonly code: "postgres.step-index-failed";
+    // (undocumented)
+    readonly code: typeof PostgresStepIndexError.code;
+    // (undocumented)
+    name: string;
+    readonly report: MigrationReport;
+}
+
+// @public
+export interface PostgresStepIndexErrorOptions {
+    // (undocumented)
+    readonly cause: unknown;
+    readonly report: MigrationReport;
+}
+
 export { SchemaSetup }
 
 // @public
@@ -689,6 +708,10 @@ export type StepIndexResult = "built" | "present" | "skipped";
 // src/errors.ts - (ae-undocumented) Missing documentation for "version".
 // src/errors.ts - (ae-undocumented) Missing documentation for "migration".
 // src/errors.ts - (ae-undocumented) Missing documentation for "message".
+// src/errors.ts - (ae-undocumented) Missing documentation for "cause".
+// src/errors.ts - (ae-undocumented) Missing documentation for "code".
+// src/errors.ts - (ae-undocumented) Missing documentation for "code".
+// src/errors.ts - (ae-undocumented) Missing documentation for "name".
 // src/errors.ts - (ae-undocumented) Missing documentation for "cause".
 // src/errors.ts - (ae-undocumented) Missing documentation for "code".
 // src/errors.ts - (ae-undocumented) Missing documentation for "code".

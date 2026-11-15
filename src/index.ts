@@ -34,9 +34,11 @@ export {
   PostgresSchemaMissingError,
   PostgresSchemaTooNewError,
   PostgresSettingsError,
+  PostgresStepIndexError,
   type ChangedMigration,
   type PostgresLedgerMarkMissingErrorOptions,
   type PostgresSettingsErrorOptions,
+  type PostgresStepIndexErrorOptions,
   type SchemaVersions,
 } from "./errors.js";
 export { PostgresExecutionRecordRepository } from "./stores/postgres-execution-record.repository.js";

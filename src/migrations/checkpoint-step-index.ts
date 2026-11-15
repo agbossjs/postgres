@@ -81,10 +81,34 @@ async function buildLocked(client: pg.Client, schema: string): Promise<StepIndex
   if (state?.valid === true) return "present";
   if (state?.valid === false)
     await client.query(`DROP INDEX CONCURRENTLY IF EXISTS ${qualified}.${STEP_INDEX_NAME}`);
-  await client.query(
-    `CREATE INDEX CONCURRENTLY IF NOT EXISTS ${STEP_INDEX_NAME} ON ${qualified}.checkpoints ${STEP_INDEX_COLUMNS}`,
-  );
+  try {
+    await client.query(
+      `CREATE INDEX CONCURRENTLY IF NOT EXISTS ${STEP_INDEX_NAME} ON ${qualified}.checkpoints ${STEP_INDEX_COLUMNS}`,
+    );
+  } catch (error) {
+    await dropInvalid(client, qualified);
+    throw error;
+  }
   return "built";
+}
+
+/**
+ * A cancelled or failed `CREATE INDEX CONCURRENTLY` leaves an INVALID index (agbossjs/agboss#1102):
+ * dropped here, never a valid one, so the failed run leaves none. A drop that fails too (the role
+ * does not own the table, the session is gone) changes nothing: the next run drops it before it builds.
+ */
+async function dropInvalid(client: pg.Client, qualified: string): Promise<void> {
+  try {
+    const { rows } = await client.query(
+      `SELECT i.indisvalid AS valid FROM pg_class c JOIN pg_index i ON i.indexrelid = c.oid
+        WHERE c.relname = $1 AND c.relnamespace = $2::regnamespace`,
+      [STEP_INDEX_NAME, qualified],
+    );
+    if (rows[0] !== undefined && IndexState.parse(rows[0]).valid === false)
+      await client.query(`DROP INDEX CONCURRENTLY IF EXISTS ${qualified}.${STEP_INDEX_NAME}`);
+  } catch {
+    // the build's own error is the run's
+  }
 }
 
 /**
