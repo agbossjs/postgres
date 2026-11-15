@@ -240,7 +240,7 @@ describe("migratePostgres (AC5)", () => {
   it("a failing migration is rolled back alone: the ones before it stay applied", async () => {
     const url = await freshSchema();
     const broken = migrationsFolder({
-      "0033_broken.sql": "CREATE TABLE half_made (id integer); SELECT no_such_function();",
+      "0034_broken.sql": "CREATE TABLE half_made (id integer); SELECT no_such_function();",
     });
 
     await expect(migrateWith({ url }, migrationsIn(broken))).rejects.toThrow(/no_such_function/);

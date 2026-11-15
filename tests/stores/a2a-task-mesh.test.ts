@@ -92,7 +92,7 @@ describe("agbossjs/agboss#810: the mesh's fields of an A2A task on PostgreSQL", 
     );
 
     expect((await migratePostgres({ url })).applied.map((file) => file.version)).toEqual([
-      28, 29, 30, 31, 32,
+      28, 29, 30, 31, 32, 33,
     ]);
 
     const old = await tasksOn(url).findById(keyOf("old"));

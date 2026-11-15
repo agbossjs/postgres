@@ -94,7 +94,7 @@ describe("migration 0024 stores each pause's kind and names its step", () => {
     const pauses = new PostgresPausedExecutionRepository(connectionTo(url), new VirtualClock());
 
     expect(report.applied.map((migration) => migration.version)).toEqual([
-      24, 25, 26, 27, 28, 29, 30, 31, 32,
+      24, 25, 26, 27, 28, 29, 30, 31, 32, 33,
     ]);
     expect(await pauses.findByTenantIdAndPauseId("acme", "approval-pause")).toMatchObject({
       kind: PauseKind.Approval,

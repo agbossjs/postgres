@@ -111,7 +111,7 @@ describe("migration 0020 keeps the ids of every execution that paused, and finds
     );
 
     expect(report.applied.map((migration) => migration.version)).toEqual([
-      20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32,
+      20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33,
     ]);
     const { rows } = await onSchema(
       url,
