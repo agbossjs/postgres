@@ -11,6 +11,7 @@ import { Socket } from "node:net";
 import pg from "pg";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { PostgresChildExecutionQueueRepository, PostgresConnection } from "../../src/index.js";
+import { TimedClient } from "../../src/connection/timed-client.js";
 import { BlackholeProxy } from "../support/blackhole-proxy.js";
 import { TestApplicationContext } from "../support/application-context.js";
 import { testDatabase } from "../support/database.js";
@@ -60,8 +61,8 @@ function trackClients(): pg.Client[] {
     this: pg.Client,
     ...args: unknown[]
   ) {
-    // the listener's own (TCP keepalive on), not a pool's
-    if (internals(this).keepAlive) made.push(this);
+    // the listener's own (TCP keepalive on), not a pool's (a `TimedClient`, agbossjs/agboss#928)
+    if (internals(this).keepAlive && !(this instanceof TimedClient)) made.push(this);
     return connect.call(this, ...args) as never;
   });
   return made;

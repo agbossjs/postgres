@@ -26,7 +26,7 @@ export const MAX_CONNECT_TIMEOUT_SECONDS = 3600;
 export function connectTimeoutOf(url: string): number {
   const text = urlParameterOf(url, "connect_timeout");
   if (text === undefined) return DEFAULT_CONNECT_TIMEOUT;
-  if (!/^[1-9]\d{0,8}$/u.test(text.trim()))
+  if (!/^[1-9]\d*$/u.test(text.trim()))
     throw new PostgresSettingsError({
       message: "the URL's connect_timeout must be a whole number of seconds, at least 1",
     });
