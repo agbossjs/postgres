@@ -616,6 +616,8 @@ export abstract class PostgresPauseQueryRepository extends PostgresPausedRunRepo
     // (undocumented)
     findPendingByRemindAtBefore(at: Date, limit: number, after?: PauseScanAfter): Promise<readonly PauseRecord[]>;
     // (undocumented)
+    renewNotice(claim: PauseNoticeClaim, at: Date, claimFor: Milliseconds): Promise<PauseNoticeClaim | undefined>;
+    // (undocumented)
     retryNotice(claim: PauseNoticeClaim, nextAttemptAt: Date, problem: string): Promise<boolean>;
     // (undocumented)
     setAsideNotices(claim: PauseNoticeClaim, _at: Date, problem: string): Promise<boolean>;
@@ -881,6 +883,7 @@ export type StepIndexResult = "built" | "present" | "skipped";
 // src/stores/postgres-pause-queries.repository.ts - (ae-undocumented) Missing documentation for "deleteByResolvedAtBefore".
 // src/stores/postgres-pause-queries.repository.ts - (ae-undocumented) Missing documentation for "claimNoticesDue".
 // src/stores/postgres-pause-queries.repository.ts - (ae-undocumented) Missing documentation for "ackNotice".
+// src/stores/postgres-pause-queries.repository.ts - (ae-undocumented) Missing documentation for "renewNotice".
 // src/stores/postgres-pause-queries.repository.ts - (ae-undocumented) Missing documentation for "retryNotice".
 // src/stores/postgres-pause-queries.repository.ts - (ae-undocumented) Missing documentation for "setAsideNotices".
 // src/stores/postgres-pause-queries.repository.ts - (ae-undocumented) Missing documentation for "setAsideStaleNoticesBefore".

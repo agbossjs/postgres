@@ -88,6 +88,14 @@ export abstract class PostgresPauseQueryRepository extends PostgresPausedRunRepo
     return mailboxes.ackHead(this.connection.pool, claim, at);
   }
 
+  renewNotice(
+    claim: PauseNoticeClaim,
+    at: Date,
+    claimFor: Milliseconds,
+  ): Promise<PauseNoticeClaim | undefined> {
+    return mailboxes.renewHead(this.connection.pool, claim, at, claimFor);
+  }
+
   retryNotice(claim: PauseNoticeClaim, nextAttemptAt: Date, problem: string): Promise<boolean> {
     return mailboxes.retryHead(this.connection.pool, claim, nextAttemptAt, problem);
   }
