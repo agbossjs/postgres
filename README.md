@@ -94,7 +94,7 @@ export class DeskApplication {}
 
 | Store                                   | Core contract                        | Tables                                                                                               |
 | --------------------------------------- | ------------------------------------ | ---------------------------------------------------------------------------------------------------- |
-| `PostgresExecutionLeaseRepository`      | `ExecutionLeaseRepository`           | `agboss_execution_leases`                                                                            |
+| `PostgresExecutionLeaseRepository`      | `ExecutionLeaseRepository`           | `agboss_execution_leases`, `agboss_execution_cancel_requests` (`0032`, the cancel's fence)           |
 | `PostgresExecutionRecordRepository`     | `ExecutionRecordRepository`          | `agboss_threads`, `agboss_execution_records`, … (`0002`)                                             |
 | `PostgresExecutionTreeRepository`       | `ExecutionTreeRepository`            | `agboss_execution_tree_keys`                                                                         |
 | `PostgresPausedExecutionRepository`     | `PausedExecutionRepository`          | `agboss_paused_executions`, `agboss_pauses`, `agboss_pause_notices` (pause deadlines and notices)    |

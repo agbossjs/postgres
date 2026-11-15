@@ -23,7 +23,7 @@ describe("agboss-postgres migrate", () => {
     expect(await runCommand(["migrate", "--url", url], first)).toBe(ExitCode.Ok);
     expect(await runCommand(["migrate", "--url", url], second)).toBe(ExitCode.Ok);
 
-    expect(first.lines.slice(0, 31)).toEqual([
+    expect(first.lines.slice(0, 32)).toEqual([
       expect.stringMatching(/^applied 0001_execution_leases \(t_/),
       expect.stringMatching(/^applied 0002_execution_records/),
       expect.stringMatching(/^applied 0003_execution_trees/),
@@ -55,10 +55,11 @@ describe("agboss-postgres migrate", () => {
       expect.stringMatching(/^applied 0029_execution_lease_token/),
       expect.stringMatching(/^applied 0030_a2a_direct_messages/),
       expect.stringMatching(/^applied 0031_pause_deadlines_and_notices/),
+      expect.stringMatching(/^applied 0032_execution_cancel_requests/),
     ]);
-    expect(first.lines[31]).toMatch(/^applied \d+ LangGraph checkpoint migration\(s\)$/);
+    expect(first.lines[32]).toMatch(/^applied \d+ LangGraph checkpoint migration\(s\)$/);
     expect(second.lines).toEqual([
-      expect.stringMatching(/^nothing to apply: t_\w+ is at migration 31$/),
+      expect.stringMatching(/^nothing to apply: t_\w+ is at migration 32$/),
       expect.stringMatching(/^index checkpoints_latest_by_step \(t_\w+\) is ready$/),
     ]);
     expect([...first.errors, ...second.errors]).toEqual([]);
@@ -69,7 +70,7 @@ describe("agboss-postgres migrate", () => {
     const io = ioOf({ POSTGRES_URL: url });
 
     expect(await runCommand(["migrate"], io)).toBe(ExitCode.Ok);
-    expect(io.lines).toHaveLength(33);
+    expect(io.lines).toHaveLength(34);
   });
 
   it("agbossjs/agboss#891: DATABASE_URL is still read for one release, when POSTGRES_URL is unset", async () => {
@@ -77,7 +78,7 @@ describe("agboss-postgres migrate", () => {
     const io = ioOf({ DATABASE_URL: url });
 
     expect(await runCommand(["migrate"], io)).toBe(ExitCode.Ok);
-    expect(io.lines).toHaveLength(33);
+    expect(io.lines).toHaveLength(34);
     expect(USAGE).toContain("DATABASE_URL is still read when POSTGRES_URL is unset");
   });
 
@@ -180,13 +181,13 @@ describe("agboss-postgres migrate", () => {
     const url = await freshSchema();
     await migrateWith(
       { url },
-      migrationsIn(migrationsFolder({ "0032_later.sql": "CREATE TABLE later (id integer);" })),
+      migrationsIn(migrationsFolder({ "0033_later.sql": "CREATE TABLE later (id integer);" })),
     );
     const io = ioOf();
 
     expect(await runCommand(["migrate", "--url", url], io)).toBe(ExitCode.Failed);
     expect(io.errors[0]).toMatch(
-      /^agboss-postgres: the migration failed — the PostgreSQL schema is at migration 32/,
+      /^agboss-postgres: the migration failed — the PostgreSQL schema is at migration 33/,
     );
   });
 

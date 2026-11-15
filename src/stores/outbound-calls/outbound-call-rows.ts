@@ -64,3 +64,22 @@ export function whereOf(key: EffectKey, from: number): readonly [string, readonl
     [key.tenantId, key.name, escapedText(key.businessKey)],
   ];
 }
+
+/** The change of a compare-and-set: the columns set and the record's fields over the old ones. */
+export interface Change {
+  readonly status: OutboundCallStatus;
+  readonly attempt?: number;
+  readonly attemptOwner?: string;
+  readonly endedAt?: string;
+  readonly fields: Partial<OutboundCallRecord>;
+}
+
+/** The state the row must still be in: its status and attempt owner, its attempt when given. */
+export interface AsRead {
+  readonly status: OutboundCallStatus;
+  readonly attempt?: number;
+  readonly attemptOwner: string;
+}
+
+/** What a compare-and-set changes, given the store's time the fence decided by. */
+export type ChangeAt = (now: Date) => Change;

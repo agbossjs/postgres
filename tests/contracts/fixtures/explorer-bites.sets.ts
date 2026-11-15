@@ -47,7 +47,15 @@ function brokenSet(name: string, leasesOf: LeasesOf): void {
   });
 }
 
+/** A lease store whose cancel mark never lands (agbossjs/agboss#909): the fence reverted. */
+class UnmarkedLeases extends PostgresExecutionLeaseRepository {
+  override requestCancel(): Promise<void> {
+    return Promise.resolve();
+  }
+}
+
 export const FINISH_RELEASES = "a finish that only releases";
+export const UNMARKED_CANCEL = "a cancel mark that never lands";
 export const CALLER_CLOCK = "leases on the caller's clock";
 
 /** `finish` only releases. */
@@ -69,5 +77,13 @@ export const callerClockSet = (): void => {
         new StoreClock(StoreTimeSource.Test, seam.clock),
         seam.application,
       ),
+  );
+};
+
+/** `requestCancel` writes nothing: no fencing store can refuse a write after a cancel. */
+export const unmarkedCancelSet = (): void => {
+  brokenSet(
+    UNMARKED_CANCEL,
+    (connection, storeClock, seam) => new UnmarkedLeases(connection, storeClock, seam.application),
   );
 };

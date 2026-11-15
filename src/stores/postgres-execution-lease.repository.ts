@@ -7,11 +7,13 @@ import {
   type ExecutionLease,
   type StoreDescriptor,
 } from "@agboss/core";
+import type { ExecutionTree } from "@agboss/core/stores";
 import type { Milliseconds } from "@agboss/core/units";
 import { z } from "zod";
 import { PostgresConnection } from "../connection/postgres-connection.js";
 import { changesOf, firstRowOf, type Parameters } from "../connection/query.js";
 import { inPoolTransaction } from "../connection/transaction.js";
+import { markCancel } from "./cancel-fence.js";
 import { remainingSql, storeNow, storeNowOf } from "./store-time.js";
 
 /**
@@ -241,6 +243,12 @@ export class PostgresExecutionLeaseRepository extends ExecutionLeaseRepository {
       ...{ tenantId, rootExecutionId, holderInstanceId, token: row.token },
       ...{ expiresAt: row.expires_at, remaining: remainingOf(row.remaining) },
     };
+  }
+
+  requestCancel(tree: ExecutionTree): Promise<void> {
+    return inPoolTransaction(this.connection.pool, (client) =>
+      markCancel(client, tree, storeNowOf(this.clock)),
+    );
   }
 
   /** `sql`'s first row, run after `lease`'s row is locked, in one transaction (review M1). */

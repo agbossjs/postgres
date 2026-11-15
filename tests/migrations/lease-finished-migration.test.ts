@@ -54,6 +54,7 @@ describe("migration 0017 keeps the leases written before it", () => {
           "0029_execution_lease_token.sql": null,
           "0030_a2a_direct_messages.sql": null,
           "0031_pause_deadlines_and_notices.sql": null,
+          "0032_execution_cancel_requests.sql": null,
         }),
       ),
     );
@@ -76,7 +77,7 @@ describe("migration 0017 keeps the leases written before it", () => {
     await clock.advance(seconds(31));
 
     expect(report.applied.map((migration) => migration.version)).toEqual([
-      17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31,
+      17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32,
     ]);
     const { rows } = await onSchema(
       url,

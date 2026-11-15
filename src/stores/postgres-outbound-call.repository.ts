@@ -19,11 +19,19 @@ import type { PoolClient } from "pg";
 import { PostgresConnection } from "../connection/postgres-connection.js";
 import { changesOf, firstRowOf, rowsOf } from "../connection/query.js";
 import { inPoolTransaction } from "../connection/transaction.js";
+import { checkCancel, prunedCancels } from "./cancel-fence.js";
 import { checkFence } from "./fence.js";
 import { storeNowOf } from "./store-time.js";
 import { escapedText } from "./nul-escape.js";
 import { leaseStateIn } from "./outbound-calls/lease-state.js";
-import { callRecordOf, storedJsonOf, whereOf } from "./outbound-calls/outbound-call-rows.js";
+import {
+  callRecordOf,
+  storedJsonOf,
+  whereOf,
+  type AsRead,
+  type Change,
+  type ChangeAt,
+} from "./outbound-calls/outbound-call-rows.js";
 import { z } from "zod";
 import { idOfCursor, pageLimitOf } from "./outbound-call-pages.js";
 import { assertKeyAtEntry } from "./key-entry.js";
@@ -38,22 +46,6 @@ const SAVE = `INSERT INTO agboss_outbound_calls (scope_key, idempotency_key, nam
 
 /** A record's last ending gone (`result`, `failure`, `endedAt`), the change's fields over it. */
 const CHANGED_RECORD = "(record - 'result' - 'failure' - 'endedAt') || $1::jsonb";
-
-/** The change of a compare-and-set: the columns set and the record's fields over the old ones. */
-interface Change {
-  readonly status: OutboundCallStatus;
-  readonly attempt?: number;
-  readonly attemptOwner?: string;
-  readonly endedAt?: string;
-  readonly fields: Partial<OutboundCallRecord>;
-}
-
-/** The state the row must still be in: its status and attempt owner, its attempt when given. */
-interface AsRead {
-  readonly status: OutboundCallStatus;
-  readonly attempt?: number;
-  readonly attemptOwner: string;
-}
 
 /**
  * `OutboundCallRepository` on PostgreSQL (agbossjs/agboss#505, #508): one row per intent in
@@ -86,7 +78,7 @@ export class PostgresOutboundCallRepository extends OutboundCallRepository {
   }
 
   findByKey(key: EffectKey): Promise<OutboundCallRecord | undefined> {
-    return this.#fenced(key, async (client, now) => {
+    return this.#fenced(key, false, async (client, now) => {
       const [where, values] = whereOf(key, 1);
       const row = await firstRowOf(
         client,
@@ -99,7 +91,8 @@ export class PostgresOutboundCallRepository extends OutboundCallRepository {
   }
 
   saveIfAbsent(key: EffectKey, intent: OutboundCallIntent): Promise<boolean> {
-    return this.#fenced(key, async (client, now) => {
+    // a new intent is a new send (agbossjs/agboss#909): refused after the tree's cancel
+    return this.#fenced(key, true, async (client, now) => {
       // its first attempt starts at the store's time (agbossjs/agboss#658: the database's own)
       const startedAt = now.toISOString();
       const record = {
@@ -130,11 +123,12 @@ export class PostgresOutboundCallRepository extends OutboundCallRepository {
   ): Promise<boolean> {
     const status = OutboundCallStatus.Pending;
     // the next attempt starts at the store's time (agbossjs/agboss#658); the first's start is kept
-    return this.#moved(key, expected, (now) => ({
+    const claimed = (now: Date): Change => ({
       status,
       ...claim,
       fields: { status, ...claim, attemptStartedAt: now.toISOString() },
-    }));
+    });
+    return this.#moved(key, expected, claimed, true);
   }
 
   markCompleted(key: EffectKey, attemptOwner: string, result: string): Promise<boolean> {
@@ -195,6 +189,7 @@ export class PostgresOutboundCallRepository extends OutboundCallRepository {
       "DELETE FROM agboss_outbound_calls WHERE ended_at IS NOT NULL AND ended_at < $1",
       [cutoff],
     );
+    await prunedCancels(this.connection.pool, cutoff); // agbossjs/agboss#909
   }
 
   leaseStateOf(lease: OutboundCallLease): Promise<OutboundCallLeaseState> {
@@ -208,8 +203,8 @@ export class PostgresOutboundCallRepository extends OutboundCallRepository {
    * decided by — written under the key's lease and token only while the row is still `from`; one
    * statement, `true` when it changed the row.
    */
-  #moved(key: EffectKey, from: AsRead, changeAt: (now: Date) => Change): Promise<boolean> {
-    return this.#fenced(key, async (client, now) => {
+  #moved(key: EffectKey, from: AsRead, changeAt: ChangeAt, isSend = false): Promise<boolean> {
+    return this.#fenced(key, isSend, async (client, now) => {
       const change = changeAt(now);
       const fields = { ...change.fields, token: key.token, leaseExecutionId: key.leaseExecutionId };
       const [where, values] = whereOf(key, 5);
@@ -236,15 +231,20 @@ export class PostgresOutboundCallRepository extends OutboundCallRepository {
     });
   }
 
-  /** `work` after the fencing checks (the lease row locked, the mark raised), in one transaction. */
+  /**
+   * `work` after the fencing checks (the lease row locked, the mark raised) and, for a method that
+   * starts a send (`isSend`), the tree's cancel (agbossjs/agboss#909), in one transaction.
+   */
   async #fenced<TValue>(
     key: EffectKey,
+    isSend: boolean,
     work: (client: PoolClient, now: Date) => Promise<TValue>,
   ): Promise<TValue> {
     // the key's name, business key and fingerprint decision (agbossjs/agboss#508, #538, #825)
     assertKeyAtEntry(key);
     return inPoolTransaction(this.connection.pool, async (client) => {
       const now = await checkFence(client, key, storeNowOf(this.clock));
+      if (isSend) await checkCancel(client, key);
       return work(client, now);
     });
   }
