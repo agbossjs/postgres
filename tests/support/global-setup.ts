@@ -1,4 +1,5 @@
 import pg from "pg";
+import { assertPeakUnder, PEAK_BOUND, sampleConnections } from "./connection-peak.js";
 import { pinnedUrl } from "./pinned-url.js";
 
 /**
@@ -10,7 +11,7 @@ const HOW_TO = `start one and export its URL, e.g.
   docker run -d --name agboss-postgres -e POSTGRES_PASSWORD=pw -p 5432:5432 postgres:16
   export AGBOSS_POSTGRES_TEST_URL=postgres://postgres:pw@localhost:5432/postgres`;
 
-export default async function requirePostgres(): Promise<void> {
+export default async function requirePostgres(): Promise<() => Promise<void>> {
   const url = process.env.AGBOSS_POSTGRES_TEST_URL;
   if (url === undefined || url === "")
     throw new Error(`AGBOSS_POSTGRES_TEST_URL is not set: the tests need a PostgreSQL — ${HOW_TO}`);
@@ -27,4 +28,9 @@ export default async function requirePostgres(): Promise<void> {
   } finally {
     await client.end().catch(() => undefined);
   }
+  // agbossjs/agboss#978 AC1: the connections held at once are counted for the whole run
+  const sampler = await sampleConnections(pinned);
+  return async () => {
+    assertPeakUnder(await sampler.stop(), PEAK_BOUND);
+  };
 }

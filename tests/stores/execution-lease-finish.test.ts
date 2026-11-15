@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 import { PostgresExecutionLeaseRepository } from "../../src/index.js";
 import { TestApplicationContext } from "../support/application-context.js";
 import { onSchema, testDatabase } from "../support/database.js";
-import { connectionTo } from "../support/stores.js";
+import { connectionsScopedTo, connectionTo } from "../support/stores.js";
 
 /**
  * agbossjs/agboss#520 on PostgreSQL, beyond the contract's two instances: six connections racing
@@ -78,7 +78,10 @@ function sentInOrder<T>(round: number, calls: readonly (() => Promise<T>)[]): Pr
  * lease is renewed and, released, taken again at the next epoch); if none did, the row is finished
  * at the holder's epoch and refused for good.
  */
-async function raceRound(
+const raceRound = (root: string, round: number, isExpired: boolean) =>
+  connectionsScopedTo(() => playRound(root, round, isExpired));
+
+async function playRound(
   root: string,
   round: number,
   isExpired: boolean,
