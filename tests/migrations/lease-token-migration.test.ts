@@ -45,6 +45,7 @@ async function schemaAt28(): Promise<string> {
         "0031_pause_deadlines_and_notices.sql": null,
         "0032_execution_cancel_requests.sql": null,
         "0033_pause_channel_generated.sql": null,
+        "0034_cancel_mark_on_lease_row.sql": null,
       }),
     ),
   );
@@ -73,7 +74,7 @@ describe("migration 0029 names the lease's fencing token `token`", () => {
     const report = await migratePostgres({ url });
     await clock.advance(seconds(31));
 
-    expect(report.applied.map((migration) => migration.version)).toEqual([29, 30, 31, 32, 33]);
+    expect(report.applied.map((migration) => migration.version)).toEqual([29, 30, 31, 32, 33, 34]);
     const columns = await onSchema(
       url,
       `SELECT column_name FROM information_schema.columns
@@ -115,7 +116,7 @@ describe("migration 0029 names the lease's fencing token `token`", () => {
     expect(await other.acquire("default", "root-held", seconds(30))).toBeUndefined();
   });
 
-  it("#847: the CHECK keeps refusing a token below 1, under the column's name", async () => {
+  it("#847: the CHECK keeps refusing a negative token, under the column's name (0034 allows the seed row's 0)", async () => {
     const url = await schemaAt28();
 
     await migratePostgres({ url });
@@ -130,7 +131,7 @@ describe("migration 0029 names the lease's fencing token `token`", () => {
       onSchema(
         url,
         `INSERT INTO agboss_execution_leases (tenant_id, root_execution_id, holder_instance_id,
-           token, expires_at, released) VALUES ('default', 'root-zero', 'instance-1', 0, now(), false)`,
+           token, expires_at, released) VALUES ('default', 'root-zero', 'instance-1', -1, now(), false)`,
       ),
     ).rejects.toThrow(/agboss_execution_leases_token_check/u);
   });

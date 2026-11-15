@@ -60,7 +60,7 @@ const settledWithin = (promise: Promise<unknown>, ms: number): Promise<boolean> 
     }),
   ]);
 
-describe("agbossjs/agboss#909: the cancel's advisory locks", () => {
+describe("agbossjs/agboss#909, #1117: the cancel's fence is the root lease row's lock", () => {
   it("a cancel waits for the tree's open fencing transaction: the write lands first, the next is refused", async () => {
     const root = "root-cancel-1";
     const { effects, leases } = storesOn(connectionTo(database.url()));
@@ -96,26 +96,27 @@ describe("agbossjs/agboss#909: the cancel's advisory locks", () => {
     expect(later).toBeInstanceOf(ExecutionCancelFencedError);
   });
 
-  it("a fencing transaction that starts while a cancel holds the tree's lock waits for it and reads the committed mark", async () => {
+  it("a fencing transaction that starts while a cancel holds the root's row waits for it and reads the committed mark", async () => {
     const root = "root-cancel-2";
     const { effects, leases } = storesOn(connectionTo(database.url()));
     const lease = await leases.acquire("default", root, hours(1));
-    // a cancel in progress: the exclusive lock of the tree's identity taken, the mark not yet written
+    // a cancel in progress: the root's lease row locked, the mark not yet written
     const client = new pg.Client({ connectionString: database.url() });
     await client.connect();
     try {
       await client.query("BEGIN");
-      await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 909))", [
-        JSON.stringify(["default", root]),
-      ]);
+      await client.query(
+        "SELECT 1 FROM agboss_execution_leases WHERE tenant_id = 'default' AND root_execution_id = $1 FOR UPDATE",
+        [root],
+      );
       const write = effects
         .runOnce(keyOf(root, lease?.token ?? 0), () => ({ receipt: "r1" }))
         .catch((error: unknown) => error);
 
-      // the write cannot pass its cancel check: it waits for the lock
+      // the write cannot pass its lease check: it waits for the row's lock
       expect(await settledWithin(write, 400)).toBe(false);
       await client.query(
-        "INSERT INTO agboss_execution_cancel_requests VALUES ('default', $1, now())",
+        "UPDATE agboss_execution_leases SET cancel_requested_at = now() WHERE tenant_id = 'default' AND root_execution_id = $1",
         [root],
       );
       await client.query("COMMIT");
@@ -152,14 +153,14 @@ describe("agbossjs/agboss#909: the cancel's advisory locks", () => {
   });
 });
 
-describe("agbossjs/agboss#909: the retention and the cancel's mark", () => {
-  /** The roots that still have a cancel mark, of those named. */
+describe("agbossjs/agboss#1117: the cancel's mark is permanent", () => {
+  /** The roots of those named whose lease row carries a mark. */
   async function marksOf(roots: readonly string[]): Promise<readonly string[]> {
     const client = new pg.Client({ connectionString: database.url() });
     await client.connect();
     try {
       const { rows } = await client.query(
-        "SELECT root_execution_id FROM agboss_execution_cancel_requests WHERE root_execution_id = ANY($1) ORDER BY 1",
+        "SELECT root_execution_id FROM agboss_execution_leases WHERE cancel_requested_at IS NOT NULL AND root_execution_id = ANY($1) ORDER BY 1",
         [roots],
       );
       return rows.map((row: { root_execution_id: string }) => row.root_execution_id);
@@ -172,7 +173,7 @@ describe("agbossjs/agboss#909: the retention and the cancel's mark", () => {
     ["the fenced effects' sweep", "effects"],
     ["the outbound calls' sweep", "calls"],
   ] as const)(
-    "%s lifts the mark of a tree whose lease finished, never of a tree not over, at any age",
+    "%s lifts no mark — of a retired tree, a live one, a tree never acquired — at any age",
     async (_, sweeper) => {
       const connection = connectionTo(database.url());
       const { effects, leases } = storesOn(connection);
@@ -193,7 +194,44 @@ describe("agbossjs/agboss#909: the retention and the cancel's mark", () => {
       if (sweeper === "effects") await effects.deleteByStoredAtBefore(farFuture);
       else await calls.deleteByEndedAtBefore(farFuture);
 
-      expect(await marksOf([over, alive, never])).toEqual([alive, never].sort());
+      expect(await marksOf([over, alive, never])).toEqual([alive, never, over].sort());
     },
   );
+
+  it("a cancel before the first acquire writes a seed row (token 0, released): the first acquire is token 1, no takeover, and the mark stays", async () => {
+    const { leases } = storesOn(connectionTo(database.url()));
+    const root = "root-seed";
+
+    await leases.requestCancel({ tenantId: "default", rootExecutionId: root });
+    const taken = await leases.acquire("default", root, hours(1));
+
+    expect(taken).toMatchObject({ token: 1 });
+    expect(taken?.takenOverFrom).toBeUndefined();
+    expect(await marksOf([root])).toEqual([root]);
+  });
+
+  it("a child's check seeds its root's row when there is none, and a cancel of that root is then refused for the child", async () => {
+    const { effects, leases } = storesOn(connectionTo(database.url()));
+    const child = await leases.acquire("default", "child-1", hours(1));
+    const keyFor = (name: string) =>
+      effectKeyForTesting({
+        scopeKey: "default:child-1",
+        tenantId: "default",
+        leaseExecutionId: "child-1",
+        rootExecutionId: "root-of-child",
+        token: child?.token ?? 0,
+        idempotencyKey: `child-1:charge-action:1:${name}`,
+        name,
+      });
+
+    expect((await effects.runOnce(keyFor("charge"), () => ({ receipt: "r1" }))).status).toBe(
+      FencedEffectStatus.Ran,
+    );
+    await leases.requestCancel({ tenantId: "default", rootExecutionId: "root-of-child" });
+    const later = await effects
+      .runOnce(keyFor("later"), () => ({ receipt: "r2" }))
+      .catch((error: unknown) => error);
+
+    expect(later).toBeInstanceOf(ExecutionCancelFencedError);
+  });
 });
