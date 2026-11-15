@@ -96,6 +96,41 @@ export class PostgresMigrationChangedError extends AGBossError {
   }
 }
 
+/** What a live-lease refusal found: how many leases are live, and some of their holders. */
+export interface PostgresLiveLeasesErrorOptions {
+  /** How many execution leases are live on the database's clock. */
+  readonly count: number;
+  /** Up to 5 distinct holder instance ids of them, in id order. */
+  readonly holders: readonly string[];
+  readonly cause?: unknown;
+}
+
+/**
+ * `migrate` would apply a migration while an execution lease is live (not released, finished or
+ * superseded, its expiry after the database's clock): an instance of the previous version is still
+ * running work. A schema upgrade is stop every old instance, then migrate, then deploy
+ * (agbossjs/agboss#1104, ADR-0034): a running old instance writes rows the new schema's guarantees
+ * do not cover. Nothing was applied. Stop the old instances (let their leases lapse) and run again;
+ * `allowLiveLeases: true` / `--allow-live-leases` migrates anyway. An idle old instance holds no
+ * lease: this check does not see it.
+ */
+export class PostgresLiveLeasesError extends AGBossError {
+  static override readonly code = "postgres.live-leases" as const;
+  declare readonly code: typeof PostgresLiveLeasesError.code;
+  override name = "PostgresLiveLeasesError";
+  readonly count: number;
+  readonly holders: readonly string[];
+
+  constructor(options: PostgresLiveLeasesErrorOptions) {
+    super(
+      `${String(options.count)} live execution lease(s) held by ${options.holders.join(", ")}${options.count > options.holders.length ? " and others" : ""}: an instance of the previous version is still running — stop every old instance, run the migration, then deploy the new version (ADR-0034); to migrate anyway pass allowLiveLeases: true (agboss-postgres migrate --allow-live-leases)`,
+      { cause: options.cause },
+    );
+    this.count = options.count;
+    this.holders = options.holders;
+  }
+}
+
 /** What a refused setting takes: the message, and what made it fail when it has a cause. */
 export interface PostgresSettingsErrorOptions {
   readonly message: string;

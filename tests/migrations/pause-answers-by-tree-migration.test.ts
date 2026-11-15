@@ -78,6 +78,7 @@ describe("migration 0021 keeps one pause answer per pause of a tree", () => {
           "0030_a2a_direct_messages.sql": null,
           "0031_pause_deadlines_and_notices.sql": null,
           "0032_execution_cancel_requests.sql": null,
+          "0033_pause_channel_generated.sql": null,
         }),
       ),
     );
@@ -113,7 +114,7 @@ describe("migration 0021 keeps one pause answer per pause of a tree", () => {
     );
 
     expect(report.applied.map((migration) => migration.version)).toEqual([
-      21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32,
+      21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33,
     ]);
     expect(await respondersOf(records, "old-root")).toEqual(["manager-17", "manager-18"]);
     expect(await respondersOf(records, "new-root")).toEqual(["manager-21"]);

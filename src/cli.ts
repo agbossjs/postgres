@@ -29,18 +29,25 @@ export enum ExitCode {
   Usage = 2,
 }
 
-export const USAGE = `usage: agboss-postgres migrate [--schema <name>] [--url <postgres-url>]
+export const USAGE = `usage: agboss-postgres migrate [--schema <name>] [--url <postgres-url>] [--allow-live-leases]
   Applies the @agboss/postgres migrations not yet applied to the schema (created when missing;
   without --schema: the URL's search_path, public by default). The database is POSTGRES_URL
   (DATABASE_URL is still read when POSTGRES_URL is unset, for this release only); --url puts the
   URL, its password included, in the process list and the shell history — prefer the variable.
-  The flags: --schema, --url, --help (-h).`;
+  A schema upgrade is: stop every instance of the old version, migrate, start the new version
+  (ADR-0034). When migrations are pending and an execution lease is live, the run refuses and
+  applies nothing (postgres.live-leases); --allow-live-leases migrates anyway. An idle old
+  instance holds no lease: the check does not see it.
+  The flags: --schema, --url, --allow-live-leases, --help (-h).`;
 
 /** The flags `migrate` takes, each with a value. */
 const FLAGS: ReadonlySet<string> = new Set(["--url", "--schema"]);
 
+/** The flag that takes no value (agbossjs/agboss#1104): migrate although an execution lease is live. */
+const ALLOW_LIVE_LEASES = "--allow-live-leases";
+
 /** Every flag a usage error may name: the command's own, never what was typed. */
-const PRINTABLE_FLAGS: ReadonlySet<string> = new Set([...FLAGS, "--help", "-h"]);
+const PRINTABLE_FLAGS: ReadonlySet<string> = new Set([...FLAGS, ALLOW_LIVE_LEASES, "--help", "-h"]);
 
 /** The flags among `rest`: a known one by its name, any other as `<flag>` — never a value. */
 const flagNamesOf = (rest: readonly string[]): string =>
@@ -65,10 +72,15 @@ function flagAt(
     : { flag: arg.slice(0, equals), value: arg.slice(equals + 1), next: at + 1 };
 }
 
-/** Each `--flag value` or `--flag=value` of `rest`; a string → a usage problem. */
+/** Each `--flag value` or `--flag=value` of `rest` (`--allow-live-leases` alone: `"true"`); a string → a usage problem. */
 function flagsOf(rest: readonly string[]): ReadonlyMap<string, string> | string {
   const flags = new Map<string, string>();
   for (let at = 0; at < rest.length;) {
+    if (rest[at] === ALLOW_LIVE_LEASES && !flags.has(ALLOW_LIVE_LEASES)) {
+      flags.set(ALLOW_LIVE_LEASES, "true");
+      at += 1;
+      continue;
+    }
     const { flag, value, next } = flagAt(rest, at);
     if (!FLAGS.has(flag) || flags.has(flag) || value === undefined || value === "")
       return `unexpected arguments (flags: ${flagNamesOf(rest)})`;
@@ -89,7 +101,12 @@ function targetOf(args: readonly string[], env: CommandIo["env"]): MigratePostgr
   const url = flags.get("--url") ?? urlOfEnv(env);
   if (url === undefined) return "no --url and no POSTGRES_URL";
   const schema = flags.get("--schema");
-  return schema === undefined ? { url } : { url, schema };
+  const allowLiveLeases = flags.has(ALLOW_LIVE_LEASES);
+  return {
+    url,
+    ...(schema === undefined ? {} : { schema }),
+    ...(allowLiveLeases ? { allowLiveLeases } : {}),
+  };
 }
 
 /** What the checkpoint index step did (agbossjs/agboss#962), said in one line. */

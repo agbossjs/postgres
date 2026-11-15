@@ -36,6 +36,7 @@ describe("migration 0018 keeps the ids of the trees already there", () => {
           "0030_a2a_direct_messages.sql": null,
           "0031_pause_deadlines_and_notices.sql": null,
           "0032_execution_cancel_requests.sql": null,
+          "0033_pause_channel_generated.sql": null,
         }),
       ),
     );
@@ -59,7 +60,7 @@ describe("migration 0018 keeps the ids of the trees already there", () => {
     );
 
     expect(report.applied.map((migration) => migration.version)).toEqual([
-      18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32,
+      18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33,
     ]);
     const { rows } = await onSchema(
       url,

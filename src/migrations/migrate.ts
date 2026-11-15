@@ -4,6 +4,7 @@ import { migrationsIn, newestVersionOf, type MigrationFile } from "./files.js";
 import { appliedMigrationsOf, HISTORY_TABLE, pendingMigrations } from "./history.js";
 import { stepIndexAfter, type StepIndexResult } from "./checkpoint-step-index.js";
 import { PostgresStepIndexError } from "../errors.js";
+import { refuseLiveLeases } from "./live-leases.js";
 import { setupCheckpoints } from "./checkpoint-setup.js";
 import { inTransaction } from "../connection/transaction.js";
 import { checkedSchemaOf, quotedIdentifier, searchPathOptionOf } from "../connection/settings.js";
@@ -23,6 +24,12 @@ export interface MigratePostgresOptions {
   readonly schema?: string;
   /** Aborted → the run stops before its next migration (one already begun commits or rolls back). */
   readonly signal?: AbortSignal;
+  /**
+   * Migrate although an execution lease is live (agbossjs/agboss#1104). Unset → a run that would
+   * apply a migration to a database already migrated refuses (`PostgresLiveLeasesError`): a schema
+   * upgrade is stop the old instances → migrate → deploy.
+   */
+  readonly allowLiveLeases?: boolean;
 }
 
 /** One migration a run applied. */
@@ -99,7 +106,14 @@ export async function migrateWith(
     client.on("error", onLost);
     try {
       if (schema !== undefined) await createSchema(client, schema);
-      const run = { pool, client, files, schema, signal: options.signal };
+      const run = {
+        pool,
+        client,
+        files,
+        schema,
+        signal: options.signal,
+        allowLiveLeases: options.allowLiveLeases,
+      };
       const report = await underLock(client, () => migrateLocked(run));
       const stepIndex = await stepIndexAfter(options, report.schema, indexInBackground).catch(
         (cause: unknown) => {
@@ -160,6 +174,7 @@ interface MigrationRun {
   readonly files: readonly MigrationFile[];
   readonly schema: string | undefined;
   readonly signal: AbortSignal | undefined;
+  readonly allowLiveLeases: boolean | undefined;
 }
 
 async function migrateLocked(run: MigrationRun): Promise<MigrationReport> {
@@ -173,7 +188,10 @@ async function migrateLocked(run: MigrationRun): Promise<MigrationReport> {
       ? undefined
       : `SET LOCAL search_path TO ${quotedIdentifier(run.schema)}`;
   await client.query(HISTORY_TABLE);
-  const pending = pendingMigrations(files, await appliedMigrationsOf(client));
+  const done = await appliedMigrationsOf(client);
+  const pending = pendingMigrations(files, done);
+  if (pending.length > 0 && done.length > 0 && run.allowLiveLeases !== true)
+    await refuseLiveLeases(client, done.at(-1)?.version ?? 0);
   const applied: AppliedMigrationReport[] = [];
   for (const file of pending) {
     signal?.throwIfAborted();

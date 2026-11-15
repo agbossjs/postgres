@@ -44,6 +44,7 @@ async function schemaAt28(): Promise<string> {
         "0030_a2a_direct_messages.sql": null,
         "0031_pause_deadlines_and_notices.sql": null,
         "0032_execution_cancel_requests.sql": null,
+        "0033_pause_channel_generated.sql": null,
       }),
     ),
   );
