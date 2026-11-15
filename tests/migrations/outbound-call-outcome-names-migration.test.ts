@@ -47,6 +47,7 @@ async function schemaWithOldRows(): Promise<string> {
         "0029_execution_lease_token.sql": null,
         "0030_a2a_direct_messages.sql": null,
         "0031_pause_deadlines_and_notices.sql": null,
+        "0032_execution_cancel_requests.sql": null,
       }),
     ),
   );
@@ -75,7 +76,7 @@ describe("migration 0027 names the outbound call's two meanings of superseded ap
 
     const report = await migratePostgres({ url });
 
-    expect(report.applied.map((migration) => migration.version)).toEqual([27, 28, 29, 30, 31]);
+    expect(report.applied.map((migration) => migration.version)).toEqual([27, 28, 29, 30, 31, 32]);
     const log = await onSchema(url, "SELECT record FROM agboss_execution_lease_events ORDER BY id");
     expect(log.rows.map((row: { record: unknown }) => row.record)).toEqual(NEW_ROWS);
     const kept = await onSchema(

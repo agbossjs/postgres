@@ -40,6 +40,7 @@ describe("AC4: migration 0013 keeps the rows written before it", () => {
           "0029_execution_lease_token.sql": null,
           "0030_a2a_direct_messages.sql": null,
           "0031_pause_deadlines_and_notices.sql": null,
+          "0032_execution_cancel_requests.sql": null,
         }),
       ),
     );

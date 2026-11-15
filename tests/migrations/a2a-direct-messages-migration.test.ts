@@ -27,6 +27,7 @@ describe("migration 0030 adds the direct A2A messages", () => {
         migrationsFolder({
           "0030_a2a_direct_messages.sql": null,
           "0031_pause_deadlines_and_notices.sql": null,
+          "0032_execution_cancel_requests.sql": null,
         }),
       ),
     );
@@ -45,7 +46,7 @@ describe("migration 0030 adds the direct A2A messages", () => {
 
     const report = await migratePostgres({ url });
 
-    expect(report.applied.map((file) => file.version)).toEqual([30, 31]);
+    expect(report.applied.map((file) => file.version)).toEqual([30, 31, 32]);
     const save = await new PostgresA2ADirectMessageRepository(connectionTo(url)).saveIfAbsent({
       tenantId: "acme",
       ownerId: "alice",

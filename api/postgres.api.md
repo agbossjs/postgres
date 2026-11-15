@@ -49,6 +49,7 @@ import { ExecutionLeaseRepository } from '@agboss/core';
 import { ExecutionRecordRepository } from '@agboss/core';
 import { ExecutionRecordStatus } from '@agboss/core';
 import { ExecutionTree } from '@agboss/core';
+import type { ExecutionTree as ExecutionTree_2 } from '@agboss/core/stores';
 import { ExecutionTreeRepository } from '@agboss/core';
 import { ExecutionTreeValue } from '@agboss/core';
 import { FencedEffectOutcome } from '@agboss/core';
@@ -338,6 +339,8 @@ export class PostgresExecutionLeaseRepository extends ExecutionLeaseRepository {
     release(held: ExecutionLease): Promise<void>;
     // (undocumented)
     renew(held: ExecutionLease, duration: Milliseconds): Promise<Milliseconds | undefined>;
+    // (undocumented)
+    requestCancel(tree: ExecutionTree_2): Promise<void>;
     // (undocumented)
     retire(held: ExecutionLease): Promise<void>;
     static readonly store: StoreDescriptor;
@@ -753,6 +756,7 @@ export type StepIndexResult = "built" | "present" | "skipped";
 // src/stores/postgres-execution-lease.repository.ts - (ae-undocumented) Missing documentation for "retire".
 // src/stores/postgres-execution-lease.repository.ts - (ae-undocumented) Missing documentation for "yield".
 // src/stores/postgres-execution-lease.repository.ts - (ae-undocumented) Missing documentation for "reclaim".
+// src/stores/postgres-execution-lease.repository.ts - (ae-undocumented) Missing documentation for "requestCancel".
 // src/stores/postgres-execution-record.repository.ts - (ae-undocumented) Missing documentation for "ping".
 // src/stores/postgres-execution-record.repository.ts - (ae-undocumented) Missing documentation for "hasThread".
 // src/stores/postgres-execution-record.repository.ts - (ae-undocumented) Missing documentation for "threadOwner".

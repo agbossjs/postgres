@@ -27,7 +27,12 @@ async function schemaAt0030(): Promise<string> {
   const url = await freshSchema();
   await migrateWith(
     { url },
-    migrationsIn(migrationsFolder({ "0031_pause_deadlines_and_notices.sql": null })),
+    migrationsIn(
+      migrationsFolder({
+        "0031_pause_deadlines_and_notices.sql": null,
+        "0032_execution_cancel_requests.sql": null,
+      }),
+    ),
   );
   for (const record of [
     OLD("waiting", "pending", null),
@@ -62,7 +67,7 @@ describe("migration 0031: pause deadlines and notices", () => {
     const report = await migratePostgres({ url });
     const store = instanceOn(url);
 
-    expect(report.applied.map((migration) => migration.version)).toEqual([31]);
+    expect(report.applied.map((migration) => migration.version)).toEqual([31, 32]);
     expect(await recordsOf(url)).toEqual(before);
     const { rows } = await onSchema(
       url,
