@@ -46,6 +46,7 @@ async function schemaAt28(): Promise<string> {
         "0032_execution_cancel_requests.sql": null,
         "0033_pause_channel_generated.sql": null,
         "0034_cancel_mark_on_lease_row.sql": null,
+        "0035_pause_reassignment.sql": null,
       }),
     ),
   );
@@ -74,7 +75,9 @@ describe("migration 0029 names the lease's fencing token `token`", () => {
     const report = await migratePostgres({ url });
     await clock.advance(seconds(31));
 
-    expect(report.applied.map((migration) => migration.version)).toEqual([29, 30, 31, 32, 33, 34]);
+    expect(report.applied.map((migration) => migration.version)).toEqual([
+      29, 30, 31, 32, 33, 34, 35,
+    ]);
     const columns = await onSchema(
       url,
       `SELECT column_name FROM information_schema.columns

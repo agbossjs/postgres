@@ -63,7 +63,7 @@ describe("agbossjs/agboss#962: the checkpoint index step", () => {
 
     const reports = await Promise.all([1, 2, 3].map(() => migratePostgres({ url })));
 
-    expect(reports.map((report) => report.applied.length).sort()).toEqual([0, 0, 34]);
+    expect(reports.map((report) => report.applied.length).sort()).toEqual([0, 0, 35]);
     expect(await stateOf(url)).toMatchObject({ valid: true });
   });
 

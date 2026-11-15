@@ -74,6 +74,15 @@ export abstract class PostgresPauseQueryRepository extends PostgresPausedRunRepo
     return new PauseScans(this.connection.pool).deleteClosedBefore(cutoff);
   }
 
+  async findPendingUnsentReassignedBefore(
+    cutoff: Date,
+    limit: number,
+    after?: PauseScanAfter,
+  ): Promise<readonly PauseRecord[]> {
+    assertScanLimit(limit);
+    return new PauseScans(this.connection.pool).reassignedUnsentBefore(cutoff, limit, after);
+  }
+
   async claimNoticesDue(
     at: Date,
     limit: number,

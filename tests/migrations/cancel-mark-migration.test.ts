@@ -19,7 +19,10 @@ import { connectionTo } from "../support/stores.js";
  * table. A mark the row already has stays; a run again changes nothing; the live-lease guard
  * (agbossjs/agboss#1104) refuses while a lease is live.
  */
-const BEFORE_0034 = { "0034_cancel_mark_on_lease_row.sql": null };
+const BEFORE_0034 = {
+  "0034_cancel_mark_on_lease_row.sql": null,
+  "0035_pause_reassignment.sql": null,
+};
 
 async function schemaAt0033(): Promise<string> {
   const url = await freshSchema();
@@ -52,7 +55,7 @@ describe("migration 0034: the cancel mark lives on the lease row (#1117)", () =>
 
     const report = await migratePostgres({ url });
 
-    expect(report.applied.map((file) => file.version)).toEqual([34]);
+    expect(report.applied.map((file) => file.version)).toEqual([34, 35]);
     expect(await leaseRowsOf(url)).toEqual([
       { root: "no-row", token: 0, released: true, holder: "", marked: true },
       { root: "with-row", token: 3, released: true, holder: "pod-a", marked: true },
@@ -99,7 +102,7 @@ describe("migration 0034: the cancel mark lives on the lease row (#1117)", () =>
     const again = await migratePostgres({ url });
 
     expect(refused).toBeInstanceOf(PostgresLiveLeasesError);
-    expect(allowed.applied.map((file) => file.version)).toEqual([34]);
+    expect(allowed.applied.map((file) => file.version)).toEqual([34, 35]);
     expect(again.applied).toEqual([]);
   });
 });
@@ -177,7 +180,7 @@ describe("migration 0034 loses no mark: one transaction, proven with kill -9 (#1
 
     const report = await migratePostgres({ url });
 
-    expect(report.applied.map((file) => file.version)).toEqual([34]);
+    expect(report.applied.map((file) => file.version)).toEqual([34, 35]);
     const marked = await onSchema(
       url,
       "SELECT count(*)::int AS n FROM agboss_execution_leases WHERE cancel_requested_at IS NOT NULL AND token = 0 AND released",

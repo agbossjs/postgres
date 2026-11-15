@@ -74,6 +74,7 @@ async function schemaWithOldPauses(): Promise<string> {
         "0032_execution_cancel_requests.sql": null,
         "0033_pause_channel_generated.sql": null,
         "0034_cancel_mark_on_lease_row.sql": null,
+        "0035_pause_reassignment.sql": null,
       }),
     ),
   );
@@ -95,7 +96,7 @@ describe("migration 0024 stores each pause's kind and names its step", () => {
     const pauses = new PostgresPausedExecutionRepository(connectionTo(url), new VirtualClock());
 
     expect(report.applied.map((migration) => migration.version)).toEqual([
-      24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34,
+      24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35,
     ]);
     expect(await pauses.findByTenantIdAndPauseId("acme", "approval-pause")).toMatchObject({
       kind: PauseKind.Approval,

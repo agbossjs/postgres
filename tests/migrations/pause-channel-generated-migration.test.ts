@@ -16,6 +16,7 @@ import { migrationsFolder } from "../support/migration-folders.js";
 const BEFORE_0033 = {
   "0033_pause_channel_generated.sql": null,
   "0034_cancel_mark_on_lease_row.sql": null,
+  "0035_pause_reassignment.sql": null,
 };
 
 const OLD_INSERT = `INSERT INTO agboss_pauses (tenant_id, pause_id, step_key, root_execution_id, status, record)

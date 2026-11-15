@@ -37,6 +37,7 @@ describe("migration 0019 keeps the ids of every execution that made an outbound 
       "0032_execution_cancel_requests.sql": null,
       "0033_pause_channel_generated.sql": null,
       "0034_cancel_mark_on_lease_row.sql": null,
+      "0035_pause_reassignment.sql": null,
     });
     await migrateWith({ url }, migrationsIn(before));
     await onSchema(
@@ -65,7 +66,7 @@ describe("migration 0019 keeps the ids of every execution that made an outbound 
     );
 
     expect(report.applied.map((migration) => migration.version)).toEqual([
-      18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34,
+      18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35,
     ]);
     const { rows } = await onSchema(
       url,
