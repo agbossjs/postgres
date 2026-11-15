@@ -3,6 +3,7 @@ import type pg from "pg";
 import { PostgresSchemaMissingError, PostgresSchemaTooNewError } from "../errors.js";
 import { newestVersionOf, type MigrationFile } from "./files.js";
 import { appliedVersionOf } from "./history.js";
+import { DEFAULT_LEASE_WAIT, waitForLeasesToLapse, type LeaseWait } from "./live-leases.js";
 import { migrateWith } from "./migrate.js";
 
 /** What the start-up check is given: the database, its schema and pool, the setup and the migrations. */
@@ -13,6 +14,10 @@ export interface SchemaCheck {
   readonly pool: pg.Pool;
   readonly schemaSetup: SchemaSetup;
   readonly files: readonly MigrationFile[];
+  /** Migrate over live execution leases (the settings' `allowLiveLeases`, agbossjs/agboss#1104). */
+  readonly allowLiveLeases?: boolean | undefined;
+  /** How long a migrating start waits for leases to lapse (a test's bound; default `DEFAULT_LEASE_WAIT`). */
+  readonly leaseWait?: LeaseWait | undefined;
 }
 
 /**
@@ -42,13 +47,33 @@ export async function checkSchema(check: SchemaCheck): Promise<void> {
   if (applied === expected) return;
   if (check.schemaSetup !== SchemaSetup.MigrateOnStart)
     throw new PostgresSchemaMissingError({ applied, expected });
+  const allowLiveLeases = check.allowLiveLeases === true;
+  // no rolling upgrade across a schema change (ADR-0034): with migrations pending on a migrated
+  // schema the start waits for live leases to lapse and refuses while one is live; the migration
+  // checks again under its lock (a lease taken meanwhile fails it too)
+  if (applied > 0 && !allowLiveLeases) await leasesLapsed(check, applied);
   await migrateWith(
-    // a start that migrates is the operator's choice (`MigrateOnStart`): the live-lease guard is for the command
     check.schema === undefined
-      ? { url: check.url, allowLiveLeases: true }
-      : { url: check.url, schema: check.schema, allowLiveLeases: true },
+      ? { url: check.url, allowLiveLeases }
+      : { url: check.url, schema: check.schema, allowLiveLeases },
     check.files,
     // the pod serves while the index builds (agbossjs/agboss#962)
     true,
   );
+}
+
+/** `waitForLeasesToLapse` on a connection of the pool. */
+async function leasesLapsed(check: SchemaCheck, applied: number): Promise<void> {
+  const client = await check.pool.connect();
+  let isLost = false;
+  const onLost = (): void => {
+    isLost = true;
+  };
+  client.on("error", onLost);
+  try {
+    await waitForLeasesToLapse(client, applied, check.leaseWait ?? DEFAULT_LEASE_WAIT);
+  } finally {
+    client.off("error", onLost);
+    client.release(isLost);
+  }
 }

@@ -148,6 +148,7 @@ export class PostgresConnection implements OnInit, OnDestroy {
         pool: this.pool,
         schemaSetup: this.#settings.schemaSetup ?? SchemaSetup.Check,
         files: migrationsIn(),
+        allowLiveLeases: this.#settings.allowLiveLeases,
       });
     } catch (error) {
       await this.onDestroy().catch(() => undefined);

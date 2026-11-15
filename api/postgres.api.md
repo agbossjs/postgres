@@ -278,6 +278,7 @@ export class PostgresConnection implements OnInit, OnDestroy {
 
 // @public
 export interface PostgresConnectionSettings {
+    readonly allowLiveLeases?: boolean;
     readonly commandTimeout?: number;
     readonly idleInTransactionTimeout?: number;
     readonly poolSize?: number;

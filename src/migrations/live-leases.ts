@@ -46,3 +46,38 @@ export async function refuseLiveLeases(client: ClientBase, applied: number): Pro
   const live = LiveRow.parse(rows[0]);
   if (live.count > 0) throw new PostgresLiveLeasesError(live);
 }
+
+/** How long a start that migrates waits for live leases to lapse, and how often it looks. */
+export interface LeaseWait {
+  readonly maxMs: number;
+  readonly pollMs: number;
+}
+
+/**
+ * The default wait: twice the core's default lease duration (30 s) — a stopped single instance's
+ * own leases lapse within it, a running old instance renews its leases and outlasts it.
+ */
+export const DEFAULT_LEASE_WAIT: LeaseWait = { maxMs: 60_000, pollMs: 1_000 };
+
+/**
+ * A start that migrates (`SchemaSetup.MigrateOnStart`, agbossjs/agboss#1104): looks for a live lease
+ * every `pollMs` for `maxMs`, on the database's clock; one that lapses lets the start go on, one
+ * still live at the end fails it with `PostgresLiveLeasesError` (the old instances are not stopped:
+ * stop them first). The attempts are counted, not timed: no host clock decides.
+ */
+export async function waitForLeasesToLapse(
+  client: ClientBase,
+  applied: number,
+  wait: LeaseWait,
+): Promise<void> {
+  const attempts = Math.max(1, Math.ceil(wait.maxMs / wait.pollMs));
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      await refuseLiveLeases(client, applied);
+      return;
+    } catch (error) {
+      if (!(error instanceof PostgresLiveLeasesError) || attempt >= attempts) throw error;
+    }
+    await new Promise<void>((resolve) => setTimeout(resolve, wait.pollMs));
+  }
+}
