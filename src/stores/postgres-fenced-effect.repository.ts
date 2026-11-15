@@ -20,6 +20,7 @@ import { storeNowOf } from "./store-time.js";
 import { escapedJsonOf, unescapedJson } from "./nul-escape.js";
 import { z } from "zod";
 import { assertKeyAtEntry } from "./key-entry.js";
+import { parsedOrUnreadable } from "./unreadable.js";
 
 const ResultRow = z.object({ token: z.number(), result: z.string() });
 /** What a business key's row keeps of the key that wrote it, for the core's `replayedFromOf`. */
@@ -101,7 +102,7 @@ function replayOf<TResult>(key: EffectKey, row: unknown): FencedEffectOutcome<TR
   return {
     status: FencedEffectStatus.Replayed,
     // written by this store as the JSON of the work's result
-    result: JSON.parse(result) as TResult,
+    result: parsedOrUnreadable("fenced effect result", result, { name: key.name }) as TResult,
     token,
     ...(replayedFrom === undefined ? {} : { replayedFrom }),
   };
