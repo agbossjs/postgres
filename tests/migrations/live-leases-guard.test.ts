@@ -62,8 +62,8 @@ describe("#1104: migrate refuses while an execution lease is live", () => {
       count: 3,
       holders: ["pod-a", "pod-b"],
     });
-    expect(String(Reflect.get(error as Error, "message"))).toMatch(/3 live execution lease/);
-    expect(String(Reflect.get(error as Error, "message"))).toMatch(/allowLiveLeases/);
+    expect((error as Error).message).toMatch(/3 live execution lease/);
+    expect((error as Error).message).toMatch(/allowLiveLeases/);
     expect((await historyOf(url)).at(-1)).toBe("32:execution_cancel_requests");
   });
 
