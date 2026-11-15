@@ -337,9 +337,50 @@ The command's last line says what the index step did: `built index checkpoints_l
 `index checkpoints_latest_by_step (public) is ready` (found valid) or, when another run holds the
 build's lock, `skipped index checkpoints_latest_by_step (public): another run holds its build lock; run
 migrate again when it ends` (`migratePostgres` returns the same as `MigrationReport.stepIndex`). A
-second run prints `nothing to apply: public is at migration 21` and the ready line. Exit codes: `0` done, `1` the
-migration failed (the reason on stderr, any password in it masked), `2` a usage error. The command
-reads `POSTGRES_URL`; `--url <url>` overrides it, but puts the URL — its password included — in the
+second run prints `nothing to apply: public is at migration 21` and the ready line.
+
+Exit codes: `0` done, `1` the run failed (the reason on stderr, any password in it masked), `2` a
+usage error. Exit `1` has two readings, and the output tells them apart.
+
+**The migration failed.** stderr is `agboss-postgres: the migration failed — <reason>`. The run
+stopped before the index step and the schema is not fully migrated. Fix the cause and run again.
+
+**The migrations are applied, only the index step failed.** stdout has the `applied …` lines (or
+`nothing to apply …`) and no index line; stderr is one line:
+
+```text
+index checkpoints_latest_by_step (public) failed: <cause>; the migrations are applied and reads stay correct; the next migrate run rebuilds the index (an INVALID one is dropped first)
+```
+
+The schema is migrated: deploy the application, and run `migrate` again for the index (the build was
+cancelled, or the role does not own `checkpoints`). `latestByStep` answers the same without the index,
+only slower. A shell script tells the two apart by that stderr line: exit `1` with it is "index not
+built", exit `1` with `the migration failed` is "schema not migrated". A script that calls
+`migratePostgres` tells them by the error: a `PostgresStepIndexError` (`code`
+`postgres.step-index-failed`) means the schema is migrated and only the index is not built;
+`error.report` is the `MigrationReport` of what the run committed, and `error.invalidIndexLeft` says
+whether an INVALID index stays behind. Any other error means the migration did not run to its end.
+
+**The drop of an INVALID index waits at most 3 s** (agbossjs/agboss#1116). `DROP INDEX CONCURRENTLY`
+waits for every transaction that holds a lock on `checkpoints`, an idle one included, so both the drop
+at the start of a run and the drop after a failed build give up after 3 s (`lock_timeout`). The run then
+exits `1` with the index line ending in the INVALID-stays variant, and `invalidIndexLeft` is `true`:
+
+```text
+index checkpoints_latest_by_step (public) failed: canceling statement due to lock timeout; the migrations are applied and reads stay correct; an INVALID index checkpoints_latest_by_step stays: the next migrate run drops and rebuilds it
+```
+
+A transaction left idle on `checkpoints` (a client that ran `SELECT 1 FROM checkpoints` and neither
+committed nor rolled back, or an idle writer) makes every following run fail this way until it ends.
+When the drop keeps timing out, find the transaction, end it (or fix the client) and run `migrate`
+again: it drops the leftover and builds the index.
+
+```sql
+SELECT pid, state, xact_start, query FROM pg_stat_activity WHERE state LIKE 'idle in transaction%';
+SELECT pg_terminate_backend(<pid>);
+```
+
+The command reads `POSTGRES_URL`; `--url <url>` overrides it, but puts the URL — its password included — in the
 process list and the shell history, so prefer the variable; `DATABASE_URL` (the name before agbossjs/agboss#891) is still read when
 `POSTGRES_URL` is unset, for this release only.
 
