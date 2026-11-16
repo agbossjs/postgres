@@ -25,9 +25,10 @@ import pg from "pg";
  *   transaction"), the transaction is rolled back;
  * - `25` invalid_transaction_state: the statement is refused for the state of its transaction
  *   (`25P02` in_failed_sql_transaction: "commands ignored until end of transaction block"; `25006`
- *   read-only), or the session is ended by `idle_in_transaction_session_timeout` (`25P03`) or
- *   `transaction_timeout` (`25P04`), which fire only inside a transaction that is not committing
- *   (https://www.postgresql.org/docs/current/runtime-config-client.html) — rolled back;
+ *   read-only). NOT `25P03` idle_in_transaction_session_timeout and `25P04` transaction_timeout
+ *   (https://www.postgresql.org/docs/current/runtime-config-client.html): they end the session from
+ *   a timer, and PostgreSQL 17's `transaction_timeout` can be pending when `CommitTransaction`
+ *   disables its alarm, so its FATAL may come after the commit record is durable;
  * - `40` transaction_rollback — `40000`, `40001` serialization_failure (at COMMIT, SERIALIZABLE's
  *   check, https://www.postgresql.org/docs/current/transaction-iso.html), `40002`, `40P01`
  *   deadlock_detected: the class's name is the server's statement that it rolled back. NOT `40003`
@@ -35,6 +36,11 @@ import pg from "pg";
  * - `42` syntax_error_or_access_rule_violation (a syntax error, an undefined table, a missing
  *   privilege, `42P06` duplicate_schema of a racing `CREATE SCHEMA`): refused at parse, analysis or
  *   the permission check, before the statement ran.
+ * Only with severity `ERROR`: every abort above is an `ERROR`, the statement's or the transaction's;
+ * a `FATAL` or `PANIC` ends the session (a pooler's synthetic error is `FATAL` too) and is not the
+ * server's word that the transaction rolled back. And only for one statement: a `CALL` or a `DO`
+ * may `COMMIT` inside itself before it raises (https://www.postgresql.org/docs/current/plpgsql-transactions.html),
+ * and so may a string of several statements, so their server error is unknown too.
  * Not listed, so unknown: `08` connection_exception (`08007` transaction_resolution_unknown, `08P01`
  * protocol_violation — what a pooler answers when its server connection broke), `53`
  * insufficient_resources (`53100` disk_full, `53200` out_of_memory: a WAL flush at commit may have
@@ -58,7 +64,7 @@ const KNOWN_CLASSES: ReadonlySet<string> = new Set([
 ]);
 
 /** The codes of a known class whose error does not prove the statement had no effect. */
-const UNKNOWN_IN_KNOWN_CLASS: ReadonlySet<string> = new Set(["40003"]);
+const UNKNOWN_IN_KNOWN_CLASS: ReadonlySet<string> = new Set(["40003", "25P03", "25P04"]);
 
 /** A SQLSTATE: five digits or upper-case letters (https://www.postgresql.org/docs/current/errcodes-appendix.html). */
 const SQLSTATE = /^[0-9A-Z]{5}$/u;
@@ -78,6 +84,7 @@ export function isServerAbort(error: unknown): boolean {
   if (!(error instanceof pg.DatabaseError)) return false;
   const code = error.code;
   return (
+    error.severity === "ERROR" &&
     typeof code === "string" &&
     SQLSTATE.test(code) &&
     KNOWN_CLASSES.has(code.slice(0, 2)) &&
@@ -89,6 +96,13 @@ export function isServerAbort(error: unknown): boolean {
 export const isNeverSent = (error: unknown): boolean =>
   error instanceof Error && NEVER_SENT_MESSAGES.has(error.message);
 
-/** Whether `error` proves its COMMIT or single write did not take effect (the whitelist). */
-export const isKnownFailure = (error: unknown): boolean =>
-  isNeverSent(error) || isServerAbort(error);
+/** A statement that may commit inside itself: a procedure, an anonymous block. */
+const COMMITS_INSIDE = /^\s*(?:call|do)\b/iu;
+
+/** Whether `sql` is one statement that cannot commit inside itself (trailing `;` and space aside). */
+export const isOneStatement = (sql: string): boolean =>
+  !COMMITS_INSIDE.test(sql) && !sql.replace(/[\s;]+$/u, "").includes(";");
+
+/** Whether `error` proves `sql`, a COMMIT or a single write, did not take effect (the whitelist). */
+export const isKnownFailure = (error: unknown, sql: string): boolean =>
+  isNeverSent(error) || (isOneStatement(sql) && isServerAbort(error));

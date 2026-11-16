@@ -1,6 +1,7 @@
 import { Duplex } from "node:stream";
 import pg from "pg";
-import { isClientTimeout, isCommit, outcomeOf } from "./outcome.js";
+import { StoreOutcomeUnknownError } from "@agboss/core/stores";
+import { isClientTimeout, isCommit, isUnknownTransport, outcomeOf } from "./outcome.js";
 
 /**
  * The command timeout of the pool's connections, in ms (agbossjs/agboss#928): `pg.Pool` hands it to
@@ -43,6 +44,8 @@ export class TimedClient extends pg.Client {
   readonly #commandTimeout: number | undefined;
   #isInTransaction = false;
   #longTimeout: number | undefined;
+  /** The unknown outcome this connection ended with: every later statement rejects with it. */
+  #poisonedBy: StoreOutcomeUnknownError | undefined;
 
   readonly #driverQuery: (...args: unknown[]) => unknown;
 
@@ -100,6 +103,7 @@ export class TimedClient extends pg.Client {
   }
 
   async #timed(args: unknown[], sql: string): Promise<unknown> {
+    if (this.#poisonedBy !== undefined) throw this.#poisonedBy;
     const isCommitting = isCommit(sql);
     const isInTransaction = this.#isInTransaction;
     try {
@@ -110,12 +114,26 @@ export class TimedClient extends pg.Client {
     } catch (error) {
       if (isEnd(sql)) this.#endTransaction();
       if (isClientTimeout(error)) this.#destroySocket();
-      throw outcomeOf(error, {
+      const outcome = outcomeOf(error, {
         sql,
         isInTransaction: isInTransaction && !isCommitting,
         timeout: this.#timeoutOf(args),
       });
+      if (isUnknownTransport(outcome)) this.#poison(outcome);
+      throw outcome;
     }
+  }
+
+  /**
+   * After a statement of unknown outcome the session is past trust (postgres#113): a pooler may
+   * have answered for a broken server connection, the stream may be out of step. The client is
+   * ended at once — `pg-pool` never hands an ending client out again, whoever releases it and how —
+   * and every later statement on it (a caller's own ROLLBACK, LangGraph's `PostgresSaver`'s)
+   * rejects with this outcome, never with an error that hides it.
+   */
+  #poison(outcome: StoreOutcomeUnknownError): void {
+    this.#poisonedBy = outcome;
+    void this.end();
   }
 
   #timeoutOf(args: unknown[]): number {

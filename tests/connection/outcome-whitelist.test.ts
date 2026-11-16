@@ -51,7 +51,7 @@ const KNOWN: readonly string[] = [
   // 23 integrity constraint violation (deferred, at COMMIT)
   ...["23000", "23001", "23502", "23503", "23505", "23514", "23P01"],
   // 25 invalid transaction state
-  ...["25000", "25001", "25006", "25P01", "25P02", "25P03", "25P04"],
+  ...["25000", "25001", "25006", "25P01", "25P02"],
   // 2F SQL routine exception
   ...["2F000", "2F005"],
   // 38 external routine exception
@@ -74,8 +74,9 @@ const UNKNOWN: readonly string[] = [
   ...["0A000", "0B000", "0F000", "0F001", "0L000", "0LP01", "0P000", "0Z000", "0Z002"],
   ...["20000", "24000", "26000", "27000", "28000", "28P01", "2B000", "2BP01", "2D000"],
   ...["34000", "39000", "39001", "39P01", "3B000", "3B001", "3D000", "3F000"],
-  // 40003 statement completion unknown
-  "40003",
+  // 40003 statement completion unknown; 25P03 / 25P04 end the session by a timer that can fire
+  // after the commit record (PostgreSQL 17 transaction_timeout)
+  ...["40003", "25P03", "25P04"],
   // 53 insufficient resources
   ...["53000", "53100", "53200", "53300", "53400"],
   ...["54000", "54001", "55000", "55006", "55P03"],
@@ -99,10 +100,22 @@ describe("agbossjs/postgres#113: a server abort of a whitelisted class is known 
     },
   );
 
-  it.each(["23505", "40001", "25P03"])("%s as FATAL is known as well", (code) => {
-    const error = serverError(code, "FATAL");
+  it.each(["23505", "40001", "40P01", "25P02", "P0001", "42601"])(
+    "%s as FATAL or PANIC (a pooler's synthetic error, a session ended) at a COMMIT or a write: unknown",
+    (code) => {
+      for (const severity of ["FATAL", "PANIC", "", "error"])
+        for (const statement of EFFECTFUL)
+          expect(outcomeOf(serverError(code, severity), statement)).toBeInstanceOf(
+            StoreOutcomeUnknownError,
+          );
+    },
+  );
 
-    expect(outcomeOf(error, COMMIT)).toBe(error);
+  it("a server abort without a severity, at a COMMIT: unknown", () => {
+    const error = serverError("23505");
+    error.severity = undefined;
+
+    expect(outcomeOf(error, COMMIT)).toBeInstanceOf(StoreOutcomeUnknownError);
   });
 });
 
@@ -142,5 +155,43 @@ describe("agbossjs/postgres#113: any other server error at a COMMIT or a write i
       expect(outcomeOf(error, COMMIT)).toBeInstanceOf(StoreOutcomeUnknownError);
       expect(outcomeOf(error, WRITE)).toBeInstanceOf(StoreOutcomeUnknownError);
     }
+  });
+});
+
+describe("agbossjs/postgres#113: a statement that can commit inside itself is never trusted on the server's word", () => {
+  const write = (sql: string): FailedStatement => ({
+    sql,
+    isInTransaction: false,
+    timeout: 10_000,
+  });
+
+  it.each([
+    "CALL pay(1)",
+    "  call pay()",
+    "DO $$ BEGIN COMMIT; RAISE EXCEPTION 'x'; END $$",
+    "BEGIN; INSERT INTO t VALUES (1); COMMIT; SELECT 1/0",
+    "INSERT INTO t VALUES (1); INSERT INTO t VALUES (1)",
+  ])(
+    "%j fails with a whitelisted server abort: unknown (an inner COMMIT may have applied)",
+    (sql) => {
+      for (const code of ["23505", "P0001", "22012"])
+        expect(outcomeOf(serverError(code), write(sql))).toBeInstanceOf(StoreOutcomeUnknownError);
+    },
+  );
+
+  it.each([
+    "INSERT INTO t VALUES (1);",
+    "INSERT INTO t VALUES (1) ;  \n",
+    "UPDATE called SET v = 1",
+  ])("%j is one statement: its server abort stays known", (sql) => {
+    const error = serverError("23505");
+
+    expect(outcomeOf(error, write(sql))).toBe(error);
+  });
+
+  it("a CALL pg never sent stays known", () => {
+    const error = new Error("Client was closed and is not queryable");
+
+    expect(outcomeOf(error, write("CALL pay()"))).toBe(error);
   });
 });

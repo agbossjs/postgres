@@ -4,7 +4,7 @@ import {
   StoreOutcomeUnknownError,
 } from "@agboss/core/stores";
 import type { Milliseconds } from "@agboss/core/units";
-import { isKnownFailure } from "./known-failure.js";
+import { isKnownFailure, isOneStatement } from "./known-failure.js";
 
 /**
  * Which errors of a statement leave its outcome unknown (agbossjs/agboss#928, #1017,
@@ -76,8 +76,8 @@ export function isTransportError(error: unknown): boolean {
 /** A statement that is not a write: a read, or a session command with no effect on the data. */
 const NO_EFFECT = /^\s*(?:select|show|listen|unlisten|set|reset|begin|start|rollback|discard)\b/iu;
 
-/** Whether `sql` may change data (when unsure, it may). */
-export const isWrite = (sql: string): boolean => !NO_EFFECT.test(sql);
+/** Whether `sql` may change data (when unsure, it may: several statements may, whatever the first). */
+export const isWrite = (sql: string): boolean => !NO_EFFECT.test(sql) || !isOneStatement(sql);
 
 /** Whether `sql` is a COMMIT. */
 export const isCommit = (sql: string): boolean => /^\s*(?:commit|end)\b/iu.test(sql);
@@ -108,7 +108,7 @@ export function outcomeOf(error: unknown, statement: FailedStatement): unknown {
     });
   const isEffectful =
     isCommit(statement.sql) || (!statement.isInTransaction && isWrite(statement.sql));
-  if (isEffectful && !isKnownFailure(error))
+  if (isEffectful && !isKnownFailure(error, statement.sql))
     return new StoreOutcomeUnknownError({
       store: "PostgresConnection",
       operation,
@@ -131,6 +131,10 @@ export function isLostConnection(error: unknown): boolean {
     isClientTimeout(cause) ||
     isTransportError(error) ||
     isTransportError(cause) ||
-    (error instanceof StoreOutcomeUnknownError && error.source === StoreOutcomeSource.Transport)
+    isUnknownTransport(error)
   );
 }
+
+/** Whether `error` is a statement's unknown outcome read from its transport (not a command timeout). */
+export const isUnknownTransport = (error: unknown): error is StoreOutcomeUnknownError =>
+  error instanceof StoreOutcomeUnknownError && error.source === StoreOutcomeSource.Transport;

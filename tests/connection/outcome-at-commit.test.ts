@@ -13,6 +13,7 @@ import { PostgresConnection } from "../../src/index.js";
 import { inPoolTransaction } from "../../src/connection/transaction.js";
 import { BlackholeProxy } from "../support/blackhole-proxy.js";
 import { onSchema, serverUrl, testDatabase } from "../support/database.js";
+import { errorResponse } from "../support/pg-frames.js";
 
 const database = testDatabase();
 const opened: PostgresConnection[] = [];
@@ -30,22 +31,6 @@ afterEach(async () => {
   for (const connection of opened.splice(0)) await connection.onDestroy();
   for (const proxy of proxies.splice(0)) await proxy.close();
 });
-
-/** A PostgreSQL ErrorResponse frame (protocol-message-formats): what a pooler answers. */
-function errorResponse(code: string, message: string): Uint8Array {
-  const fields = Buffer.concat(
-    [
-      ["S", "FATAL"],
-      ["V", "FATAL"],
-      ["C", code],
-      ["M", message],
-    ].map(([type, value]) => Buffer.from(`${String(type)}${String(value)}\0`, "utf8")),
-  );
-  const body = Buffer.concat([fields, Buffer.from([0])]);
-  const length = Buffer.alloc(4);
-  length.writeInt32BE(body.length + 4);
-  return Buffer.concat([Buffer.from("E"), length, body]);
-}
 
 /** A message of a type the protocol has none of: pg reads it as an error without a code. */
 const GARBAGE = Buffer.from([0x00, 0x00, 0x00, 0x00, 0x04]);

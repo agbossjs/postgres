@@ -6,8 +6,12 @@ type Fault =
   | { readonly kind: "reset" }
   /** Never forwarded: the connection is reset at once, the server never sees it (`withholdOn`). */
   | { readonly kind: "withhold" }
-  /** Forwarded; the server's answer replaced by `answer`, then the connection ends (`answerOn`). */
-  | { readonly kind: "answer"; readonly answer: Uint8Array };
+  /**
+   * Forwarded; the server's answer replaced by `answer`, then the connection ends — or, `keepsOpen`,
+   * the link carries on as usual after it, as a pooler that answered for its broken server
+   * connection and kept the client's (`answerOn`).
+   */
+  | { readonly kind: "answer"; readonly answer: Uint8Array; readonly keepsOpen: boolean };
 
 /** One client connection through the proxy and its upstream. */
 interface Leg {
@@ -88,8 +92,8 @@ export class BlackholeProxy {
    * `answer` (a pooler's error, garbage) and the connection then ends (postgres#113): the
    * statement took effect, the client hears something else. One-shot.
    */
-  answerOn(text: string, answer: Uint8Array): void {
-    this.#armed = { text, fault: { kind: "answer", answer } };
+  answerOn(text: string, answer: Uint8Array, { keepsOpen = false } = {}): void {
+    this.#armed = { text, fault: { kind: "answer", answer, keepsOpen } };
   }
 
   /** How many connections are open (for a test that checks nothing leaked). */
@@ -130,6 +134,12 @@ export class BlackholeProxy {
     upstream?.on("data", (bytes) => {
       if (leg.fault === undefined) {
         if (!leg.silent) client.write(bytes);
+        return;
+      }
+      if (leg.fault.kind === "answer" && leg.fault.keepsOpen) {
+        // the client hears the answer; the link then carries on
+        client.write(leg.fault.answer);
+        leg.fault = undefined;
         return;
       }
       if (leg.fault.kind === "answer") {
