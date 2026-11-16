@@ -176,6 +176,24 @@ function sleepsOf(client: pg.Client): { client: pg.Client; sleeps: () => number 
 }
 
 describe("#1104: the wait polls only while a lease is live", () => {
+  it("the schema already current: a live lease is not looked at, the start (default wait) goes on at once", async () => {
+    const url = await freshSchema();
+    await migratePostgres({ url });
+    await onSchema(
+      url,
+      `INSERT INTO agboss_execution_leases
+         (tenant_id, root_execution_id, holder_instance_id, token, expires_at, released)
+       VALUES ('default', 'run-1', 'other-pod', 1, clock_timestamp() + interval '1 hour', false)`,
+    );
+    const connection = new PostgresConnection({ url, schemaSetup: SchemaSetup.MigrateOnStart });
+
+    // with the guard before the "already current" return this waits ten minutes: the test's own timeout
+    await connection.onInit();
+    await connection.onDestroy();
+
+    expect((await historyOf(url)).at(-1)).toBe(NEWEST);
+  });
+
   it("no live lease: no pg_sleep at all, the start goes on at once", async () => {
     const url = await freshSchema();
     await migratePostgres({ url });
