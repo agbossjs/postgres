@@ -123,6 +123,14 @@ export interface PostgresConnectionSettings {
   readonly idleInTransactionTimeout?: number;
   /** What the start does with the schema (default `SchemaSetup.Check`: it is migrated explicitly). */
   readonly schemaSetup?: SchemaSetup;
+  /**
+   * With `SchemaSetup.MigrateOnStart` and migrations pending, the start waits for the execution
+   * leases of the old instances to lapse (twice the longest lease left, at least a minute, at most ten) and fails with `PostgresLiveLeasesError` while one
+   * is live (agbossjs/agboss#1104: no rolling upgrade across a schema change — stop the old
+   * instances first). `true` migrates over live leases: for an operator who accepts the risk. The
+   * environment's `postgresAllowLiveLeases`.
+   */
+  readonly allowLiveLeases?: boolean;
 }
 
 /** A `Secret` of the environment: only `reveal()` gives its value. */
@@ -164,6 +172,9 @@ const PostgresEnvironment = z.object({
     .number({ message: "postgresIdleInTransactionTimeoutMs must be a number" })
     .optional(),
   postgresSchema: z.string({ message: "postgresSchema must be a text" }).optional(),
+  postgresAllowLiveLeases: z
+    .boolean({ message: "postgresAllowLiveLeases must be true or false" })
+    .optional(),
   postgresSchemaSetup: z
     .enum(SchemaSetup, { message: `postgresSchemaSetup must be one of: ${SCHEMA_SETUPS}` })
     .optional(),
@@ -202,7 +213,7 @@ export const searchPathOptionOf = (schema: string): string =>
 /**
  * The connection settings an application's environment gives: `postgresUrl` (required, a
  * `Secret`), `postgresPoolSize`, `postgresWatchLivenessSeconds`, `postgresSchema` and
- * `postgresSchemaSetup`, `postgresCommandTimeoutMs` and `postgresIdleInTransactionTimeoutMs` (optional). A missing or
+ * `postgresSchemaSetup`, `postgresAllowLiveLeases`, `postgresCommandTimeoutMs` and `postgresIdleInTransactionTimeoutMs` (optional). A missing or
  * mistyped field fails with `PostgresSettingsError`, naming it — the URL itself is never printed.
  */
 export function settingsOfEnvironment(environment: unknown): PostgresConnectionSettings {
@@ -219,6 +230,7 @@ export function settingsOfEnvironment(environment: unknown): PostgresConnectionS
   const { postgresUrl, postgresPoolSize, postgresSchema, postgresSchemaSetup } = parsed.data;
   const { postgresWatchLivenessSeconds } = parsed.data;
   const { postgresCommandTimeoutMs, postgresIdleInTransactionTimeoutMs } = parsed.data;
+  const { postgresAllowLiveLeases } = parsed.data;
   const url = postgresUrl.reveal();
   if (url.length === 0) throw new PostgresSettingsError({ message: "postgresUrl is empty" });
   return {
@@ -232,5 +244,6 @@ export function settingsOfEnvironment(environment: unknown): PostgresConnectionS
     ),
     schema: checkedSchemaOf(postgresSchema),
     schemaSetup: postgresSchemaSetup,
+    allowLiveLeases: postgresAllowLiveLeases,
   };
 }

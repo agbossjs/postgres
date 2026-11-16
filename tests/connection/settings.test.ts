@@ -113,6 +113,13 @@ describe("the environment fields of the PostgreSQL stores", () => {
     });
   });
 
+  it("agbossjs/agboss#1104: postgresAllowLiveLeases is read when set, false by default", () => {
+    expect(
+      settingsOfEnvironment({ postgresUrl: revealing(URL), postgresAllowLiveLeases: true }),
+    ).toMatchObject({ allowLiveLeases: true });
+    expect(settingsOfEnvironment({ postgresUrl: revealing(URL) }).allowLiveLeases).toBeUndefined();
+  });
+
   it("agbossjs/agboss#789: postgresWatchLivenessSeconds is read when set", () => {
     expect(
       settingsOfEnvironment({ postgresUrl: revealing(URL), postgresWatchLivenessSeconds: 6 }),
@@ -155,6 +162,7 @@ describe("the environment fields of the PostgreSQL stores", () => {
       { postgresSchemaSetup: "migrate" },
       /postgresSchemaSetup must be one of: check, migrate-on-start/,
     ],
+    [{ postgresAllowLiveLeases: "true" }, /postgresAllowLiveLeases must be true or false/],
     [{ postgresSchema: 1 }, /postgresSchema must be a text/],
     [{ postgresSchema: "" }, /the schema name is empty/],
     [{ postgresSchema: "App A" }, /plain lowercase identifier/],

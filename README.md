@@ -227,6 +227,7 @@ const [takeover] = await app.auditLogOf({ tenantId: "default", rootExecutionId }
 | `postgresIdleInTransactionTimeoutMs` | `number`      | `DEFAULT_IDLE_IN_TRANSACTION_TIMEOUT` (`10000`) | how long a session may idle inside a transaction, ms (100 to 30 000)       |
 | `postgresSchema`                     | `string`      | the URL's `search_path`, `DEFAULT_SCHEMA`       | the schema of the stores' tables (one per application)                     |
 | `postgresSchemaSetup`                | `SchemaSetup` | `SchemaSetup.Check`                             | what the start does with the schema (Migrations, below)                    |
+| `postgresAllowLiveLeases`            | `boolean`     | `false`                                         | `MigrateOnStart` migrates over live leases (Migrations, below)             |
 
 ```ts
 // environments/app.environment.ts — the contract
@@ -241,6 +242,7 @@ export class AppEnvironment {
   postgresIdleInTransactionTimeoutMs?: number;
   postgresSchema?: string;
   postgresSchemaSetup?: SchemaSetup;
+  postgresAllowLiveLeases?: boolean;
 }
 ```
 
@@ -435,8 +437,15 @@ Two things the check does not do. A run with nothing to apply (`applied` equals 
 newest) is a no-op that exits `0` even with live leases, so a re-run over a healthy deployment is
 safe. And an **idle** old instance holds no lease — a pod between executions is invisible to it —
 so a clean check is not proof that every old pod is gone: stop them first, do not rely on the
-check. (A start with `SchemaSetup.MigrateOnStart` does not run the check: the operator chose to
-migrate at start.) One protection does not depend on any of this: a pause an old instance inserts
+check. A start with `SchemaSetup.MigrateOnStart` is held to the same rule: with migrations pending on an
+already-migrated schema it waits for live leases to lapse (twice the longest lease the database shows, so a longer lease
+duration than the default 30 s is waited for too: at least a minute, at most ten, polled each second on
+the database's clock) — a stopped single instance's own leases do — and if one
+is still live it fails to start with `PostgresLiveLeasesError`: stop the old pods first. Nothing
+pending, no look: a normal restart is unaffected. `allowLiveLeases: true` in the connection's
+settings (`new PostgresConnection({ url, schemaSetup, allowLiveLeases: true })`), or
+`postgresAllowLiveLeases: true` in the application's environment, migrates over live leases, for an
+operator who accepts the risk. One protection does not depend on any of this: a pause an old instance inserts
 after `0033` still has its channel (the column is generated from the record), so a channel-filtered
 page finds it.
 
@@ -489,11 +498,11 @@ const report = await migratePostgres({ url, schema: "desk", signal });
 `@agboss/mongodb`; agbossjs/agboss#891, was the flag `postgresMigrateOnStart`). At `onInit`,
 `PostgresConnection` compares the database with the package:
 
-| The database is…   | `SchemaSetup.MigrateOnStart` | `SchemaSetup.Check` (the default)                                |
-| ------------------ | ---------------------------- | ---------------------------------------------------------------- |
-| at this version    | starts                       | starts                                                           |
-| missing or older   | migrates it, then starts     | `PostgresSchemaMissingError`, naming the command and the setting |
-| newer (a rollback) | `PostgresSchemaTooNewError`  | `PostgresSchemaTooNewError`: migrations are never rolled back    |
+| The database is…   | `SchemaSetup.MigrateOnStart`                                            | `SchemaSetup.Check` (the default)                                |
+| ------------------ | ----------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| at this version    | starts                                                                  | starts                                                           |
+| missing or older   | migrates it, then starts (an older schema: after the live leases lapse) | `PostgresSchemaMissingError`, naming the command and the setting |
+| newer (a rollback) | `PostgresSchemaTooNewError`                                             | `PostgresSchemaTooNewError`: migrations are never rolled back    |
 
 A start that fails here ends the pool before it rejects: no connection is left open.
 `MigrateOnStart` suits a single instance or a development database; with several pods, prefer the
