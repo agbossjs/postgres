@@ -9,7 +9,7 @@ import {
   PostgresLiveLeasesError,
 } from "../../src/index.js";
 import { migrationsIn } from "../../src/migrations/files.js";
-import { leaseWaitFor } from "../../src/migrations/live-leases.js";
+import { leaseWaitFor, waitForLeasesToLapse } from "../../src/migrations/live-leases.js";
 import { migrateWith, migratePostgres } from "../../src/migrations/migrate.js";
 import { checkSchema } from "../../src/migrations/schema-check.js";
 import { TestApplicationContext, revealing } from "../support/application-context.js";
@@ -161,6 +161,44 @@ describe("#1104: how long the start waits", () => {
     );
 
     expect(error).toBeInstanceOf(PostgresLiveLeasesError);
+  });
+});
+
+/** `client` counting the `pg_sleep` statements it is given: the start's polling. */
+function sleepsOf(client: pg.Client): { client: pg.Client; sleeps: () => number } {
+  let sleeps = 0;
+  const query = client.query.bind(client) as (...args: unknown[]) => unknown;
+  Reflect.set(client, "query", (...args: unknown[]) => {
+    if (typeof args[0] === "string" && args[0].includes("pg_sleep")) sleeps += 1;
+    return query(...args);
+  });
+  return { client, sleeps: () => sleeps };
+}
+
+describe("#1104: the wait polls only while a lease is live", () => {
+  it("no live lease: no pg_sleep at all, the start goes on at once", async () => {
+    const url = await freshSchema();
+    await migratePostgres({ url });
+    const client = new pg.Client({ connectionString: url });
+    await client.connect();
+    const counted = sleepsOf(client);
+
+    await waitForLeasesToLapse(counted.client, FILES.length, { maxMs: 60_000, pollMs: 1_000 });
+    await client.end();
+
+    expect(counted.sleeps()).toBe(0);
+  });
+
+  it("a live lease that lapses: the wait sleeps, and only until it has lapsed", async () => {
+    const url = await schemaWithLease(1_000);
+    const client = new pg.Client({ connectionString: url });
+    await client.connect();
+    const counted = sleepsOf(client);
+
+    await waitForLeasesToLapse(counted.client, FILES.length - 3, { maxMs: 5_000, pollMs: 200 });
+    await client.end();
+
+    expect(counted.sleeps()).toBeGreaterThan(0);
   });
 });
 
