@@ -1,3 +1,4 @@
+import { inLongTransaction } from "../connection/transaction.js";
 import {
   Injectable,
   MeshRequestRepository,
@@ -96,10 +97,8 @@ export class PostgresMeshRequestRepository extends MeshRequestRepository {
   }
 
   async deleteByCreatedAtBefore(cutoff: Date): Promise<void> {
-    await changesOf(
-      this.connection.pool,
-      "DELETE FROM agboss_mesh_requests WHERE created_at < $1",
-      [cutoff],
+    await inLongTransaction(this.connection.pool, (client) =>
+      changesOf(client, "DELETE FROM agboss_mesh_requests WHERE created_at < $1", [cutoff]),
     );
   }
 }

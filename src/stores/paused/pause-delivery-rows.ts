@@ -74,6 +74,31 @@ export async function ackHead(
     : { mailbox: mailboxOf(stored), token: claim.token, until: stored.claimed_until };
 }
 
+/**
+ * The claim renewed while its receiver runs (agbossjs/agboss#1131), only for the claim's token and
+ * while it holds (`claimed_until > at`; a lapsed claim is never revived): held until `at + claimFor`,
+ * never earlier than it was. `undefined` when the token was lost.
+ */
+export async function renewHead(
+  database: Queryable,
+  claim: PauseNoticeClaim,
+  at: Date,
+  claimFor: number,
+): Promise<PauseNoticeClaim | undefined> {
+  const { tenantId, pauseId, recipient } = claim.mailbox;
+  const row = await firstRowOf(
+    database,
+    `UPDATE agboss_pause_notices SET claimed_until = GREATEST(claimed_until, $4::timestamptz)
+     WHERE ${OF_MAILBOX} AND claim_token = $5 AND claimed_until > $6 RETURNING *`,
+    [tenantId, pauseId, recipient, new Date(at.getTime() + claimFor), claim.token, at],
+  );
+  if (row === undefined) return undefined;
+  const stored = mailboxRowOf(row);
+  return stored.claimed_until === null
+    ? undefined
+    : { mailbox: mailboxOf(stored), token: claim.token, until: stored.claimed_until };
+}
+
 /** A failed attempt, only for the claim's token: one more, due at `nextAttemptAt`, claim released. */
 export async function retryHead(
   database: Queryable,

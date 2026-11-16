@@ -251,6 +251,21 @@ export class PostgresExecutionLeaseRepository extends ExecutionLeaseRepository {
     );
   }
 
+  /**
+   * Whether the tree's cancel was requested (agbossjs/agboss#1152): `cancel_requested_at` of the tree's
+   * own lease row, tenant-scoped — a seed row counts, no row is not. One read, no lock: it changes no
+   * lease.
+   */
+  async isCancelRequested(tree: ExecutionTree): Promise<boolean> {
+    const row = await firstRowOf(
+      this.connection.pool,
+      `SELECT cancel_requested_at IS NOT NULL AS is_cancelled FROM agboss_execution_leases
+       WHERE tenant_id = $1 AND root_execution_id = $2`,
+      [tree.tenantId, tree.rootExecutionId],
+    );
+    return row !== undefined && Reflect.get(Object(row), "is_cancelled") === true;
+  }
+
   /** `sql`'s first row, run after `lease`'s row is locked, in one transaction (review M1). */
   #locked(lease: ExecutionLease, sql: string, parameters: Parameters): Promise<unknown> {
     return inPoolTransaction(this.connection.pool, async (client) => {

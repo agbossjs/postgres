@@ -8,7 +8,7 @@
  */
 import { TLSSocket } from "node:tls";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { createApp } from "@agboss/core";
+import { ApplicationStoppingError, createApp } from "@agboss/core";
 import { seconds } from "@agboss/core/units";
 import { migratePostgres, PostgresConnection } from "../../src/index.js";
 import { listenerOf } from "../../src/connection/postgres-connection.js";
@@ -88,6 +88,35 @@ describe.skipIf(!HAS_DOCKER)(
     }, 60_000);
   },
 );
+
+describe.skipIf(!HAS_DOCKER)("#954 AC3: an abandoned execute() settles with a typed error", () => {
+  it("an execute() blocked in a store call the server never answers settles with ApplicationStoppingError (app.stopping) by the end of close() — never pending, never the driver's raw error", async () => {
+    const port = Number(new URL(server.url).port);
+    const unhandled = watchUnhandled();
+    const sockets = trackSockets(port);
+    try {
+      const app = await createApp(StopApplication, { env: "stop" });
+      const outcome = app.execute(StopBatchStart, [{ name: "a" }, { name: "b" }] as never).then(
+        (): unknown => "resolved",
+        (error: unknown): unknown => error,
+      );
+      await sleep(1500);
+      server.pause();
+      await sleep(1000);
+
+      await app.close({ timeout: seconds(5) });
+      const settled = await Promise.race([outcome, sleep(500).then((): unknown => "pending")]);
+
+      expect(settled).toBeInstanceOf(ApplicationStoppingError);
+      expect(settled).toMatchObject({ code: "app.stopping" });
+      expect(unhandled.seen).toEqual([]);
+    } finally {
+      sockets.stop();
+      unhandled.stop();
+      server.unpause();
+    }
+  }, 60_000);
+});
 
 describe.skipIf(!HAS_DOCKER)("#954: a listener that reconnects while the connection stops", () => {
   /** A listener on a connection with a 2 s liveness bound, the server then paused until it is lost. */

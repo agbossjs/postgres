@@ -93,10 +93,11 @@ storeConformance<PoolClient>({
     })),
     // agbossjs/agboss#824: the A2A tasks, shared by the instances
     a2aTask: postgresStore(database, (connection) => new PostgresA2ATaskRepository(connection)),
-    checkpointSaver: postgresStore(
-      database,
-      (connection) => new PostgresCheckpointSaver(connection),
-    ),
+    // agbossjs/agboss#962: `latestByStep` is one indexed read (agbossjs/postgres#88)
+    checkpointSaver: {
+      ...postgresStore(database, (connection) => new PostgresCheckpointSaver(connection)),
+      capabilities: [StoreCapability.LatestByStep],
+    },
     // agbossjs/agboss#831: the queue has a watch (LISTEN / a change stream / pub/sub): declared
     childExecutionQueue: {
       ...postgresStore(

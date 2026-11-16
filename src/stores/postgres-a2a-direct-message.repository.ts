@@ -13,7 +13,7 @@ import {
 import { DIRECT_MESSAGE_CLAIM } from "@agboss/core/stores";
 import { PostgresConnection } from "../connection/postgres-connection.js";
 import { changesOf, rowsOf } from "../connection/query.js";
-import { inPoolTransaction } from "../connection/transaction.js";
+import { inPoolTransaction, inLongTransaction } from "../connection/transaction.js";
 import { MESSAGE_KEY, messageKeyOf } from "./a2a-tasks/a2a-task-rows.js";
 import { checkedLimit, directMessageOf } from "./a2a-direct-messages/a2a-direct-message-rows.js";
 import {
@@ -172,7 +172,7 @@ export class PostgresA2ADirectMessageRepository extends A2ADirectMessageReposito
     limit: number,
   ): Promise<readonly A2ADirectMessageRecord[]> {
     const page = checkedLimit(limit);
-    return inPoolTransaction(this.connection.pool, async (client) => {
+    return inLongTransaction(this.connection.pool, async (client) => {
       const rows = await rowsOf(
         client,
         `WITH gone AS (

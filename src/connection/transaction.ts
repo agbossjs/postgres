@@ -1,4 +1,7 @@
 import type pg from "pg";
+import { isLostConnection } from "./outcome.js";
+import { LONG_COMMAND_TIMEOUT } from "./settings.js";
+import { TimedClient } from "./timed-client.js";
 
 /**
  * Transactions of the PostgreSQL stores: `BEGIN` (`READ COMMITTED`, PostgreSQL's default) → the
@@ -44,13 +47,35 @@ export async function inPoolTransaction<TResult>(
     await client.query("COMMIT");
     return result;
   } catch (error) {
-    // a connection whose rollback fails is not given back: the pool opens a new one
-    await client.query("ROLLBACK").catch(() => {
-      isBroken = true;
-    });
+    // a connection stuck on a statement or lost is not rolled back (a ROLLBACK would queue behind
+    // the hung statement for another timeout) and not given back: the server rolls the transaction
+    // back at the session's end (agbossjs/agboss#928). After the server's own cancel (57014) it
+    // rolls back as usual.
+    if (isLostConnection(error)) isBroken = true;
+    else
+      await client.query("ROLLBACK").catch(() => {
+        // a connection whose rollback fails is not given back: the pool opens a new one
+        isBroken = true;
+      });
     throw error;
   } finally {
     client.off("error", onLost);
     client.release(isBroken);
   }
+}
+
+/**
+ * `work` in one transaction whose statements may run for `LONG_COMMAND_TIMEOUT` (a retention's
+ * `delete…Before`, agbossjs/agboss#928): the server's `statement_timeout` for the transaction, and
+ * the client's `query_timeout` of each statement, a second later.
+ */
+export function inLongTransaction<TResult>(
+  pool: pg.Pool,
+  work: (client: pg.PoolClient) => Promise<TResult>,
+): Promise<TResult> {
+  return inPoolTransaction(pool, async (client) => {
+    if (client instanceof TimedClient) client.useLongTimeout(LONG_COMMAND_TIMEOUT);
+    await client.query(`SET LOCAL statement_timeout = ${String(LONG_COMMAND_TIMEOUT)}`);
+    return work(client);
+  });
 }

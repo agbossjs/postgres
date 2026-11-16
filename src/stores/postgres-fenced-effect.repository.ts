@@ -12,9 +12,9 @@ import {
 import { replayedFromOf, storedKeyFactsOf } from "@agboss/core/stores";
 import type { PoolClient } from "pg";
 import { changesOf, firstRowOf } from "../connection/query.js";
-import { inPoolTransaction } from "../connection/transaction.js";
+import { inPoolTransaction, inLongTransaction } from "../connection/transaction.js";
 import { PostgresConnection } from "../connection/postgres-connection.js";
-import { checkCancel, prunedCancels } from "./cancel-fence.js";
+import { checkCancel } from "./cancel-fence.js";
 import { checkFence } from "./fence.js";
 import { storeNowOf } from "./store-time.js";
 import { escapedJsonOf, unescapedJson } from "./nul-escape.js";
@@ -149,14 +149,13 @@ export class PostgresFencedEffectRepository extends FencedEffectRepository<PoolC
   }
 
   async deleteByStoredAtBefore(cutoff: Date): Promise<void> {
-    await inPoolTransaction(this.connection.pool, async (client) => {
+    await inLongTransaction(this.connection.pool, async (client) => {
       for (const table of [
         "agboss_fenced_effect_results",
         "agboss_fenced_effect_business_results",
         "agboss_fenced_effect_marks",
       ])
         await changesOf(client, `DELETE FROM ${table} WHERE stored_at < $1`, [cutoff]);
-      await prunedCancels(client, cutoff); // agbossjs/agboss#909
     });
   }
 
@@ -170,7 +169,7 @@ export class PostgresFencedEffectRepository extends FencedEffectRepository<PoolC
     const stored = await storedRowOf(client, key);
     if (stored !== undefined) return replayOf(key, stored);
     // agbossjs/agboss#909: no stored result — a new effect after a durable cancel is refused
-    await checkCancel(client, key);
+    await checkCancel(client, key, storeNowOf(this.clock));
     const text = this.storedResultOf(key, await work(client));
     await insertRowOf(client, key, now, text);
     return {

@@ -4,6 +4,7 @@ import type {
   PauseNoticeClaim,
   PauseNoticeCounts,
   PausePage,
+  PauseScanAfter,
   SetAsideMailbox,
 } from "@agboss/core/stores";
 import type { Milliseconds } from "@agboss/core/units";
@@ -21,14 +22,22 @@ import { PostgresPausedRunRepository } from "./postgres-paused-runs.repository.j
  * delete, and the delivery of notices. A refused argument rejects the promise, never throws.
  */
 export abstract class PostgresPauseQueryRepository extends PostgresPausedRunRepository {
-  async findPendingByExpiresAtBefore(at: Date, limit: number): Promise<readonly PauseRecord[]> {
+  async findPendingByExpiresAtBefore(
+    at: Date,
+    limit: number,
+    after?: PauseScanAfter,
+  ): Promise<readonly PauseRecord[]> {
     assertScanLimit(limit);
-    return new PauseScans(this.connection.pool).pendingDue("expires_at", at, limit);
+    return new PauseScans(this.connection.pool).pendingDue("expires_at", at, limit, after);
   }
 
-  async findPendingByRemindAtBefore(at: Date, limit: number): Promise<readonly PauseRecord[]> {
+  async findPendingByRemindAtBefore(
+    at: Date,
+    limit: number,
+    after?: PauseScanAfter,
+  ): Promise<readonly PauseRecord[]> {
     assertScanLimit(limit);
-    return new PauseScans(this.connection.pool).pendingDue("remind_at", at, limit);
+    return new PauseScans(this.connection.pool).pendingDue("remind_at", at, limit, after);
   }
 
   async findOpenAfter(after: string | undefined, limit: number): Promise<PausePage> {
@@ -65,6 +74,15 @@ export abstract class PostgresPauseQueryRepository extends PostgresPausedRunRepo
     return new PauseScans(this.connection.pool).deleteClosedBefore(cutoff);
   }
 
+  async findPendingUnsentReassignedBefore(
+    cutoff: Date,
+    limit: number,
+    after?: PauseScanAfter,
+  ): Promise<readonly PauseRecord[]> {
+    assertScanLimit(limit);
+    return new PauseScans(this.connection.pool).reassignedUnsentBefore(cutoff, limit, after);
+  }
+
   async claimNoticesDue(
     at: Date,
     limit: number,
@@ -77,6 +95,14 @@ export abstract class PostgresPauseQueryRepository extends PostgresPausedRunRepo
 
   ackNotice(claim: PauseNoticeClaim, at: Date): Promise<PauseNoticeClaim | undefined> {
     return mailboxes.ackHead(this.connection.pool, claim, at);
+  }
+
+  renewNotice(
+    claim: PauseNoticeClaim,
+    at: Date,
+    claimFor: Milliseconds,
+  ): Promise<PauseNoticeClaim | undefined> {
+    return mailboxes.renewHead(this.connection.pool, claim, at, claimFor);
   }
 
   retryNotice(claim: PauseNoticeClaim, nextAttemptAt: Date, problem: string): Promise<boolean> {

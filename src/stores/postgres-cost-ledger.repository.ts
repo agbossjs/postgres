@@ -1,3 +1,4 @@
+import { inLongTransaction } from "../connection/transaction.js";
 import {
   BudgetScope,
   CostLedgerEntryExpiredError,
@@ -163,7 +164,7 @@ export class PostgresCostLedgerRepository extends CostLedgerRepository {
     // a cutoff that is no date would lower the mark: refused with the ledger's code,
     // cost-ledger.cutoff-invalid (agbossjs/agboss#817, agbossjs/agboss#869)
     assertLedgerCutoff(cutoff);
-    await changesOf(this.connection.pool, PRUNE, [cutoff]);
+    await inLongTransaction(this.connection.pool, (client) => changesOf(client, PRUNE, [cutoff]));
   }
 
   async findMaxSpendByAccount(account: BudgetAccount): Promise<Usd | undefined> {

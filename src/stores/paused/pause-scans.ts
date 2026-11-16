@@ -1,9 +1,9 @@
 import type { PauseRecord } from "@agboss/core";
-import type { PauseFilter, PausePage } from "@agboss/core/stores";
+import type { PauseFilter, PausePage, PauseScanAfter } from "@agboss/core/stores";
 import type pg from "pg";
 import { z } from "zod";
 import { rowsOf } from "../../connection/query.js";
-import { inPoolTransaction } from "../../connection/transaction.js";
+import { inLongTransaction } from "../../connection/transaction.js";
 import { recordOfRow } from "./pause-rows.js";
 
 /**
@@ -41,7 +41,10 @@ const SequencedRow = z.object({ seq: z.string(), record: z.unknown() });
 
 /** What the retention removes: closed, resolved before `$1`, with no live mailbox (I11). */
 const REMOVABLE = `p.status IN ('taken', 'cancelled') AND p.resolved_at IS NOT NULL
-  AND p.resolved_at < $1 AND NOT EXISTS (SELECT 1 FROM agboss_pause_notices n
+  AND p.resolved_at < $1
+  AND NOT (p.record ? 'reassignedTo' AND EXISTS (SELECT 1 FROM agboss_pauses r
+    WHERE r.tenant_id = p.tenant_id AND r.pause_id = p.record->>'reassignedTo'))
+  AND NOT EXISTS (SELECT 1 FROM agboss_pause_notices n
     WHERE n.tenant_id = p.tenant_id AND n.pause_id = p.pause_id AND NOT n.is_dead
       AND n.delivered < jsonb_array_length(n.notices))`;
 
@@ -66,12 +69,47 @@ export class PauseScans {
     column: "expires_at" | "remind_at",
     at: Date,
     limit: number,
+    after?: PauseScanAfter,
   ): Promise<readonly PauseRecord[]> {
+    // the keyset (agbossjs/agboss#1070): past the last pause of the page before, in the scan's order
     const rows = await rowsOf(
       this.pool,
       `SELECT record FROM agboss_pauses WHERE status = 'pending' AND ${column} IS NOT NULL
-         AND ${column} <= $1 ORDER BY ${column}, tenant_id COLLATE "C", pause_id COLLATE "C" LIMIT $2`,
-      [at, limit],
+         AND ${column} <= $1
+         AND ($3::timestamptz IS NULL OR (${column}, tenant_id COLLATE "C", pause_id COLLATE "C")
+           > ($3::timestamptz, $4::text COLLATE "C", $5::text COLLATE "C"))
+         ORDER BY ${column}, tenant_id COLLATE "C", pause_id COLLATE "C" LIMIT $2`,
+      [at, limit, after?.at ?? null, after?.tenantId ?? null, after?.pauseId ?? null],
+    );
+    return rows.map(recordOfRow);
+  }
+
+  /**
+   * The replacements of a reassignment still `Pending` and unsent, asked before `cutoff`, by
+   * `(askedAt, tenant, pause)` with the keyset (agbossjs/agboss#946), on the partial index of 0035.
+   */
+  async reassignedUnsentBefore(
+    cutoff: Date,
+    limit: number,
+    after?: PauseScanAfter,
+  ): Promise<readonly PauseRecord[]> {
+    const rows = await rowsOf(
+      this.pool,
+      `SELECT record FROM agboss_pauses
+       WHERE status = 'pending' AND record ? 'reassignedFrom' AND record->>'isSent' = 'false'
+         AND (record->>'askedAt') COLLATE "C" < $1::text COLLATE "C"
+         AND ($3::text IS NULL OR
+           ((record->>'askedAt') COLLATE "C", tenant_id COLLATE "C", pause_id COLLATE "C")
+             > ($3::text COLLATE "C", $4::text COLLATE "C", $5::text COLLATE "C"))
+       ORDER BY (record->>'askedAt') COLLATE "C", tenant_id COLLATE "C", pause_id COLLATE "C"
+       LIMIT $2`,
+      [
+        cutoff.toISOString(),
+        limit,
+        after?.at ?? null,
+        after?.tenantId ?? null,
+        after?.pauseId ?? null,
+      ],
     );
     return rows.map(recordOfRow);
   }
@@ -132,7 +170,7 @@ export class PauseScans {
    * mailboxes after the lock: a pause with a notice just written is kept.
    */
   deleteClosedBefore(cutoff: Date): Promise<void> {
-    return inPoolTransaction(this.pool, async (database) => {
+    return inLongTransaction(this.pool, async (database) => {
       const candidates = KeysOf.parse(
         await rowsOf(
           database,

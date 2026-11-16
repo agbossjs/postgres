@@ -1,35 +1,39 @@
 import { ExecutionCancelFencedError, cancelTreeOf, type EffectKey } from "@agboss/core/stores";
 import type { PoolClient } from "pg";
-import { changesOf, firstRowOf, type Queryable } from "../connection/query.js";
+import { changesOf, firstRowOf } from "../connection/query.js";
 import { storeNow } from "./store-time.js";
 
 /**
- * The cancel as a fence on PostgreSQL (agbossjs/agboss#909): a tree's durable cancel request is a
- * row of `agboss_execution_cancel_requests` — keyed by the tree's root, not by a lease row, which a
- * tree cancelled before its first `acquire` has none of — and the fence is a pair of advisory
- * locks of the tree's identity (namespace 909, beside the business key's 508). `requestCancel`
- * takes the exclusive one and inserts: it waits for every open fencing transaction of the tree,
- * and answers once the row is committed. A fenced write takes the shared one **after** its lease and
- * key checks, then reads the row in a new statement (`READ COMMITTED`): a transaction that started
- * while a cancel held or awaited the lock reads it committed; one that held the lock first
- * finishes before the cancel answers. No row lock, so no phantom; no deadlock — the cancel holds
- * nothing else, and every fencing transaction holds its lease row before the shared lock.
+ * The cancel as a fence on PostgreSQL (agbossjs/agboss#909, #1117): a tree's durable cancel request
+ * is `cancel_requested_at` on the tree's own lease row — keyed by the tree's root, never by a child's
+ * lease — set once and never cleared: no retention, release, retire, take or takeover lifts it. A
+ * cancel before the tree's first `acquire` writes a seed row (token 0, released, never held), so the
+ * first `acquire` is token 1 and no takeover.
+ *
+ * The fence is that row's lock. `requestCancel` writes the mark with an upsert, which waits for every
+ * share lock on the row; a fenced write reads the mark after its lease and key checks with
+ * `SELECT … FOR SHARE` on the root's row, so it either holds the lock before the cancel (the cancel
+ * then answers after the write's transaction ends) or reads the committed mark (`READ COMMITTED`
+ * re-reads the row after waiting for the cancel's lock). A child's key reads its root's row; its
+ * check first inserts the root's seed row when there is none, so there is always a row to lock. No
+ * deadlock: a fencing transaction locks its own lease row, then (a child) the root's row for share;
+ * nothing locks a child's row after the root's.
  */
 
-const LOCK = "SELECT pg_advisory_xact_lock(hashtextextended($1, 909))";
-const LOCK_SHARED = "SELECT pg_advisory_xact_lock_shared(hashtextextended($1, 909))";
+const MARK = `INSERT INTO agboss_execution_leases AS lease
+  (tenant_id, root_execution_id, holder_instance_id, token, expires_at, released,
+    cancel_requested_at)
+  VALUES ($1, $2, '', 0, ${storeNow(3)}, true, ${storeNow(3)})
+  ON CONFLICT (tenant_id, root_execution_id) DO UPDATE SET
+    cancel_requested_at = COALESCE(lease.cancel_requested_at, EXCLUDED.cancel_requested_at)`;
 
-const MARK = `INSERT INTO agboss_execution_cancel_requests (tenant_id, root_execution_id, requested_at)
-  VALUES ($1, $2, ${storeNow(3)}) ON CONFLICT DO NOTHING`;
+const SEED = `INSERT INTO agboss_execution_leases
+  (tenant_id, root_execution_id, holder_instance_id, token, expires_at, released)
+  VALUES ($1, $2, '', 0, ${storeNow(3)}, true)
+  ON CONFLICT (tenant_id, root_execution_id) DO NOTHING`;
 
-const FIND = `SELECT 1 AS found FROM agboss_execution_cancel_requests
-  WHERE tenant_id = $1 AND root_execution_id = $2`;
-
-/** The lock's identity of a tree: its tenant and its root, as JSON. */
-const identityOf = (tree: {
-  readonly tenantId: string;
-  readonly rootExecutionId: string;
-}): string => JSON.stringify([tree.tenantId, tree.rootExecutionId]);
+const FIND = `SELECT cancel_requested_at IS NOT NULL AS is_cancelled FROM agboss_execution_leases
+  WHERE tenant_id = $1 AND root_execution_id = $2 FOR SHARE`;
 
 /** Marks the tree's cancel in the caller's transaction: once — a repeat changes nothing. */
 export async function markCancel(
@@ -37,7 +41,6 @@ export async function markCancel(
   tree: { readonly tenantId: string; readonly rootExecutionId: string },
   now: Date | null,
 ): Promise<void> {
-  await firstRowOf(client, LOCK, [identityOf(tree)]);
   await changesOf(client, MARK, [tree.tenantId, tree.rootExecutionId, now]);
 }
 
@@ -46,28 +49,17 @@ export async function markCancel(
  * effect — the key's lookup: the key's tree has a cancel request and the key is not an undo's →
  * `ExecutionCancelFencedError`, nothing written or sent.
  */
-export async function checkCancel(client: PoolClient, key: EffectKey): Promise<void> {
+export async function checkCancel(
+  client: PoolClient,
+  key: EffectKey,
+  now: Date | null,
+): Promise<void> {
   if (key.isCompensation === true) return;
   const tree = cancelTreeOf(key);
-  await firstRowOf(client, LOCK_SHARED, [identityOf(tree)]);
-  const found = await firstRowOf(client, FIND, [tree.tenantId, tree.rootExecutionId]);
-  if (found !== undefined) throw ExecutionCancelFencedError.of(key);
-}
-
-/**
- * Removes the cancel requests older than `cutoff` whose tree is over — its lease finished (retired,
- * agbossjs/agboss#520): the fencing stores' retention. Never by age alone: a tree not over (paused
- * longer than the retention, resumed on another instance) keeps its mark, so its writes stay refused.
- */
-export async function prunedCancels(database: Queryable, cutoff: Date): Promise<void> {
-  await changesOf(
-    database,
-    `DELETE FROM agboss_execution_cancel_requests AS request
-     WHERE request.requested_at < $1 AND EXISTS (
-       SELECT 1 FROM agboss_execution_leases AS lease
-       WHERE lease.tenant_id = request.tenant_id
-         AND lease.root_execution_id = request.root_execution_id
-         AND lease.finished)`,
-    [cutoff],
-  );
+  // a child's check may find no row of its root yet: one is seeded, so there is a row to lock
+  if (tree.rootExecutionId !== key.leaseExecutionId)
+    await changesOf(client, SEED, [tree.tenantId, tree.rootExecutionId, now]);
+  const row = await firstRowOf(client, FIND, [tree.tenantId, tree.rootExecutionId]);
+  const isCancelled = row !== undefined && Reflect.get(Object(row), "is_cancelled") === true;
+  if (isCancelled) throw ExecutionCancelFencedError.of(key);
 }

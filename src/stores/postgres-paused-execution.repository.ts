@@ -7,14 +7,16 @@ import {
 } from "@agboss/core";
 import type {
   PauseExpiry,
-  PauseExtension,
+  PauseDeadlineChange,
   PauseNoticeFacts,
   PauseNoticeKind,
+  PauseReplacement,
   PauseRecipients,
   PauseUntakenResolution,
 } from "@agboss/core/stores";
 import { PostgresConnection } from "../connection/postgres-connection.js";
 import { PauseChanges } from "./paused/pause-changes.js";
+import { reassigned } from "./paused/pause-reassign.js";
 import { PauseTimerChanges } from "./paused/pause-timer-changes.js";
 import { PostgresPauseQueryRepository } from "./postgres-pause-queries.repository.js";
 
@@ -107,10 +109,20 @@ export class PostgresPausedExecutionRepository extends PostgresPauseQueryReposit
     );
   }
 
+  reassignByTenantIdAndPauseId(
+    tenantId: string,
+    pauseId: string,
+    replacement: PauseReplacement,
+    at: Date,
+    recipients: PauseRecipients,
+  ): Promise<PauseRecord | undefined> {
+    return reassigned(this.connection.pool, { tenantId, pauseId }, replacement, at, recipients);
+  }
+
   extendByTenantIdAndPauseId(
     tenantId: string,
     pauseId: string,
-    change: PauseExtension,
+    change: PauseDeadlineChange,
     at: Date,
     recipients: PauseRecipients,
   ): Promise<PauseRecord | undefined> {

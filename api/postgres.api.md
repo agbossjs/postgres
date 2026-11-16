@@ -83,10 +83,10 @@ import { OutboundCallStatusQuery } from '@agboss/core/stores';
 import { PauseAnswer } from '@agboss/core';
 import { PauseAnswerRecord } from '@agboss/core';
 import { PauseCancellation } from '@agboss/core';
+import type { PauseDeadlineChange } from '@agboss/core/stores';
 import { PausedExecution } from '@agboss/core';
 import { PausedExecutionRepository } from '@agboss/core';
 import type { PauseExpiry } from '@agboss/core/stores';
-import type { PauseExtension } from '@agboss/core/stores';
 import type { PauseFilter } from '@agboss/core/stores';
 import type { PauseNoticeClaim } from '@agboss/core/stores';
 import type { PauseNoticeCounts } from '@agboss/core/stores';
@@ -95,6 +95,8 @@ import type { PauseNoticeKind } from '@agboss/core/stores';
 import type { PausePage } from '@agboss/core/stores';
 import type { PauseRecipients } from '@agboss/core/stores';
 import { PauseRecord } from '@agboss/core';
+import type { PauseReplacement } from '@agboss/core/stores';
+import type { PauseScanAfter } from '@agboss/core/stores';
 import type { PauseUntakenResolution } from '@agboss/core/stores';
 import { PendingWrite } from '@langchain/langgraph-checkpoint';
 import pg from 'pg';
@@ -132,7 +134,13 @@ export interface ChangedMigration {
 }
 
 // @public
+export const DEFAULT_COMMAND_TIMEOUT = 10000;
+
+// @public
 export const DEFAULT_CONNECT_TIMEOUT = 10000;
+
+// @public
+export const DEFAULT_IDLE_IN_TRANSACTION_TIMEOUT = 10000;
 
 // @public
 export const DEFAULT_POOL_SIZE = 10;
@@ -142,6 +150,9 @@ export const DEFAULT_SCHEMA = "public";
 
 // @public
 export const DEFAULT_WATCH_LIVENESS_SECONDS = 10;
+
+// @public
+export const LONG_COMMAND_TIMEOUT = 300000;
 
 // @public
 export function migratePostgres(options: MigratePostgresOptions): Promise<MigrationReport>;
@@ -267,6 +278,8 @@ export class PostgresConnection implements OnInit, OnDestroy {
 
 // @public
 export interface PostgresConnectionSettings {
+    readonly commandTimeout?: number;
+    readonly idleInTransactionTimeout?: number;
     readonly poolSize?: number;
     readonly schema?: string;
     readonly schemaSetup?: SchemaSetup;
@@ -332,6 +345,7 @@ export class PostgresExecutionLeaseRepository extends ExecutionLeaseRepository {
     acquire(tenantId: string, rootExecutionId: string, duration: Milliseconds): Promise<ExecutionLease | undefined>;
     // (undocumented)
     claimExecutionId(identity: ExecutionIdentity): Promise<boolean>;
+    isCancelRequested(tree: ExecutionTree_2): Promise<boolean>;
     // (undocumented)
     ping(): Promise<void>;
     // (undocumented)
@@ -546,11 +560,13 @@ export class PostgresPausedExecutionRepository extends PostgresPauseQueryReposit
     // (undocumented)
     expireByTenantIdAndPauseId(tenantId: string, pauseId: string, expiry: PauseExpiry, at: Date, recipients: PauseRecipients): Promise<PauseRecord | undefined>;
     // (undocumented)
-    extendByTenantIdAndPauseId(tenantId: string, pauseId: string, change: PauseExtension, at: Date, recipients: PauseRecipients): Promise<PauseRecord | undefined>;
+    extendByTenantIdAndPauseId(tenantId: string, pauseId: string, change: PauseDeadlineChange, at: Date, recipients: PauseRecipients): Promise<PauseRecord | undefined>;
     // (undocumented)
     markSentByTenantIdAndPauseId(tenantId: string, pauseId: string, recipients: PauseRecipients): Promise<boolean>;
     // (undocumented)
     noticeOnceByTenantIdAndPauseId(tenantId: string, pauseId: string, kind: PauseNoticeKind, facts: PauseNoticeFacts, at: Date, recipients: PauseRecipients): Promise<boolean>;
+    // (undocumented)
+    reassignByTenantIdAndPauseId(tenantId: string, pauseId: string, replacement: PauseReplacement, at: Date, recipients: PauseRecipients): Promise<PauseRecord | undefined>;
     // (undocumented)
     remindByTenantIdAndPauseId(tenantId: string, pauseId: string, at: Date, recipients: PauseRecipients): Promise<boolean>;
     // (undocumented)
@@ -600,9 +616,13 @@ export abstract class PostgresPauseQueryRepository extends PostgresPausedRunRepo
     // (undocumented)
     findPageByTenantId(tenantId: string, filter: PauseFilter, limit: number, after?: string): Promise<PausePage>;
     // (undocumented)
-    findPendingByExpiresAtBefore(at: Date, limit: number): Promise<readonly PauseRecord[]>;
+    findPendingByExpiresAtBefore(at: Date, limit: number, after?: PauseScanAfter): Promise<readonly PauseRecord[]>;
     // (undocumented)
-    findPendingByRemindAtBefore(at: Date, limit: number): Promise<readonly PauseRecord[]>;
+    findPendingByRemindAtBefore(at: Date, limit: number, after?: PauseScanAfter): Promise<readonly PauseRecord[]>;
+    // (undocumented)
+    findPendingUnsentReassignedBefore(cutoff: Date, limit: number, after?: PauseScanAfter): Promise<readonly PauseRecord[]>;
+    // (undocumented)
+    renewNotice(claim: PauseNoticeClaim, at: Date, claimFor: Milliseconds): Promise<PauseNoticeClaim | undefined>;
     // (undocumented)
     retryNotice(claim: PauseNoticeClaim, nextAttemptAt: Date, problem: string): Promise<boolean>;
     // (undocumented)
@@ -867,8 +887,10 @@ export type StepIndexResult = "built" | "present" | "skipped";
 // src/stores/postgres-pause-queries.repository.ts - (ae-undocumented) Missing documentation for "findPageByTenantId".
 // src/stores/postgres-pause-queries.repository.ts - (ae-undocumented) Missing documentation for "findClosedByResolvedAtBefore".
 // src/stores/postgres-pause-queries.repository.ts - (ae-undocumented) Missing documentation for "deleteByResolvedAtBefore".
+// src/stores/postgres-pause-queries.repository.ts - (ae-undocumented) Missing documentation for "findPendingUnsentReassignedBefore".
 // src/stores/postgres-pause-queries.repository.ts - (ae-undocumented) Missing documentation for "claimNoticesDue".
 // src/stores/postgres-pause-queries.repository.ts - (ae-undocumented) Missing documentation for "ackNotice".
+// src/stores/postgres-pause-queries.repository.ts - (ae-undocumented) Missing documentation for "renewNotice".
 // src/stores/postgres-pause-queries.repository.ts - (ae-undocumented) Missing documentation for "retryNotice".
 // src/stores/postgres-pause-queries.repository.ts - (ae-undocumented) Missing documentation for "setAsideNotices".
 // src/stores/postgres-pause-queries.repository.ts - (ae-undocumented) Missing documentation for "setAsideStaleNoticesBefore".
@@ -879,6 +901,7 @@ export type StepIndexResult = "built" | "present" | "skipped";
 // src/stores/postgres-paused-execution.repository.ts - (ae-undocumented) Missing documentation for "cancelByTenantIdAndPauseId".
 // src/stores/postgres-paused-execution.repository.ts - (ae-undocumented) Missing documentation for "expireByTenantIdAndPauseId".
 // src/stores/postgres-paused-execution.repository.ts - (ae-undocumented) Missing documentation for "closeUntakenByTenantIdAndPauseId".
+// src/stores/postgres-paused-execution.repository.ts - (ae-undocumented) Missing documentation for "reassignByTenantIdAndPauseId".
 // src/stores/postgres-paused-execution.repository.ts - (ae-undocumented) Missing documentation for "extendByTenantIdAndPauseId".
 // src/stores/postgres-paused-execution.repository.ts - (ae-undocumented) Missing documentation for "remindByTenantIdAndPauseId".
 // src/stores/postgres-paused-execution.repository.ts - (ae-undocumented) Missing documentation for "noticeOnceByTenantIdAndPauseId".

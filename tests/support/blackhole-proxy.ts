@@ -5,6 +5,8 @@ interface Leg {
   readonly client: net.Socket;
   readonly upstream: net.Socket | undefined;
   silent: boolean;
+  /** The server's answers are dropped, and the leg ends soon after (`resetOn`). */
+  isResetting: boolean;
 }
 
 /**
@@ -17,6 +19,7 @@ interface Leg {
 export class BlackholeProxy {
   readonly #legs = new Set<Leg>();
   #swallowing = false;
+  #resetOn: string | undefined;
 
   private constructor(
     private readonly server: net.Server,
@@ -54,6 +57,15 @@ export class BlackholeProxy {
     this.#swallowing = on;
   }
 
+  /**
+   * Once a client message contains `text` (a simple query's text, e.g. `COMMIT`), it is forwarded,
+   * the server's answer to it is dropped and the connection is reset (agbossjs/agboss#1017): the
+   * statement took effect on the server and its answer never reached the client. One-shot.
+   */
+  resetOn(text: string): void {
+    this.#resetOn = text;
+  }
+
   /** How many connections are open (for a test that checks nothing leaked). */
   get open(): number {
     return this.#legs.size;
@@ -73,7 +85,7 @@ export class BlackholeProxy {
 
   #accept(client: net.Socket): void {
     const upstream = this.#swallowing ? undefined : net.connect(this.target);
-    const leg: Leg = { client, upstream, silent: this.#swallowing };
+    const leg: Leg = { client, upstream, silent: this.#swallowing, isResetting: false };
     this.#legs.add(leg);
     const drop = (): void => {
       this.#legs.delete(leg);
@@ -81,9 +93,18 @@ export class BlackholeProxy {
       upstream?.destroy();
     };
     client.on("data", (bytes) => {
+      if (this.#resetOn !== undefined && bytes.includes(this.#resetOn)) {
+        this.#resetOn = undefined;
+        leg.isResetting = true;
+      }
       if (!leg.silent) upstream?.write(bytes);
     });
     upstream?.on("data", (bytes) => {
+      if (leg.isResetting) {
+        // the server answered: its answer is never heard
+        setTimeout(drop, 20);
+        return;
+      }
       if (!leg.silent) client.write(bytes);
     });
     // a close or an error is passed on only while the leg is alive: a silent leg ends with its own side

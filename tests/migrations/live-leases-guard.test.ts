@@ -12,7 +12,11 @@ import { historyOf } from "../support/schema-dump.js";
  * (not released, finished or superseded, `expires_at` after the server's now): its holder is an
  * instance of the old version. An idle old instance holds no lease — the guard cannot see it.
  */
-const BEFORE_0033 = { "0033_pause_channel_generated.sql": null };
+const BEFORE_0033 = {
+  "0033_pause_channel_generated.sql": null,
+  "0034_cancel_mark_on_lease_row.sql": null,
+  "0035_pause_reassignment.sql": null,
+};
 
 /** The migrations after 0013 left out: a database migrated by the 0.1.0 package. */
 const AFTER_0013 = Object.fromEntries(
@@ -86,7 +90,7 @@ describe("#1104: migrate refuses while an execution lease is live", () => {
 
     const report = await migratePostgres({ url });
 
-    expect(report.applied.map((migration) => migration.version)).toEqual([33]);
+    expect(report.applied.map((migration) => migration.version)).toEqual([33, 34, 35]);
   });
 
   it("AC3: allowLiveLeases: true migrates over a live lease", async () => {
@@ -95,7 +99,7 @@ describe("#1104: migrate refuses while an execution lease is live", () => {
 
     const report = await migratePostgres({ url, allowLiveLeases: true });
 
-    expect(report.applied.map((migration) => migration.version)).toEqual([33]);
+    expect(report.applied.map((migration) => migration.version)).toEqual([33, 34, 35]);
   });
 
   it("AC4: nothing to apply is a no-op with live leases", async () => {

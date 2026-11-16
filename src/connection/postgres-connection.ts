@@ -11,15 +11,14 @@ import { migrationsIn } from "../migrations/files.js";
 import { PostgresConnectionClosedError } from "../errors.js";
 import { trackedClientOf } from "./tracked-client.js";
 import { once } from "./once.js";
-import { connectTimeoutOf } from "./connect-timeout.js";
 import { PostgresListener, type PostgresListenerOptions } from "./listener.js";
 import { checkSchema } from "../migrations/schema-check.js";
+import { poolOptionsOf } from "./pool-options.js";
+import { timedPool } from "./timed-pool.js";
+import { TimedClient } from "./timed-client.js";
 import {
-  checkedSchemaOf,
   checkedWatchLivenessOf,
-  DEFAULT_POOL_SIZE,
   DEFAULT_WATCH_LIVENESS_SECONDS,
-  searchPathOptionOf,
   settingsOfEnvironment,
   type PostgresConnectionSettings,
 } from "./settings.js";
@@ -84,6 +83,8 @@ export function listenerOf(
     postgresUrl: EnvironmentField.secret(),
     postgresPoolSize: EnvironmentField.integer({ optional: true }),
     postgresWatchLivenessSeconds: EnvironmentField.integer({ optional: true }),
+    postgresCommandTimeoutMs: EnvironmentField.integer({ optional: true }),
+    postgresIdleInTransactionTimeoutMs: EnvironmentField.integer({ optional: true }),
     postgresSchema: EnvironmentField.text({ optional: true }),
     postgresSchemaSetup: EnvironmentField.text({ optional: true }),
   },
@@ -107,16 +108,13 @@ export class PostgresConnection implements OnInit, OnDestroy {
     checkedWatchLivenessOf(this.#settings.watchLivenessSeconds);
     SETTINGS.set(this, this.#settings);
     LISTENERS.set(this, new Set());
-    const schema = checkedSchemaOf(this.#settings.schema);
-    const clients = this.#clients;
-    this.pool = new pg.Pool({
-      Client: trackedClientOf(clients),
-      connectionString: this.#settings.url,
-      max: this.#settings.poolSize ?? DEFAULT_POOL_SIZE,
-      // agbossjs/agboss#989: a connection that never answers rejects the call, never hangs it
-      connectionTimeoutMillis: connectTimeoutOf(this.#settings.url),
-      ...(schema === undefined ? {} : { options: searchPathOptionOf(schema) }),
-    });
+    // every client is tracked (agbossjs/agboss#954: its socket is dropped at the stop) and timed
+    // (agbossjs/agboss#928: its failures are read as store errors)
+    const options = {
+      ...poolOptionsOf(this.#settings),
+      Client: trackedClientOf(this.#clients, TimedClient),
+    };
+    this.pool = timedPool(new pg.Pool(options));
     // an idle connection that fails leaves the pool by itself; the next statement opens a new one,
     // and an operation in flight rejects with its own error — nothing to do here but not crash
     this.pool.on("error", () => undefined);

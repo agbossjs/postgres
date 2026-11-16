@@ -12,5 +12,5 @@ for `runOnce`, the key's lookup, under a pair of advisory locks of the tree's id
 fencing transactions, a fencing transaction takes the shared one and reads the committed mark. A new
 effect, intent (`saveIfAbsent`) or attempt (`markPending`) of a cancelled tree is refused with the
 core's `ExecutionCancelFencedError`; a stored result, an undo's key and the end of a claimed attempt
-are not. A mark is lifted by the fencing stores' retention only once its tree's lease is finished and the mark is older than the cutoff, never by age alone. Migrate (`agboss-postgres migrate`)
+are not. The mark's table and its advisory locks are replaced by the lease row (agbossjs/agboss#1117). Migrate (`agboss-postgres migrate`)
 before rolling out: an older instance neither writes nor reads the table.
