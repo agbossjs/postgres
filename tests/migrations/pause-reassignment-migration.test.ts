@@ -15,7 +15,8 @@ describe("migration 0035: the reassigned-unsent index", () => {
     const { rows } = await onSchema(
       url,
       `SELECT indexdef FROM pg_indexes
-       WHERE tablename = 'agboss_pauses' AND indexname = 'agboss_pauses_reassigned_unsent'`,
+       WHERE schemaname = current_schema() AND tablename = 'agboss_pauses'
+         AND indexname = 'agboss_pauses_reassigned_unsent'`,
     );
     const definition = String((rows[0] as { indexdef: string } | undefined)?.indexdef);
     expect(definition).toMatch(
