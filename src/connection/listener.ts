@@ -2,6 +2,7 @@ import type { Clock } from "@agboss/core";
 import { seconds } from "@agboss/core/units";
 import { Socket } from "node:net";
 import pg from "pg";
+import { dropClient } from "./drop-client.js";
 import { connectTimeoutOf } from "./connect-timeout.js";
 import { watchLiveness } from "./heartbeat.js";
 
@@ -46,6 +47,8 @@ export class PostgresListener {
   #beat = new AbortController();
   #socket: Socket | undefined;
   #reconnecting: Promise<void> | undefined;
+  /** Aborted by `destroy()`: every connection of this listener, a new one still opening included, is dropped. */
+  readonly #dropped = new AbortController();
 
   private constructor(private readonly options: PostgresListenerOptions) {}
 
@@ -56,6 +59,11 @@ export class PostgresListener {
     return listener;
   }
 
+  /** Whether `close()` or `destroy()` was called. */
+  get closed(): boolean {
+    return this.#stopped.signal.aborted;
+  }
+
   /** Stops listening and ends the connection; a reconnect under way stops too. */
   async close(): Promise<void> {
     this.#stopped.abort();
@@ -64,6 +72,17 @@ export class PostgresListener {
     this.#client = undefined;
     await this.#reconnecting;
     if (client !== undefined) await this.#ended(client, this.#socket);
+  }
+
+  /**
+   * Drops the connection now, without waiting for the server (agbossjs/agboss#954): what the stop
+   * does with a listener whose owner it gave up on. A listener closed or dropped is left alone.
+   */
+  destroy(): void {
+    this.#stopped.abort();
+    this.#beat.abort();
+    this.#dropped.abort();
+    this.#client = undefined;
   }
 
   /**
@@ -92,6 +111,12 @@ export class PostgresListener {
       connectionTimeoutMillis: connectTimeoutOf(url),
       stream: () => socket,
     });
+    // dropped the moment `destroy()` is called, whatever step the connection is at (#954)
+    const drop = (): void => {
+      dropClient(client, socket);
+    };
+    if (this.#dropped.signal.aborted) drop();
+    else this.#dropped.signal.addEventListener("abort", drop, { once: true });
     client.on("notification", (message) => {
       if (message.channel === channel && message.payload === payload) onNotify();
     });

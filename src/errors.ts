@@ -222,3 +222,18 @@ export class PostgresStepIndexError extends AGBossError {
     this.invalidIndexLeft = options.invalidIndexLeft === true;
   }
 }
+
+/**
+ * A listener was asked of a connection that is stopping or stopped (agbossjs/agboss#954): the
+ * connection's stop dropped what it opened, and a late open of a watch the stop gave up on must
+ * not leave a connection nobody closes. Internal: not exported from the package.
+ */
+export class PostgresConnectionClosedError extends AGBossError {
+  static override readonly code = "postgres.connection-closed" as const;
+  declare readonly code: typeof PostgresConnectionClosedError.code;
+  override name = "PostgresConnectionClosedError";
+
+  constructor() {
+    super("the PostgreSQL connection is closed: no new listener is opened");
+  }
+}
