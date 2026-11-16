@@ -9,6 +9,7 @@ import {
   PostgresLiveLeasesError,
 } from "../../src/index.js";
 import { migrationsIn } from "../../src/migrations/files.js";
+import { leaseWaitFor } from "../../src/migrations/live-leases.js";
 import { migrateWith, migratePostgres } from "../../src/migrations/migrate.js";
 import { checkSchema } from "../../src/migrations/schema-check.js";
 import { TestApplicationContext, revealing } from "../support/application-context.js";
@@ -29,7 +30,7 @@ const BEFORE_0033 = {
   "0035_pause_reassignment.sql": null,
 };
 const NEWEST = "35:pause_reassignment";
-const SHORT = { maxMs: 600, pollMs: 100 };
+const SHORT = { maxMs: 600, pollMs: 100, capMs: 600 };
 const pools: pg.Pool[] = [];
 
 afterAll(async () => {
@@ -130,6 +131,36 @@ describe("#1104: a start that migrates and the live leases", () => {
     await startOf(url);
 
     expect((await historyOf(url)).at(-1)).toBe(NEWEST);
+  });
+});
+
+describe("#1104: how long the start waits", () => {
+  it("twice the lease left: a 45 s lease waits 90 s; the default is the floor; ten minutes the cap", () => {
+    const defaults = { maxMs: 60_000, pollMs: 1_000 };
+
+    expect(leaseWaitFor(45_000, defaults)).toBe(90_000);
+    expect(leaseWaitFor(20_000, defaults)).toBe(60_000);
+    expect(leaseWaitFor(0, defaults)).toBe(60_000);
+    expect(leaseWaitFor(3_600_000, defaults)).toBe(600_000);
+    expect(leaseWaitFor(3_600_000, { ...defaults, capMs: 120_000 })).toBe(120_000);
+  });
+
+  it("a lease longer than the floor is waited for: 5 s left, a 600 ms floor, the start still migrates", async () => {
+    const url = await schemaWithLease(5_000);
+
+    await startOf(url, { leaseWait: { maxMs: 600, pollMs: 100 } });
+
+    expect((await historyOf(url)).at(-1)).toBe(NEWEST);
+  });
+
+  it("a lease past the cap is refused, not waited for", async () => {
+    const url = await schemaWithLease(5_000);
+
+    const error = await startOf(url, { leaseWait: { maxMs: 600, pollMs: 100, capMs: 800 } }).catch(
+      (reason: unknown) => reason,
+    );
+
+    expect(error).toBeInstanceOf(PostgresLiveLeasesError);
   });
 });
 

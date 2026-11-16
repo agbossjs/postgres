@@ -438,8 +438,9 @@ newest) is a no-op that exits `0` even with live leases, so a re-run over a heal
 safe. And an **idle** old instance holds no lease — a pod between executions is invisible to it —
 so a clean check is not proof that every old pod is gone: stop them first, do not rely on the
 check. A start with `SchemaSetup.MigrateOnStart` is held to the same rule: with migrations pending on an
-already-migrated schema it waits up to a minute (twice the default lease duration, polled on the
-database's clock) for live leases to lapse — a stopped single instance's own leases do — and if one
+already-migrated schema it waits for live leases to lapse (twice the longest lease the database shows, so a longer lease
+duration than the default 30 s is waited for too: at least a minute, at most ten, polled each second on
+the database's clock) — a stopped single instance's own leases do — and if one
 is still live it fails to start with `PostgresLiveLeasesError`: stop the old pods first. Nothing
 pending, no look: a normal restart is unaffected. `allowLiveLeases: true` in the connection's
 settings (`new PostgresConnection({ url, schemaSetup, allowLiveLeases: true })`), or

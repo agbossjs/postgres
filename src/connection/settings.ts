@@ -124,8 +124,8 @@ export interface PostgresConnectionSettings {
   /** What the start does with the schema (default `SchemaSetup.Check`: it is migrated explicitly). */
   readonly schemaSetup?: SchemaSetup;
   /**
-   * With `SchemaSetup.MigrateOnStart` and migrations pending, the start waits up to a minute for the
-   * execution leases of the old instances to lapse and fails with `PostgresLiveLeasesError` while one
+   * With `SchemaSetup.MigrateOnStart` and migrations pending, the start waits for the execution
+   * leases of the old instances to lapse (twice the longest lease left, at least a minute, at most ten) and fails with `PostgresLiveLeasesError` while one
    * is live (agbossjs/agboss#1104: no rolling upgrade across a schema change — stop the old
    * instances first). `true` migrates over live leases: for an operator who accepts the risk. The
    * environment's `postgresAllowLiveLeases`.
