@@ -25,7 +25,7 @@
     "ai-agents"
   ],
   "engines": {
-    "node": ">=22.13"
+    "node": ">=22.16.0"
   },
   "bin": {
     "agboss-postgres": "bin/agboss-postgres.js"
