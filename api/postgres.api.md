@@ -345,6 +345,7 @@ export class PostgresExecutionLeaseRepository extends ExecutionLeaseRepository {
     acquire(tenantId: string, rootExecutionId: string, duration: Milliseconds): Promise<ExecutionLease | undefined>;
     // (undocumented)
     claimExecutionId(identity: ExecutionIdentity): Promise<boolean>;
+    isCancelRequested(tree: ExecutionTree_2): Promise<boolean>;
     // (undocumented)
     ping(): Promise<void>;
     // (undocumented)
