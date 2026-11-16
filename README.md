@@ -227,6 +227,7 @@ const [takeover] = await app.auditLogOf({ tenantId: "default", rootExecutionId }
 | `postgresIdleInTransactionTimeoutMs` | `number`      | `DEFAULT_IDLE_IN_TRANSACTION_TIMEOUT` (`10000`) | how long a session may idle inside a transaction, ms (100 to 30 000)       |
 | `postgresSchema`                     | `string`      | the URL's `search_path`, `DEFAULT_SCHEMA`       | the schema of the stores' tables (one per application)                     |
 | `postgresSchemaSetup`                | `SchemaSetup` | `SchemaSetup.Check`                             | what the start does with the schema (Migrations, below)                    |
+| `postgresAllowLiveLeases`            | `boolean`     | `false`                                         | `MigrateOnStart` migrates over live leases (Migrations, below)             |
 
 ```ts
 // environments/app.environment.ts — the contract
@@ -241,6 +242,7 @@ export class AppEnvironment {
   postgresIdleInTransactionTimeoutMs?: number;
   postgresSchema?: string;
   postgresSchemaSetup?: SchemaSetup;
+  postgresAllowLiveLeases?: boolean;
 }
 ```
 
@@ -440,8 +442,9 @@ already-migrated schema it waits up to a minute (twice the default lease duratio
 database's clock) for live leases to lapse — a stopped single instance's own leases do — and if one
 is still live it fails to start with `PostgresLiveLeasesError`: stop the old pods first. Nothing
 pending, no look: a normal restart is unaffected. `allowLiveLeases: true` in the connection's
-settings (`new PostgresConnection({ url, schemaSetup, allowLiveLeases: true })`) migrates over live
-leases, for an operator who accepts the risk. One protection does not depend on any of this: a pause an old instance inserts
+settings (`new PostgresConnection({ url, schemaSetup, allowLiveLeases: true })`), or
+`postgresAllowLiveLeases: true` in the application's environment, migrates over live leases, for an
+operator who accepts the risk. One protection does not depend on any of this: a pause an old instance inserts
 after `0033` still has its channel (the column is generated from the record), so a channel-filtered
 page finds it.
 
@@ -494,11 +497,11 @@ const report = await migratePostgres({ url, schema: "desk", signal });
 `@agboss/mongodb`; agbossjs/agboss#891, was the flag `postgresMigrateOnStart`). At `onInit`,
 `PostgresConnection` compares the database with the package:
 
-| The database is…   | `SchemaSetup.MigrateOnStart` | `SchemaSetup.Check` (the default)                                |
-| ------------------ | ---------------------------- | ---------------------------------------------------------------- |
-| at this version    | starts                       | starts                                                           |
-| missing or older   | migrates it, then starts     | `PostgresSchemaMissingError`, naming the command and the setting |
-| newer (a rollback) | `PostgresSchemaTooNewError`  | `PostgresSchemaTooNewError`: migrations are never rolled back    |
+| The database is…   | `SchemaSetup.MigrateOnStart`                                            | `SchemaSetup.Check` (the default)                                |
+| ------------------ | ----------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| at this version    | starts                                                                  | starts                                                           |
+| missing or older   | migrates it, then starts (an older schema: after the live leases lapse) | `PostgresSchemaMissingError`, naming the command and the setting |
+| newer (a rollback) | `PostgresSchemaTooNewError`                                             | `PostgresSchemaTooNewError`: migrations are never rolled back    |
 
 A start that fails here ends the pool before it rejects: no connection is left open.
 `MigrateOnStart` suits a single instance or a development database; with several pods, prefer the

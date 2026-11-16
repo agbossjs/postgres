@@ -78,6 +78,7 @@ export async function waitForLeasesToLapse(
     } catch (error) {
       if (!(error instanceof PostgresLiveLeasesError) || attempt >= attempts) throw error;
     }
-    await new Promise<void>((resolve) => setTimeout(resolve, wait.pollMs));
+    // the database waits (`pg_sleep`): no host clock, no timer of the process
+    await client.query("SELECT pg_sleep($1)", [wait.pollMs / 1000]);
   }
 }

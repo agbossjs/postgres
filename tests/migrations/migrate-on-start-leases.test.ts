@@ -1,10 +1,17 @@
+import { StoreClock } from "@agboss/core";
 import { SchemaSetup } from "@agboss/core/stores";
+import { seconds } from "@agboss/core/units";
 import pg from "pg";
 import { afterAll, describe, expect, it } from "vitest";
-import { PostgresConnection, PostgresLiveLeasesError } from "../../src/index.js";
+import {
+  PostgresConnection,
+  PostgresExecutionLeaseRepository,
+  PostgresLiveLeasesError,
+} from "../../src/index.js";
 import { migrationsIn } from "../../src/migrations/files.js";
 import { migrateWith, migratePostgres } from "../../src/migrations/migrate.js";
 import { checkSchema } from "../../src/migrations/schema-check.js";
+import { TestApplicationContext, revealing } from "../support/application-context.js";
 import { freshSchema, onSchema } from "../support/database.js";
 import { migrationsFolder } from "../support/migration-folders.js";
 import { historyOf } from "../support/schema-dump.js";
@@ -16,7 +23,12 @@ import { historyOf } from "../support/schema-dump.js";
  * old instance still renewing); `allowLiveLeases` keeps the override. Nothing to apply: no look.
  */
 const FILES = migrationsIn();
-const BEFORE_0033 = { "0033_pause_channel_generated.sql": null };
+const BEFORE_0033 = {
+  "0033_pause_channel_generated.sql": null,
+  "0034_cancel_mark_on_lease_row.sql": null,
+  "0035_pause_reassignment.sql": null,
+};
+const NEWEST = "35:pause_reassignment";
 const SHORT = { maxMs: 600, pollMs: 100 };
 const pools: pg.Pool[] = [];
 
@@ -57,7 +69,7 @@ describe("#1104: a start that migrates and the live leases", () => {
 
     await startOf(url, { leaseWait: { maxMs: 20_000, pollMs: 200 } });
 
-    expect((await historyOf(url)).at(-1)).toBe("33:pause_channel_generated");
+    expect((await historyOf(url)).at(-1)).toBe(NEWEST);
   });
 
   it("a rolling restart, the old pod alive: refused with PostgresLiveLeasesError, nothing applied", async () => {
@@ -81,7 +93,22 @@ describe("#1104: a start that migrates and the live leases", () => {
     await connection.onInit();
     await connection.onDestroy();
 
-    expect((await historyOf(url)).at(-1)).toBe("33:pause_channel_generated");
+    expect((await historyOf(url)).at(-1)).toBe(NEWEST);
+  });
+
+  it("postgresAllowLiveLeases in the application's environment is the same override", async () => {
+    const url = await schemaWithLease(3_600_000);
+    const environment = {
+      postgresUrl: revealing(url),
+      postgresSchemaSetup: SchemaSetup.MigrateOnStart,
+      postgresAllowLiveLeases: true,
+    };
+    const connection = new PostgresConnection(new TestApplicationContext(environment));
+
+    await connection.onInit();
+    await connection.onDestroy();
+
+    expect((await historyOf(url)).at(-1)).toBe(NEWEST);
   });
 
   it("no migration pending: a restart with a live lease starts at once", async () => {
@@ -102,6 +129,65 @@ describe("#1104: a start that migrates and the live leases", () => {
 
     await startOf(url);
 
-    expect((await historyOf(url)).at(-1)).toBe("33:pause_channel_generated");
+    expect((await historyOf(url)).at(-1)).toBe(NEWEST);
+  });
+});
+
+/** A migration the build "has not applied yet": the schema is at the package's newest, this is one above. */
+const NEXT = { "0036_next_for_1104.sql": "CREATE TABLE agboss_next_for_1104 (id integer)" };
+
+/**
+ * The old instance, for real: a running `PostgresConnection` and the lease store the core's holder
+ * uses, taking a lease and renewing it as a holder does until it stops.
+ */
+class OldInstance {
+  readonly connection: PostgresConnection;
+  #renewal: NodeJS.Timeout | undefined;
+
+  constructor(
+    url: string,
+    private readonly id: string,
+  ) {
+    this.connection = new PostgresConnection({ url, poolSize: 2 });
+  }
+
+  /** Starts, takes the lease of a run for 2 s and renews it every 200 ms. */
+  async hold(): Promise<void> {
+    await this.connection.onInit();
+    const leases = new PostgresExecutionLeaseRepository(
+      this.connection,
+      new StoreClock(),
+      new TestApplicationContext({}, this.id),
+    );
+    const held = await leases.acquire("default", "run-1", seconds(2));
+    if (held === undefined) throw new Error("the old instance must take the lease");
+    this.#renewal = setInterval(() => void leases.renew(held, seconds(2)), 200);
+  }
+
+  /** The instance stops: it renews no more (its last lease lapses on the database's clock). */
+  async stop(): Promise<void> {
+    clearInterval(this.#renewal);
+    await this.connection.onDestroy();
+  }
+}
+
+describe("#1104: a second instance holding a lease, the new build starting with MigrateOnStart", () => {
+  it("refuses while the old instance renews, and migrates once it has stopped and its lease lapsed", async () => {
+    const url = await freshSchema();
+    await migratePostgres({ url });
+    const next = migrationsIn(migrationsFolder(NEXT));
+    const old = new OldInstance(url, "old-pod");
+    await old.hold();
+
+    const refused = await startOf(url, { files: next }).catch((reason: unknown) => reason);
+
+    expect(refused).toBeInstanceOf(PostgresLiveLeasesError);
+    expect(refused).toMatchObject({ count: 1, holders: ["old-pod"] });
+    expect((await historyOf(url)).at(-1)).toBe(NEWEST);
+
+    await old.stop();
+    await startOf(url, { files: next, leaseWait: { maxMs: 30_000, pollMs: 200 } });
+
+    expect((await historyOf(url)).at(-1)).toBe("36:next_for_1104");
   });
 });
