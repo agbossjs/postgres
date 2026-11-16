@@ -37,6 +37,7 @@ const recordOf = (
       tools: 0,
       compaction: 0,
       retrieval: 0,
+      files: 0,
     },
     byModel: {},
     trace: [],
