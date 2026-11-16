@@ -1,12 +1,21 @@
 import net from "node:net";
 
+/** What happens to the client message an armed fault matched (agbossjs/agboss#1017, postgres#113). */
+type Fault =
+  /** Forwarded; the server's answer dropped, the connection reset soon after (`resetOn`). */
+  | { readonly kind: "reset" }
+  /** Never forwarded: the connection is reset at once, the server never sees it (`withholdOn`). */
+  | { readonly kind: "withhold" }
+  /** Forwarded; the server's answer replaced by `answer`, then the connection ends (`answerOn`). */
+  | { readonly kind: "answer"; readonly answer: Uint8Array };
+
 /** One client connection through the proxy and its upstream. */
 interface Leg {
   readonly client: net.Socket;
   readonly upstream: net.Socket | undefined;
   silent: boolean;
-  /** The server's answers are dropped, and the leg ends soon after (`resetOn`). */
-  isResetting: boolean;
+  /** The fault this leg's client message matched: what becomes of the server's answer. */
+  fault: Fault | undefined;
 }
 
 /**
@@ -19,7 +28,7 @@ interface Leg {
 export class BlackholeProxy {
   readonly #legs = new Set<Leg>();
   #swallowing = false;
-  #resetOn: string | undefined;
+  #armed: { readonly text: string; readonly fault: Fault } | undefined;
 
   private constructor(
     private readonly server: net.Server,
@@ -63,7 +72,24 @@ export class BlackholeProxy {
    * statement took effect on the server and its answer never reached the client. One-shot.
    */
   resetOn(text: string): void {
-    this.#resetOn = text;
+    this.#armed = { text, fault: { kind: "reset" } };
+  }
+
+  /**
+   * Once a client message contains `text`, it is not forwarded and the connection is reset: the
+   * statement never reached the server, and the client cannot tell (postgres#113). One-shot.
+   */
+  withholdOn(text: string): void {
+    this.#armed = { text, fault: { kind: "withhold" } };
+  }
+
+  /**
+   * Once a client message contains `text`, it is forwarded, the server's answer is replaced by
+   * `answer` (a pooler's error, garbage) and the connection then ends (postgres#113): the
+   * statement took effect, the client hears something else. One-shot.
+   */
+  answerOn(text: string, answer: Uint8Array): void {
+    this.#armed = { text, fault: { kind: "answer", answer } };
   }
 
   /** How many connections are open (for a test that checks nothing leaked). */
@@ -85,7 +111,7 @@ export class BlackholeProxy {
 
   #accept(client: net.Socket): void {
     const upstream = this.#swallowing ? undefined : net.connect(this.target);
-    const leg: Leg = { client, upstream, silent: this.#swallowing, isResetting: false };
+    const leg: Leg = { client, upstream, silent: this.#swallowing, fault: undefined };
     this.#legs.add(leg);
     const drop = (): void => {
       this.#legs.delete(leg);
@@ -93,19 +119,28 @@ export class BlackholeProxy {
       upstream?.destroy();
     };
     client.on("data", (bytes) => {
-      if (this.#resetOn !== undefined && bytes.includes(this.#resetOn)) {
-        this.#resetOn = undefined;
-        leg.isResetting = true;
+      const armed = this.#armed;
+      if (armed !== undefined && bytes.includes(armed.text)) {
+        this.#armed = undefined;
+        leg.fault = armed.fault;
       }
-      if (!leg.silent) upstream?.write(bytes);
+      if (leg.fault?.kind === "withhold") drop();
+      else if (!leg.silent) upstream?.write(bytes);
     });
     upstream?.on("data", (bytes) => {
-      if (leg.isResetting) {
-        // the server answered: its answer is never heard
-        setTimeout(drop, 20);
+      if (leg.fault === undefined) {
+        if (!leg.silent) client.write(bytes);
         return;
       }
-      if (!leg.silent) client.write(bytes);
+      if (leg.fault.kind === "answer") {
+        // the client hears the answer, then the end; the server's side is closed under it
+        leg.silent = true;
+        client.end(leg.fault.answer);
+        upstream.destroy();
+        return;
+      }
+      // the server answered: its answer is never heard
+      setTimeout(drop, 20);
     });
     // a close or an error is passed on only while the leg is alive: a silent leg ends with its own side
     client.on("close", drop);

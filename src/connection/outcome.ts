@@ -4,23 +4,30 @@ import {
   StoreOutcomeUnknownError,
 } from "@agboss/core/stores";
 import type { Milliseconds } from "@agboss/core/units";
+import { isKnownFailure } from "./known-failure.js";
 
 /**
- * Which errors of a statement leave its outcome unknown (agbossjs/agboss#928, #1017). A statement
- * that did not answer, or whose answer was lost, may have taken effect: the framework never takes
- * it as done and never as not done — under a lease the holder hands the tree over.
+ * Which errors of a statement leave its outcome unknown (agbossjs/agboss#928, #1017,
+ * agbossjs/postgres#113). A statement that did not answer, or whose answer was lost, may have taken
+ * effect: the framework never takes it as done and never as not done — under a lease the holder
+ * hands the tree over.
  *
  * - a command timeout (the server's `statement_timeout`, SQLSTATE 57014, or pg's client-side
  *   `query_timeout`, "Query read timeout"): unknown, whatever the statement — `source: Command`;
- * - a transport error (a connection lost: SQLSTATE class 08, 57P01, 57P02, 40003, ECONNRESET, EPIPE,
- *   ETIMEDOUT, pg's "Connection terminated") while a COMMIT or a single-statement write outside a
- *   transaction is in flight: unknown — `source: Transport`;
- * - the same error on a statement inside a transaction before its COMMIT: the session died and the
- *   transaction rolled back, known; on a read (no effect), known;
- * - any other error — the server's own answer (23505, 40001, P0001, …), a connect that never got
- *   through (08001, 57P03, the connect timeout), a pool-slot wait: known, rethrown as it is.
+ * - a COMMIT, or a single-statement write outside a transaction, is classified by WHITELIST
+ *   (`known-failure.ts`): only an error that proves it did not take effect — pg never sent it, or
+ *   the server answered that it aborted it (23xxx, 40001, 40P01, 25P02, …) — is known, rethrown as
+ *   it is; every other error is unknown — `source: Transport`: an unknown SQLSTATE, `08007`,
+ *   `08P01`, `XX000`, `53100`, `58030`, a socket, TLS or stream error, a framing error, an error
+ *   without a code;
+ * - any error of a statement inside a transaction before its COMMIT (the transaction is rolled
+ *   back, by the server or at the session's end), or of a read (no effect): known, as it is.
  */
 
+/**
+ * The errors that leave the connection itself lost or past use (not an outcome: whether to give it
+ * back to the pool, or to roll back on it).
+ */
 const TRANSPORT_CODES: ReadonlySet<string> = new Set([
   "08006",
   "08003",
@@ -101,7 +108,7 @@ export function outcomeOf(error: unknown, statement: FailedStatement): unknown {
     });
   const isEffectful =
     isCommit(statement.sql) || (!statement.isInTransaction && isWrite(statement.sql));
-  if (isTransportError(error) && isEffectful)
+  if (isEffectful && !isKnownFailure(error))
     return new StoreOutcomeUnknownError({
       store: "PostgresConnection",
       operation,
@@ -111,13 +118,19 @@ export function outcomeOf(error: unknown, statement: FailedStatement): unknown {
   return error;
 }
 
-/** Whether `error` leaves its connection stuck or gone (a client-side timeout, a transport error). */
+/**
+ * Whether `error` leaves its connection stuck, gone or past trust (a client-side timeout, a
+ * transport error, a COMMIT or write of unknown outcome — after a protocol error or a pooler's
+ * `XX000` the session's state is not known either): such a connection is not rolled back on and
+ * not given back.
+ */
 export function isLostConnection(error: unknown): boolean {
   const cause = error instanceof Error ? error.cause : undefined;
   return (
     isClientTimeout(error) ||
     isClientTimeout(cause) ||
     isTransportError(error) ||
-    isTransportError(cause)
+    isTransportError(cause) ||
+    (error instanceof StoreOutcomeUnknownError && error.source === StoreOutcomeSource.Transport)
   );
 }
