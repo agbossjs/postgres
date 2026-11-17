@@ -99,9 +99,12 @@ export const isNeverSent = (error: unknown): boolean =>
 /** A statement that may commit inside itself: a procedure, an anonymous block. */
 const COMMITS_INSIDE = /^\s*(?:call|do)\b/iu;
 
+/** A second statement: a `;` with something after it but space and more `;`. */
+const ANOTHER_STATEMENT = /;[\s;]*[^\s;]/u;
+
 /** Whether `sql` is one statement that cannot commit inside itself (trailing `;` and space aside). */
 export const isOneStatement = (sql: string): boolean =>
-  !COMMITS_INSIDE.test(sql) && !sql.replace(/[\s;]+$/u, "").includes(";");
+  !COMMITS_INSIDE.test(sql) && !ANOTHER_STATEMENT.test(sql);
 
 /** Whether `error` proves `sql`, a COMMIT or a single write, did not take effect (the whitelist). */
 export const isKnownFailure = (error: unknown, sql: string): boolean =>

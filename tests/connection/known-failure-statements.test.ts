@@ -11,6 +11,7 @@ describe("isOneStatement", () => {
     "UPDATE t SET v = 1 WHERE id = 1",
     "UPDATE t SET v = 1 WHERE id = 1;",
     "UPDATE t SET v = 1 WHERE id = 1 ; \n",
+    "UPDATE t SET v = 1 WHERE id = 1;; ;\t",
     // the words of a procedure or a block inside a statement, not at its start
     "UPDATE t SET note = 'do' WHERE kind = 'call'",
     "SELECT 1 AS do",
@@ -21,6 +22,8 @@ describe("isOneStatement", () => {
   it.each([
     "UPDATE t SET v = 1; UPDATE t SET v = 2",
     "SELECT 1;SELECT 2;",
+    "UPDATE t SET v = 1;  \n UPDATE t SET v = 2",
+    "UPDATE t SET v = 1;; UPDATE t SET v = 2",
     "CALL settle(1)",
     "  call settle(1)",
     "DO $$ BEGIN PERFORM 1; END $$",
