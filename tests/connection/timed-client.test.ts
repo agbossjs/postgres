@@ -141,6 +141,25 @@ describe("the forms of a statement", () => {
     }
   });
 
+  it("the pool runs a submittable as pg.Pool does: its result is the answer, its client given back after it", async () => {
+    const { pool } = connected();
+    const submittable = new pg.Query("SELECT 9 AS nine");
+
+    const answer: unknown = await queryWith(pool, submittable);
+
+    expect(answer).not.toBe(submittable);
+    expect(answer).toMatchObject({ rows: [{ nine: 9 }] });
+    expect({ idle: pool.idleCount, total: pool.totalCount }).toEqual({ idle: 1, total: 1 });
+  });
+
+  it("the pool's null is no submittable: the client's driver refuses it, as its own null", async () => {
+    const { pool } = connected();
+
+    await expect(queryWith(pool, null)).rejects.toThrow(
+      "Client was passed a null or undefined query",
+    );
+  });
+
   it("what is no statement is the driver's to refuse: null, undefined", async () => {
     const connection = connected();
     const client = await timedClientOf(connection);

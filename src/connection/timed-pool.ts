@@ -1,7 +1,7 @@
 import type pg from "pg";
 import { isLostConnection } from "./outcome.js";
 
-/** A submittable (its errors are events, its answer itself): `pg.Pool`'s to run, as it is. */
+/** A submittable (its rows and errors are its own events): `pg.Pool` runs it, its result the answer. */
 const isSubmittable = (value: unknown): boolean =>
   typeof value === "object" && value !== null && "submit" in value;
 
@@ -12,7 +12,8 @@ const isSubmittable = (value: unknown): boolean =>
  * `StoreOutcomeUnknownError`. Here the statement's own rejection is the answer. A connection that
  * is stuck, lost or past trust (an unknown outcome, postgres#113) is not given back: a caller
  * waiting for the pool gets another. A query config (`{ text, values }`) is read as its text is;
- * the callback forms and a submittable go to the pool as they are.
+ * the callback forms and a submittable go to the pool as they are (it answers a submittable with its
+ * result, its client given back when it ends).
  */
 export function timedPool(pool: pg.Pool): pg.Pool {
   const poolQuery = Reflect.get(pool, "query") as (...args: unknown[]) => unknown;
