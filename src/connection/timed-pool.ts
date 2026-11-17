@@ -1,6 +1,10 @@
 import type pg from "pg";
 import { isLostConnection } from "./outcome.js";
 
+/** A submittable (its errors are events, its answer itself): `pg.Pool`'s to run, as it is. */
+const isSubmittable = (value: unknown): boolean =>
+  typeof value === "object" && value !== null && "submit" in value;
+
 /**
  * `pool` whose promise `query` runs on a connection it checks out itself (agbossjs/agboss#928,
  * #1017). `pg.Pool.query` listens for the connection's `error` event and answers with that raw
@@ -10,10 +14,6 @@ import { isLostConnection } from "./outcome.js";
  * waiting for the pool gets another. A query config (`{ text, values }`) is read as its text is;
  * the callback forms and a submittable go to the pool as they are.
  */
-/** A submittable (its errors are events, its answer itself): `pg.Pool`'s to run, as it is. */
-const isSubmittable = (value: unknown): boolean =>
-  typeof value === "object" && value !== null && "submit" in value;
-
 export function timedPool(pool: pg.Pool): pg.Pool {
   const poolQuery = Reflect.get(pool, "query") as (...args: unknown[]) => unknown;
   const query = async (...args: unknown[]): Promise<unknown> => {

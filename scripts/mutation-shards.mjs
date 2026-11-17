@@ -93,7 +93,7 @@ export const SHARDS = {
   // call whose answer was lost, the transaction, and the stored texts read back
   "store-bound": {
     mutate: [
-      "src/connection/{outcome,timed-client,timed-pool,transaction,query,connect-timeout,pool-options}.ts",
+      "src/connection/{outcome,known-failure,timed-client,timed-pool,transaction,query,connect-timeout,pool-options}.ts",
       "src/stores/{unreadable,framework-json,nul-escape}.ts",
     ],
     tests: [
