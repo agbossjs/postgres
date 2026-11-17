@@ -37,7 +37,7 @@ export class PauseTimerChanges {
       const patch = {
         expiresAt: change.expiresAt,
         expiryBound: PauseExpiryBound.Pause,
-        ...(change.remindAt === undefined ? {} : { remindAt: change.remindAt }),
+        remindAt: change.remindAt, // undefined is no key in the JSON
       };
       const row = await firstRowOf(
         database,
@@ -84,8 +84,9 @@ export class PauseTimerChanges {
         [tenantId, pauseId, at],
       );
       if (row === undefined) return false;
+      // the statement matched `expires_at IS NOT NULL`: the record has its deadline
       const { expiresAt } = recordOfRow(row);
-      const facts = expiresAt === undefined ? {} : { expiresAt };
+      const facts = { expiresAt };
       await appendNotices(
         database,
         tenantId,

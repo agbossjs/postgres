@@ -16,6 +16,14 @@ const SetAsideRow = z.object({
   head_written_at: z.date(),
 });
 const CountRow = z.object({ live: z.number(), dead: z.number() });
+/** What an `UPDATE … RETURNING *` that holds a claim sets: the token and its time. */
+const Held = z.object({ claim_token: z.string(), claimed_until: z.date() });
+
+/** The claim a row holds (a statement that just set the claim returned it). */
+function heldClaimOf(row: unknown): PauseNoticeClaim {
+  const { claim_token: token, claimed_until: until } = Held.parse(row);
+  return { mailbox: mailboxOf(mailboxRowOf(row)), token, until };
+}
 
 /** Claims up to `limit` due mailboxes of `recipients`, oldest due first, each under a fresh token. */
 export async function claimDue(
@@ -25,7 +33,6 @@ export async function claimDue(
   claimFor: number,
   recipients: readonly string[],
 ): Promise<readonly PauseNoticeClaim[]> {
-  if (recipients.length === 0) return [];
   const rows = await rowsOf(
     database,
     `UPDATE agboss_pause_notices SET claim_token = gen_random_uuid()::text, claimed_until = $1
@@ -38,12 +45,7 @@ export async function claimDue(
     [new Date(at.getTime() + claimFor), at, [...recipients], limit],
   );
   return rows
-    .map((row) => mailboxRowOf(row))
-    .flatMap((row) =>
-      row.claim_token === null || row.claimed_until === null
-        ? []
-        : [{ mailbox: mailboxOf(row), token: row.claim_token, until: row.claimed_until }],
-    )
+    .map(heldClaimOf)
     .sort((a, b) => a.mailbox.nextAttemptAt.getTime() - b.mailbox.nextAttemptAt.getTime());
 }
 
@@ -68,8 +70,9 @@ export async function ackHead(
     [tenantId, pauseId, recipient, at, claim.token],
   );
   if (row === undefined) return undefined;
+  // the last notice's ack released the claim: the token and its time are null together
   const stored = mailboxRowOf(row);
-  return stored.claim_token === null || stored.claimed_until === null
+  return stored.claimed_until === null
     ? undefined
     : { mailbox: mailboxOf(stored), token: claim.token, until: stored.claimed_until };
 }
@@ -92,11 +95,7 @@ export async function renewHead(
      WHERE ${OF_MAILBOX} AND claim_token = $5 AND claimed_until > $6 RETURNING *`,
     [tenantId, pauseId, recipient, new Date(at.getTime() + claimFor), claim.token, at],
   );
-  if (row === undefined) return undefined;
-  const stored = mailboxRowOf(row);
-  return stored.claimed_until === null
-    ? undefined
-    : { mailbox: mailboxOf(stored), token: claim.token, until: stored.claimed_until };
+  return row === undefined ? undefined : heldClaimOf(row);
 }
 
 /** A failed attempt, only for the claim's token: one more, due at `nextAttemptAt`, claim released. */
@@ -152,8 +151,9 @@ export async function setAsideStale(
      RETURNING tenant_id, pause_id, recipient, head_written_at`,
     [before, at, problem, limit],
   );
-  return rows
-    .map((row) => SetAsideRow.parse(row))
+  return z
+    .array(SetAsideRow)
+    .parse(rows)
     .sort((a, b) => a.head_written_at.getTime() - b.head_written_at.getTime())
     .map((row) => ({
       tenantId: row.tenant_id,

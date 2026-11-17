@@ -13,9 +13,9 @@ const LOCK_KEY = "SELECT limit_key FROM agboss_rate_limit_keys WHERE limit_key =
 /**
  * Locks the key's row (`FOR UPDATE`) for the rest of the transaction, making it first when the key
  * is new — an insert another instance makes at the same time is waited for, then locked in turn.
+ * The insert changes nothing when the key exists (`DO NOTHING` takes no lock).
  */
 export async function lockKey(client: pg.ClientBase, key: string): Promise<void> {
-  if ((await changesOf(client, LOCK_KEY, [key])) === 1) return;
   await changesOf(
     client,
     "INSERT INTO agboss_rate_limit_keys (limit_key) VALUES ($1) ON CONFLICT DO NOTHING",

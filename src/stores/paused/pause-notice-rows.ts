@@ -73,13 +73,15 @@ export function mailboxOf(row: StoredMailbox): PauseMailbox {
 
 /** The planned notices of each recipient, numbered from 1, the first one's time the mailbox's head. */
 function payloadOf(planned: readonly PlannedNotice[]): string {
-  const byRecipient = new Map<string, PlannedNotice[]>();
-  for (const one of planned)
-    byRecipient.set(one.recipient, [...(byRecipient.get(one.recipient) ?? []), one]);
-  const rows = [...byRecipient].map(([recipient, ones]) => {
+  const byRecipient = new Map<string, { readonly at: Date; readonly ones: PlannedNotice[] }>();
+  for (const one of planned) {
+    const group = byRecipient.get(one.recipient) ?? { at: one.at, ones: [] };
+    group.ones.push(one);
+    byRecipient.set(one.recipient, group);
+  }
+  const rows = [...byRecipient].map(([recipient, { at, ones }]) => {
     const notices = escapedJsonOf(ones.map((one, index) => ({ ...one.notice, seq: index + 1 })));
-    const at = JSON.stringify(ones[0]?.at.toISOString());
-    return `{"recipient":${JSON.stringify(recipient)},"at":${at},"notices":${notices}}`;
+    return `{"recipient":${JSON.stringify(recipient)},"at":${JSON.stringify(at.toISOString())},"notices":${notices}}`;
   });
   return `[${rows.join(",")}]`;
 }

@@ -16,7 +16,8 @@ export function parsedOrUnreadable(
   try {
     return JSON.parse(text, reviver) as unknown;
   } catch (error) {
-    const position = /at position (\d+)/.exec(error instanceof Error ? error.message : "")?.[1];
+    const position =
+      error instanceof Error ? /at position (\d+)/.exec(error.message)?.[1] : undefined;
     throw new StoredNamesUnreadableError({
       record: what,
       ids: Object.entries(ids)

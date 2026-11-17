@@ -4,10 +4,24 @@ import { describe, expect, it } from "vitest";
 import { checksumOf, migrationsIn, newestVersionOf } from "../../src/migrations/files.js";
 import { emptyFolder, migrationsFolder } from "../support/migration-folders.js";
 import { pendingMigrations } from "../../src/migrations/history.js";
+import { PostgresMigrationChangedError } from "../../src/index.js";
 
 describe("the package's migration files", () => {
   it("are read in order from migrations/NNNN_<name>.sql, other files ignored", () => {
-    const folder = migrationsFolder({ "README.md": "not a migration", "notes.sql": "SELECT 1;" });
+    // each of these names breaks the NNNN_<name>.sql form in one place: read as a migration, any
+    // of them would repeat or skip a version and fail the folder
+    const folder = migrationsFolder({
+      "README.md": "not a migration",
+      "notes.sql": "SELECT 1;",
+      "x0001_prefixed.sql": "SELECT 1;",
+      "0001_suffixed.sql.bak": "SELECT 1;",
+      "001_three_digits.sql": "SELECT 1;",
+      "00001_five_digits.sql": "SELECT 1;",
+      "0036_Upper_case.sql": "SELECT 1;",
+      "0036_.sql": "SELECT 1;",
+      "0036-dash.sql": "SELECT 1;",
+      "0036_dotted.txt": "SELECT 1;",
+    });
 
     const files = migrationsIn(folder);
 
@@ -92,5 +106,13 @@ describe("the package's migration files", () => {
       30, 31, 32, 33, 34, 35,
     ]);
     expect(pendingMigrations(files, [])).toHaveLength(35);
+  });
+
+  it("pending: an applied version the package has no file for (0) is a changed history", () => {
+    const files = migrationsIn();
+
+    expect(() =>
+      pendingMigrations(files, [{ version: 0, name: "before_one", checksum: "x" }]),
+    ).toThrow(PostgresMigrationChangedError);
   });
 });

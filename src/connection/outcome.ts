@@ -28,7 +28,7 @@ import { isKnownFailure, isOneStatement } from "./known-failure.js";
  * The errors that leave the connection itself lost or past use (not an outcome: whether to give it
  * back to the pool, or to roll back on it).
  */
-const TRANSPORT_CODES: ReadonlySet<string> = new Set([
+const TRANSPORT_CODES: ReadonlySet<unknown> = new Set<unknown>([
   "08006",
   "08003",
   "08000",
@@ -44,11 +44,9 @@ const CLIENT_TIMEOUT_MESSAGE = "Query read timeout";
 
 const STATEMENT_TIMEOUT_CODE = "57014";
 
-/** The `code` of a driver error, when it has one. */
-const codeOf = (error: unknown): string | undefined => {
-  const code: unknown = error instanceof Error ? Reflect.get(error, "code") : undefined;
-  return typeof code === "string" ? code : undefined;
-};
+/** The `code` of a driver error, whatever it is (compared by value, so a non-string matches nothing). */
+const codeOf = (error: unknown): unknown =>
+  error instanceof Error ? Reflect.get(error, "code") : undefined;
 
 /** pg's own client-side timeout (`query_timeout`): the connection is stuck on the statement. */
 export const isClientTimeout = (error: unknown): boolean =>
@@ -65,9 +63,8 @@ export const isCommandTimeout = (error: unknown): boolean =>
 /** A connection lost under a statement (the answer may never have been heard). */
 export function isTransportError(error: unknown): boolean {
   if (!(error instanceof Error)) return false;
-  const code = codeOf(error);
   return (
-    (code !== undefined && TRANSPORT_CODES.has(code)) ||
+    TRANSPORT_CODES.has(codeOf(error)) ||
     error.message.startsWith("Connection terminated") ||
     (error instanceof AggregateError && error.errors.some(isTransportError))
   );

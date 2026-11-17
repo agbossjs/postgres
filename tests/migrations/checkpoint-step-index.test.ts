@@ -1,11 +1,19 @@
 import { SchemaSetup } from "@agboss/core/stores";
 import { emptyCheckpoint } from "@langchain/langgraph-checkpoint";
+import net from "node:net";
 import pg from "pg";
 import { z } from "zod";
 import { afterEach, describe, expect, it } from "vitest";
 import { migratePostgres, PostgresCheckpointSaver, PostgresConnection } from "../../src/index.js";
-import { INDEX_LOCK_KEY, STEP_INDEX_NAME } from "../../src/migrations/checkpoint-step-index.js";
-import { createSchema, dropSchema, onSchema } from "../support/database.js";
+import {
+  buildStepIndex,
+  INDEX_LOCK_KEY,
+  latestByStepSql,
+  STEP_INDEX_NAME,
+  stepIndexAfter,
+} from "../../src/migrations/checkpoint-step-index.js";
+import { BlackholeProxy } from "../support/blackhole-proxy.js";
+import { createSchema, dropSchema, onSchema, serverUrl } from "../support/database.js";
 import { connectionTo } from "../support/stores.js";
 
 /**
@@ -16,7 +24,11 @@ import { connectionTo } from "../support/stores.js";
  */
 const IndexRow = z.object({ valid: z.boolean(), oid: z.string() });
 const schemas: string[] = [];
+const servers: net.Server[] = [];
+const proxies: BlackholeProxy[] = [];
 afterEach(async () => {
+  for (const server of servers.splice(0)) server.close();
+  for (const proxy of proxies.splice(0)) await proxy.close();
   for (const schema of schemas.splice(0)) await dropSchema(schema);
 });
 
@@ -91,7 +103,8 @@ describe("agbossjs/agboss#962: the checkpoint index step", () => {
     const schema = schemas[0] ?? "";
     await holder.query("SELECT pg_advisory_lock($1, hashtext($2))", [INDEX_LOCK_KEY, schema]);
     try {
-      await migratePostgres({ url, schema });
+      const skipped = await migratePostgres({ url, schema });
+      expect(skipped.stepIndex).toBe("skipped");
       expect(await stateOf(url)).toEqual({});
     } finally {
       await holder.end();
@@ -154,4 +167,93 @@ describe("agbossjs/agboss#962: the checkpoint index step", () => {
     // a plain CREATE INDEX holds every write until it ends: none would be acknowledged inside it
     expect(duringBuild).toBeGreaterThanOrEqual(5);
   }, 180_000);
+
+  it("the saver's read of the newest checkpoint is one walk of the index, no sort", async () => {
+    const { url, schema } = await fresh();
+    await migratePostgres({ url });
+    const reader = new pg.Client({ connectionString: url });
+    await reader.connect();
+    try {
+      // on a table this small the planner would scan it: the plan the index gives is what is asked
+      await reader.query("SET enable_seqscan = off");
+      await reader.query("SET enable_sort = off");
+      const { rows } = await reader.query<{ "QUERY PLAN": string }>(
+        `EXPLAIN ${latestByStepSql(schema)}`,
+        ["thread", ""],
+      );
+      const plan = rows.map((row) => row["QUERY PLAN"]).join("\n");
+
+      expect(plan).toContain(`Index Scan using ${STEP_INDEX_NAME}`);
+      expect(plan).not.toContain("Sort");
+    } finally {
+      await reader.end();
+    }
+  });
+
+  it("a build in the background that fails is dropped: no unhandled rejection", async () => {
+    // a server that accepts the build's connection and closes it at once
+    let isAccepted: () => void = () => undefined;
+    const accepted = new Promise<void>((resolve) => {
+      isAccepted = resolve;
+    });
+    const server = net.createServer((socket) => {
+      socket.destroy();
+      isAccepted();
+    });
+    servers.push(server);
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    const port = typeof address === "object" && address !== null ? address.port : 0;
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown): void => {
+      unhandled.push(reason);
+    };
+    process.on("unhandledRejection", onUnhandled);
+    try {
+      const result = await stepIndexAfter(
+        { url: `postgres://postgres:pw@127.0.0.1:${String(port)}/none` },
+        "none",
+        true,
+      );
+      await accepted;
+      await new Promise((resolve) => setTimeout(resolve, 300));
+
+      expect(result).toBeUndefined();
+      expect(unhandled).toEqual([]);
+    } finally {
+      process.off("unhandledRejection", onUnhandled);
+    }
+  });
+
+  it("a build whose session is lost under it rejects; nothing is thrown outside the build", async () => {
+    const { url, schema } = await fresh();
+    await migratePostgres({ url });
+    const target = new URL(serverUrl());
+    const proxy = await BlackholeProxy.start({
+      host: target.hostname,
+      port: Number(target.port === "" ? 5432 : target.port),
+    });
+    proxies.push(proxy);
+    const proxied = new URL(url);
+    proxied.port = String(proxy.port);
+    const uncaught: unknown[] = [];
+    const onUncaught = (error: unknown): void => {
+      uncaught.push(error);
+    };
+    process.on("uncaughtException", onUncaught);
+    // the build's lock is answered, the answer never arrives: the session ends under the statement
+    proxy.resetOn("pg_try_advisory_lock");
+    try {
+      const failure = await buildStepIndex({ url: proxied.toString(), schema }).then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      expect(String(failure)).toMatch(/Connection terminated/);
+      expect(uncaught).toEqual([]);
+    } finally {
+      process.off("uncaughtException", onUncaught);
+    }
+  });
 });

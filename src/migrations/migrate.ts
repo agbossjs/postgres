@@ -32,6 +32,14 @@ export interface MigratePostgresOptions {
   readonly allowLiveLeases?: boolean;
 }
 
+/**
+ * What `migrateWith` takes: `MigratePostgresOptions`, its schema possibly unset by name (the start
+ * check passes the connection's, which may be unset).
+ */
+export interface MigrationRunOptions extends Omit<MigratePostgresOptions, "schema"> {
+  readonly schema?: string | undefined;
+}
+
 /** One migration a run applied. */
 export interface AppliedMigrationReport {
   readonly version: number;
@@ -84,7 +92,7 @@ export function migratePostgres(options: MigratePostgresOptions): Promise<Migrat
  * serves while it builds; a failed build is a slower read, the next run builds it).
  */
 export async function migrateWith(
-  options: MigratePostgresOptions,
+  options: MigrationRunOptions,
   files: readonly MigrationFile[],
   indexInBackground = false,
 ): Promise<MigrationReport> {
@@ -101,9 +109,9 @@ export async function migrateWith(
   });
   try {
     const client = await pool.connect();
-    // a dropped session rejects its statement in flight; the pool is ended below either way
-    const onLost = (): undefined => undefined;
-    client.on("error", onLost);
+    // a dropped session rejects its statement in flight (and emits "error", which would throw with
+    // no listener); the pool, and the listener with it, is ended below either way
+    client.on("error", () => undefined);
     try {
       if (schema !== undefined) await createSchema(client, schema);
       const run = {
@@ -129,7 +137,6 @@ export async function migrateWith(
       );
       return stepIndex === undefined ? report : { ...report, stepIndex };
     } finally {
-      client.off("error", onLost);
       client.release();
     }
   } finally {
@@ -137,11 +144,20 @@ export async function migrateWith(
   }
 }
 
-/** PostgreSQL's codes when a concurrent `CREATE SCHEMA IF NOT EXISTS` made it first. */
+/**
+ * PostgreSQL's codes when a concurrent `CREATE SCHEMA IF NOT EXISTS` made it first: `unique_violation`
+ * when the other's insert was not committed yet at the existence check, `duplicate_schema` when it
+ * committed between that check and the insert.
+ */
 const SCHEMA_RACE_CODES: ReadonlySet<unknown> = new Set(["23505", "42P06"]);
 
+/** What `createSchema` needs of a session. */
+export interface SchemaStatements {
+  query(sql: string): Promise<unknown>;
+}
+
 /** `schema` made unless it exists — another run creating it at the same moment is fine. */
-async function createSchema(client: pg.PoolClient, schema: string): Promise<void> {
+export async function createSchema(client: SchemaStatements, schema: string): Promise<void> {
   try {
     await client.query(`CREATE SCHEMA IF NOT EXISTS ${quotedIdentifier(schema)}`);
   } catch (error) {
@@ -157,16 +173,9 @@ async function underLock<TResult>(
   await client.query("SELECT pg_advisory_lock($1, hashtext(current_schema()))", [
     MIGRATION_LOCK_KEY,
   ]);
-  let result: TResult;
-  try {
-    result = await work();
-  } catch (error) {
-    // the work's error is the run's: an unlock that fails too changes nothing (the session ends)
-    await client
-      .query("SELECT pg_advisory_unlock($1, hashtext(current_schema()))", [MIGRATION_LOCK_KEY])
-      .catch(() => undefined);
-    throw error;
-  }
+  // a failed run keeps the lock until its session ends, right after (the run's pool is ended)
+  const result = await work();
+  // released before the index step: its build waits for every transaction, a waiter's among them
   await client.query("SELECT pg_advisory_unlock($1, hashtext(current_schema()))", [
     MIGRATION_LOCK_KEY,
   ]);
@@ -196,8 +205,10 @@ async function migrateLocked(run: MigrationRun): Promise<MigrationReport> {
   await client.query(HISTORY_TABLE);
   const done = await appliedMigrationsOf(client);
   const pending = pendingMigrations(files, done);
-  if (pending.length > 0 && done.length > 0 && run.allowLiveLeases !== true)
-    await refuseLiveLeases(client, done.at(-1)?.version ?? 0);
+  // a database migrated before (a newest applied migration) is an upgrade: its leases are guarded
+  const newest = done.at(-1);
+  if (pending.length > 0 && newest !== undefined && run.allowLiveLeases !== true)
+    await refuseLiveLeases(client, newest.version);
   const applied: AppliedMigrationReport[] = [];
   for (const file of pending) {
     signal?.throwIfAborted();

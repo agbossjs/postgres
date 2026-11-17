@@ -43,6 +43,10 @@ goes beside `@agboss/redis`'s coordination stores, the leases' execution ids kep
 PostgresExecutionLeaseRepository)]` (no second lease store: the token's class is created under the
 token only). Or one by one:
 
+<!-- snippet-context
+declare class DeskWorkflow {}
+-->
+
 ```ts
 import { Application } from "@agboss/core";
 import { hours } from "@agboss/core/units";
@@ -148,6 +152,15 @@ A component injects the application's `FencedEffects` (agbossjs/agboss#890: neve
 class — the store is the application's, listed in its `providers`); a fenced effect's work gets the
 transaction's `PoolClient` and may `await` its statements:
 
+<!-- snippet-context
+import { effectKeyOf, type ExecutionContext, type FencedEffects } from "@agboss/core";
+import type { PoolClient } from "pg";
+declare const fencedEffects: FencedEffects;
+declare const executionContext: ExecutionContext;
+declare const orderId: string;
+declare const amount: number;
+-->
+
 ```ts
 const outcome = await fencedEffects.runOnce(
   effectKeyOf(executionContext, "charge"),
@@ -169,6 +182,27 @@ key with another fingerprint is `BusinessKeyConflictError`, nothing run.
 `OutboundCalls.send` (#505) records an intent in `agboss_outbound_calls` before the request goes out
 and settles it after; an intent left pending — the pod died or froze mid-call — is reconciled with
 the other system (`reconcile`) by whichever pod runs the step next, never sent again blindly:
+
+<!-- snippet-context
+import {
+  effectKeyOf,
+  NotSentTrust,
+  OutboundCallReconciliation,
+  type ExecutionContext,
+  type OutboundCalls,
+} from "@agboss/core";
+declare const executionContext: ExecutionContext;
+declare const outboundCalls: OutboundCalls;
+declare const orderId: string;
+declare const amount: number;
+interface Charge {
+  readonly receipt: string;
+}
+declare const gateway: {
+  charge(order: { orderId: string; amount: number }, key: string, signal: AbortSignal): Promise<Charge>;
+  find(key: string): Promise<Charge | undefined>;
+};
+-->
 
 ```ts
 const key = effectKeyOf(executionContext, "charge", { businessKey: `order:${orderId}` });
@@ -208,6 +242,12 @@ intent written before has none, so its key's age is unknown and a `KeyReplay` re
 The audit log keeps who took a tree over and from whom — `app.auditLogOf({ tenantId,
 rootExecutionId })` reads it on any instance, oldest first:
 
+<!-- snippet-context
+import type { createApp } from "@agboss/core";
+declare const app: Awaited<ReturnType<typeof createApp>>;
+declare const rootExecutionId: string;
+-->
+
 ```ts
 const [takeover] = await app.auditLogOf({ tenantId: "default", rootExecutionId });
 // { kind: "takeover", reason: "recovered", holderInstanceId: "<B>",
@@ -229,7 +269,7 @@ const [takeover] = await app.auditLogOf({ tenantId: "default", rootExecutionId }
 | `postgresSchemaSetup`                | `SchemaSetup` | `SchemaSetup.Check`                             | what the start does with the schema (Migrations, below)                    |
 | `postgresAllowLiveLeases`            | `boolean`     | `false`                                         | `MigrateOnStart` migrates over live leases (Migrations, below)             |
 
-```ts
+```ts file=environments/app.environment.ts
 // environments/app.environment.ts — the contract
 import type { Secret } from "@agboss/core";
 import type { SchemaSetup } from "@agboss/postgres";
@@ -246,7 +286,7 @@ export class AppEnvironment {
 }
 ```
 
-```ts
+```ts file=environments/prod.environment.ts
 // environments/prod.environment.ts — the values
 import { secret } from "@agboss/core";
 import type { AppEnvironment } from "./app.environment.js";
@@ -486,6 +526,11 @@ schema** (`migrate` prints `nothing to apply`), never for one that ships a migra
 fails the hook on a live lease, which is the point; do not add `--allow-live-leases` to it.
 
 **Or in code**, from a script of your own:
+
+<!-- snippet-context
+declare const url: string;
+declare const signal: AbortSignal;
+-->
 
 ```ts
 import { migratePostgres } from "@agboss/postgres";

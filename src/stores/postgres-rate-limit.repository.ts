@@ -108,7 +108,8 @@ export class PostgresRateLimitRepository extends RateLimitRepository {
       await lockKey(client, key);
       await forgetBefore(client, key, since);
       const total = (await windowTotal(client, key, since)) + amount;
-      if (limit !== undefined && total > limit) return undefined;
+      // no limit: any total is counted
+      if (total > (limit ?? Number.POSITIVE_INFINITY)) return undefined;
       if (amount !== 0) await countInBucket(client, key, now, amount);
       return total;
     });

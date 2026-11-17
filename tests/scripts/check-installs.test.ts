@@ -3,11 +3,11 @@
  * installs by resolving ranges or runs an unpinned `npx`, no script passes `install` to npm but
  * through `rangeInstallArguments()`; and this repository has none of either.
  */
-import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
+import { runNode } from "../support/process.js";
 
 const repo = new URL("../../", import.meta.url).pathname;
 const scratch = mkdtempSync(join(tmpdir(), "agboss-check-installs-"));
@@ -105,19 +105,16 @@ describe("AC1: a script's install arguments come from the minimum release age", 
 });
 
 describe("AC1: the command", () => {
-  const checkInstalls = (root: string) =>
-    spawnSync(process.execPath, [join(repo, "scripts/check-installs.mjs"), root], {
-      encoding: "utf8",
-    });
+  const checkInstalls = (root: string) => runNode([join(repo, "scripts/check-installs.mjs"), root]);
 
-  it("AC1: this repository's workflows and scripts pass, exit 0", () => {
-    const ran = checkInstalls(repo);
+  it("AC1: this repository's workflows and scripts pass, exit 0", async () => {
+    const ran = await checkInstalls(repo);
 
     expect(ran.stderr).toBe("");
     expect(ran.status).toBe(0);
   });
 
-  it("AC1: a planted unpinned install fails, exit 1, every problem listed", () => {
+  it("AC1: a planted unpinned install fails, exit 1, every problem listed", async () => {
     mkdirSync(join(scratch, ".github", "workflows"), { recursive: true });
     mkdirSync(join(scratch, "scripts"), { recursive: true });
     writeFileSync(
@@ -126,7 +123,7 @@ describe("AC1: the command", () => {
     );
     writeFileSync(join(scratch, "scripts", "x.mjs"), 'spawn("npm", ["install"]);\n');
 
-    const ran = checkInstalls(scratch);
+    const ran = await checkInstalls(scratch);
 
     expect(ran.status).toBe(1);
     expect(ran.stderr).toContain(".github/workflows/ci.yml:1: npm install resolves ranges");

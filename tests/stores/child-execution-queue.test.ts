@@ -102,3 +102,47 @@ describe("PostgresChildExecutionQueueRepository: FOR UPDATE SKIP LOCKED", () => 
     await expect(queue.claimFirstByStatusQueuedOrderByDepthDesc()).rejects.toThrow();
   });
 });
+
+describe("PostgresChildExecutionQueueRepository: one child's life", () => {
+  it("a child completed by its claimer is read back with its end: status, endedAt, failure", async () => {
+    const clock = new VirtualClock();
+    const queue = new PostgresChildExecutionQueueRepository(
+      connectionTo(database.url()),
+      clock,
+      new TestApplicationContext({}, "instance-life"),
+      new RecordingLogger(),
+    );
+    const one = { ...child(900), executionId: "child-life", rootExecutionId: "root-life" };
+    await queue.saveIfAbsent(one);
+    const claimed = await queue.claimFirstByStatusQueuedOrderByDepthDesc();
+    expect(claimed?.executionId).toBeDefined();
+    if (claimed === undefined) throw new Error("nothing claimed");
+
+    const done = await queue.completeByTenantIdAndExecutionId("default", claimed.executionId, {
+      status: ExecutionRecordStatus.Failed,
+      failure: "boom",
+    });
+    const read = await queue.findByTenantIdAndExecutionId("default", claimed.executionId);
+
+    expect(done).toBe(true);
+    expect(read).toMatchObject({
+      status: ExecutionRecordStatus.Failed,
+      endedAt: clock.now(),
+      failure: "boom",
+    });
+  });
+
+  it("ping() answers while the database does, and rejects once its connection stopped", async () => {
+    const connection = connectionTo(database.url());
+    const queue = new PostgresChildExecutionQueueRepository(
+      connection,
+      new VirtualClock(),
+      new TestApplicationContext({}, "instance-ping"),
+      new RecordingLogger(),
+    );
+
+    await expect(queue.ping()).resolves.toBeUndefined();
+    await connection.onDestroy();
+    await expect(queue.ping()).rejects.toThrow();
+  });
+});

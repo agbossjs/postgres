@@ -51,6 +51,15 @@ const rowsOfLedger = async (key: string): Promise<number> =>
     .rowCount ?? 0;
 
 describe("PostgresCostLedgerRepository", () => {
+  it("one ledger id given twice in one save is one entry: the first one's cost counts", async () => {
+    const ledger = ledgerOn();
+    const id = `call:${randomUUID()}`;
+
+    await ledger.saveAll([day("first-of-two")], [call(0.5, id), call(0.25, id)]);
+
+    expect(await ledger.findSpentByCounter(day("first-of-two"))).toBe(0.5);
+  });
+
   it("a counter given twice in one save counts twice; the calls' costs are summed", async () => {
     const ledger = ledgerOn();
 

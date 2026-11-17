@@ -29,20 +29,7 @@ export interface SchemaCheck {
  */
 export async function checkSchema(check: SchemaCheck): Promise<void> {
   const expected = newestVersionOf(check.files);
-  const client = await check.pool.connect();
-  // a dropped connection rejects the read below; it is not given back to the pool
-  let isLost = false;
-  const onLost = (): void => {
-    isLost = true;
-  };
-  client.on("error", onLost);
-  let applied: number;
-  try {
-    applied = await appliedVersionOf(client);
-  } finally {
-    client.off("error", onLost);
-    client.release(isLost);
-  }
+  const applied = await onClientOf(check.pool, (client) => appliedVersionOf(client));
   if (applied > expected) throw new PostgresSchemaTooNewError({ applied, expected });
   if (applied === expected) return;
   if (check.schemaSetup !== SchemaSetup.MigrateOnStart)
@@ -53,9 +40,7 @@ export async function checkSchema(check: SchemaCheck): Promise<void> {
   // checks again under its lock (a lease taken meanwhile fails it too)
   if (applied > 0 && !allowLiveLeases) await leasesLapsed(check, applied);
   await migrateWith(
-    check.schema === undefined
-      ? { url: check.url, allowLiveLeases }
-      : { url: check.url, schema: check.schema, allowLiveLeases },
+    { url: check.url, schema: check.schema, allowLiveLeases },
     check.files,
     // the pod serves while the index builds (agbossjs/agboss#962)
     true,
@@ -63,17 +48,27 @@ export async function checkSchema(check: SchemaCheck): Promise<void> {
 }
 
 /** `waitForLeasesToLapse` on a connection of the pool. */
-async function leasesLapsed(check: SchemaCheck, applied: number): Promise<void> {
-  const client = await check.pool.connect();
-  let isLost = false;
-  const onLost = (): void => {
-    isLost = true;
-  };
+const leasesLapsed = (check: SchemaCheck, applied: number): Promise<void> =>
+  onClientOf(check.pool, (client) =>
+    waitForLeasesToLapse(client, applied, check.leaseWait ?? DEFAULT_LEASE_WAIT),
+  );
+
+/**
+ * `work` on a connection of `pool`, given back after it. A dropped connection rejects the work's
+ * statement and emits "error", which would throw with no listener; the pool drops a client that is
+ * not queryable when it is given back.
+ */
+async function onClientOf<TResult>(
+  pool: pg.Pool,
+  work: (client: pg.PoolClient) => Promise<TResult>,
+): Promise<TResult> {
+  const client = await pool.connect();
+  const onLost = (): undefined => undefined;
   client.on("error", onLost);
   try {
-    await waitForLeasesToLapse(client, applied, check.leaseWait ?? DEFAULT_LEASE_WAIT);
+    return await work(client);
   } finally {
     client.off("error", onLost);
-    client.release(isLost);
+    client.release();
   }
 }

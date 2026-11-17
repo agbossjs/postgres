@@ -9,11 +9,11 @@ import {
   searchPathOptionOf,
   type PostgresConnectionSettings,
 } from "./settings.js";
-import { CLIENT_TIMEOUT_MARGIN, TimedClient, type TimedClientConfig } from "./timed-client.js";
+import { CLIENT_TIMEOUT_MARGIN, type TimedClientConfig } from "./timed-client.js";
 
 /**
  * The options of the instance's pool (agbossjs/agboss#928): every connection is a `TimedClient`
- * that reads a command timeout as `StoreCallTimeoutError` and a lost answer as
+ * (the `Client` `PostgresConnection` adds to them) that reads a command timeout as `StoreCallTimeoutError` and a lost answer as
  * `StoreOutcomeUnknownError` (`outcome.ts`); the server cancels a statement past the command
  * timeout (`statement_timeout`, lock waits included), the client gives up on a silent server a
  * second later (`query_timeout`), and a session idle in a transaction is ended
@@ -30,7 +30,6 @@ export function poolOptionsOf(
     checkedTimeoutOf("idleInTransactionTimeout", settings.idleInTransactionTimeout) ??
     DEFAULT_IDLE_IN_TRANSACTION_TIMEOUT;
   return {
-    Client: TimedClient,
     commandTimeout,
     statement_timeout: commandTimeout,
     query_timeout: commandTimeout + CLIENT_TIMEOUT_MARGIN,

@@ -36,8 +36,11 @@ import { z } from "zod";
 import { idOfCursor, pageLimitOf } from "./outbound-call-pages.js";
 import { assertKeyAtEntry } from "./key-entry.js";
 
-/** A row of a page (agbossjs/agboss#825): its id, as text, and its record. */
-const PagedRow = z.object({ id: z.string().regex(/^[1-9][0-9]*$/u), record: z.unknown() });
+/**
+ * A row of a page (agbossjs/agboss#825): its id — an identity `bigint`, from 1, as text: the cursor
+ * the page hands out, checked when it comes back (`idOfCursor`) — and its record.
+ */
+const PagedRow = z.object({ id: z.string(), record: z.unknown() });
 
 const SAVE = `INSERT INTO agboss_outbound_calls (scope_key, idempotency_key, name, tenant_id,
     root_execution_id, business_key, status, attempt, attempt_owner, ended_at, record)

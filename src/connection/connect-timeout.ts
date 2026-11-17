@@ -30,7 +30,8 @@ export function connectTimeoutOf(url: string): number {
     throw new PostgresSettingsError({
       message: "the URL's connect_timeout must be a whole number of seconds, at least 1",
     });
-  const seconds = Number(text.trim());
+  // `Number` skips the surrounding whitespace the check above allowed.
+  const seconds = Number(text);
   if (seconds > MAX_CONNECT_TIMEOUT_SECONDS)
     throw new PostgresSettingsError({
       message: `the URL's connect_timeout must be a whole number of seconds, at most ${String(MAX_CONNECT_TIMEOUT_SECONDS)}`,
@@ -40,9 +41,6 @@ export function connectTimeoutOf(url: string): number {
 
 /** A query parameter of a `postgres://` URL; `undefined` for none, or for a URL that does not parse. */
 function urlParameterOf(url: string, name: string): string | undefined {
-  try {
-    return new URL(url).searchParams.get(name) ?? undefined;
-  } catch {
-    return undefined;
-  }
+  if (!URL.canParse(url)) return undefined;
+  return new URL(url).searchParams.get(name) ?? undefined;
 }
