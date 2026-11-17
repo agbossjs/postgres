@@ -111,7 +111,8 @@ export interface PostgresLiveLeasesErrorOptions {
  * running work. A schema upgrade is stop every old instance, then migrate, then deploy
  * (agbossjs/agboss#1104, ADR-0034): a running old instance writes rows the new schema's guarantees
  * do not cover. Nothing was applied. Stop the old instances (let their leases lapse) and run again;
- * `allowLiveLeases: true` / `--allow-live-leases` migrates anyway. An idle old instance holds no
+ * `allowLiveLeases: true` / `--allow-live-leases` (the start's: the settings' `allowLiveLeases`, the
+ * environment's `postgresAllowLiveLeases`) migrates anyway. An idle old instance holds no
  * lease: this check does not see it.
  */
 export class PostgresLiveLeasesError extends AGBossError {
@@ -123,7 +124,7 @@ export class PostgresLiveLeasesError extends AGBossError {
 
   constructor(options: PostgresLiveLeasesErrorOptions) {
     super(
-      `${String(options.count)} live execution lease(s) held by ${options.holders.join(", ")}${options.count > options.holders.length ? " and others" : ""}: an instance of the previous version is still running — stop every old instance, run the migration, then deploy the new version (ADR-0034); to migrate anyway pass allowLiveLeases: true (agboss-postgres migrate --allow-live-leases)`,
+      `${String(options.count)} live execution lease(s) held by ${options.holders.join(", ")}${options.count > options.holders.length ? " and others" : ""}: an instance of the previous version is still running — stop every old instance, run the migration, then deploy the new version (ADR-0034); to migrate anyway pass allowLiveLeases: true (agboss-postgres migrate --allow-live-leases; for a start with MigrateOnStart: allowLiveLeases in the connection's settings, postgresAllowLiveLeases in the environment)`,
       { cause: options.cause },
     );
     this.count = options.count;

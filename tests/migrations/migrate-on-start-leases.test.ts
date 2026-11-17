@@ -80,6 +80,7 @@ describe("#1104: a start that migrates and the live leases", () => {
 
     expect(error).toBeInstanceOf(PostgresLiveLeasesError);
     expect(error).toMatchObject({ code: "postgres.live-leases", count: 1, holders: ["old-pod"] });
+    expect(String(error)).toContain("postgresAllowLiveLeases");
     expect((await historyOf(url)).at(-1)).toBe("32:execution_cancel_requests");
   });
 
