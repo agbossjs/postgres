@@ -32,8 +32,15 @@ const SEED = `INSERT INTO agboss_execution_leases
   VALUES ($1, $2, '', 0, ${storeNow(3)}, true)
   ON CONFLICT (tenant_id, root_execution_id) DO NOTHING`;
 
+/**
+ * The read's lock on the root's row: for a child's key the only lock its write holds on that row
+ * (its fence locks the child's own row), so without it a cancel could answer while the write is
+ * open (agbossjs/agboss#1302). A constant of its own, so the mutation shard drops it.
+ */
+const SHARE_LOCK = "FOR SHARE";
+
 const FIND = `SELECT cancel_requested_at IS NOT NULL AS is_cancelled FROM agboss_execution_leases
-  WHERE tenant_id = $1 AND root_execution_id = $2 FOR SHARE`;
+  WHERE tenant_id = $1 AND root_execution_id = $2 ${SHARE_LOCK}`;
 
 /** Marks the tree's cancel in the caller's transaction: once — a repeat changes nothing. */
 export async function markCancel(
