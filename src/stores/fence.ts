@@ -29,11 +29,13 @@ const LOCK_LEASE = `SELECT token, expires_at, released FROM agboss_execution_lea
  * time (agbossjs/agboss#533: the database's, `$3` null), read in this statement — after the lease
  * row was locked, so the wait for the lock never counts as the lease's.
  */
+/** Every fenced write refreshes the mark's time: a retention keeps a scope in use. A constant of its own, so the mutation shard drops it (agbossjs/agboss#1327). */
+const REFRESHED = ", stored_at = EXCLUDED.stored_at";
+
 const RAISE_MARK = `INSERT INTO agboss_fenced_effect_marks AS mark (scope_key, highest_token, stored_at)
   VALUES ($1, $2, ${storeNow(3)})
   ON CONFLICT (scope_key) DO UPDATE SET
-    highest_token = GREATEST(mark.highest_token, EXCLUDED.highest_token),
-    stored_at = EXCLUDED.stored_at
+    highest_token = GREATEST(mark.highest_token, EXCLUDED.highest_token) ${REFRESHED}
   RETURNING highest_token, ${storeNow(3)} AS now`;
 
 const LeaseRow = z.object({ token: z.number(), expires_at: z.date(), released: z.boolean() });

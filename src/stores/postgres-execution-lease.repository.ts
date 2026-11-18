@@ -25,6 +25,12 @@ import { remainingSql, storeNow, storeNowOf } from "./store-time.js";
 const PREVIOUS_LOCK = "FOR UPDATE";
 
 /**
+ * A take starts the lease clean: not yielded, not superseded, whatever the lease before it was. A
+ * constant of its own, so the mutation shard drops it (agbossjs/agboss#1327).
+ */
+const CLEAN = ", yielded = false, superseded = false";
+
+/**
  * Takes the tree's lease unless another holder's is valid, in one statement: a new key is
  * inserted with token 1; an existing row is taken over — token + 1 — only when it was released or
  * expired (`expires_at <= now`: valid while `expires_at > now`, as every core store). `RETURNING`
@@ -53,9 +59,7 @@ const ACQUIRE = `WITH previous AS MATERIALIZED (
     holder_instance_id = EXCLUDED.holder_instance_id,
     token = lease.token + 1,
     expires_at = EXCLUDED.expires_at,
-    released = false,
-    yielded = false,
-    superseded = false
+    released = false ${CLEAN}
   WHERE NOT lease.finished AND (lease.released OR lease.expires_at <= ${storeNow(5)})
   RETURNING lease.token, lease.expires_at,
     ${remainingSql("lease.expires_at", storeNow(5))} AS remaining,
@@ -148,8 +152,15 @@ const RenewedRow = z.object({ remaining: z.number() });
  * of concurrent inserts of one id, on any connection, exactly one makes the row (the others wait for
  * it and do nothing); a row is never removed.
  */
+/**
+ * The only conflict the insert ignores is the id's own: a violation of another unique key is an
+ * error, not an id claimed by no one. A constant of its own, so the mutation shard drops it
+ * (agbossjs/agboss#1327).
+ */
+const ID_KEY = "(execution_id)";
+
 const SAVE_EXECUTION_ID = `INSERT INTO agboss_execution_ids (execution_id, tenant_id)
-  VALUES ($1, $2) ON CONFLICT (execution_id) DO NOTHING`;
+  VALUES ($1, $2) ON CONFLICT ${ID_KEY} DO NOTHING`;
 
 /** A lease's time left as the store answered it (never below 0). */
 const remainingOf = (value: number): Milliseconds => Math.max(0, value) as Milliseconds;
