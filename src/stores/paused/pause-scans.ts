@@ -39,14 +39,26 @@ export function seqOfCursor(cursor: string | undefined): string {
 
 const SequencedRow = z.object({ seq: z.string(), record: z.unknown() });
 
-/** What the retention removes: closed, resolved before `$1`, with no live mailbox (I11). */
-const REMOVABLE = `p.status IN ('taken', 'cancelled') AND p.resolved_at IS NOT NULL
-  AND p.resolved_at < $1
+/**
+ * The retention's reads, each a constant of its own so the mutation shard drops it
+ * (agbossjs/agboss#1302): the status of what is removable (a pause resolved and not yet taken is
+ * neither removed nor locked), the replacement and the mailboxes of the pause itself (another
+ * tenant's or another pause's do not keep it), and the candidates' row lock.
+ */
+const CLOSED = "AND p.status IN ('taken', 'cancelled')";
+const OF_PAUSE_REPLACEMENT = "AND r.tenant_id = p.tenant_id";
+const OF_PAUSE_MAILBOXES = "AND n.tenant_id = p.tenant_id AND n.pause_id = p.pause_id";
+const CANDIDATE_LOCK = "FOR UPDATE OF p";
+
+/**
+ * What the retention removes: closed, resolved before `$1` (a pause never resolved has no
+ * `resolved_at`, which is never before anything), with no live mailbox (I11).
+ */
+const REMOVABLE = `p.resolved_at < $1 ${CLOSED}
   AND NOT (p.record ? 'reassignedTo' AND EXISTS (SELECT 1 FROM agboss_pauses r
-    WHERE r.tenant_id = p.tenant_id AND r.pause_id = p.record->>'reassignedTo'))
+    WHERE r.pause_id = p.record->>'reassignedTo' ${OF_PAUSE_REPLACEMENT}))
   AND NOT EXISTS (SELECT 1 FROM agboss_pause_notices n
-    WHERE n.tenant_id = p.tenant_id AND n.pause_id = p.pause_id AND NOT n.is_dead
-      AND n.delivered < jsonb_array_length(n.notices))`;
+    WHERE NOT n.is_dead AND n.delivered < jsonb_array_length(n.notices) ${OF_PAUSE_MAILBOXES})`;
 
 const KeysOf = z.array(z.object({ tenant_id: z.string(), pause_id: z.string() }));
 
@@ -172,8 +184,7 @@ export class PauseScans {
         await rowsOf(
           database,
           `SELECT p.tenant_id, p.pause_id FROM agboss_pauses p
-           WHERE p.status IN ('taken', 'cancelled') AND p.resolved_at IS NOT NULL
-             AND p.resolved_at < $1 FOR UPDATE OF p`,
+           WHERE p.resolved_at < $1 ${CLOSED} ${CANDIDATE_LOCK}`,
           [cutoff],
         ),
       );

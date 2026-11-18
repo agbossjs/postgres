@@ -21,9 +21,21 @@ const RecordRow = z.object({ record: z.unknown() });
 export const recordOfRow = (row: unknown): PauseRecord =>
   pauseRecordOf(unescapedJson(RecordRow.parse(row).record));
 
+/**
+ * The lock of a pause's row, held until the transaction ends: a change that reads the record first
+ * (a mark, a once-notice, a reassignment) waits for the one that wrote it and reads what it wrote.
+ * A constant of its own, so the mutation shard drops it (agbossjs/agboss#1302).
+ */
+const ROW_LOCK = "FOR UPDATE";
+
+/**
+ * Of the step in its tree: the one unique key the insert ignores. A violation of another (a pause id
+ * taken by another step) is an error, not a pause skipped and then not found.
+ */
+const STEP_KEY = "(tenant_id, root_execution_id, step_key)";
+
 /** `SELECT … FOR UPDATE`'s row of one pause: locked until the transaction ends. */
-export const LOCKED_PAUSE =
-  "SELECT record FROM agboss_pauses WHERE tenant_id = $1 AND pause_id = $2 FOR UPDATE";
+export const LOCKED_PAUSE = `SELECT record FROM agboss_pauses WHERE tenant_id = $1 AND pause_id = $2 ${ROW_LOCK}`;
 
 export class PauseRows {
   constructor(private readonly pool: pg.Pool) {}
@@ -35,7 +47,7 @@ export class PauseRows {
       `INSERT INTO agboss_pauses (tenant_id, pause_id, step_key, root_execution_id, status,
          expires_at, remind_at, record)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb)
-       ON CONFLICT (tenant_id, root_execution_id, step_key) DO NOTHING RETURNING record`,
+       ON CONFLICT ${STEP_KEY} DO NOTHING RETURNING record`,
       [
         pause.tenantId,
         pause.pauseId,

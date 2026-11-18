@@ -57,6 +57,21 @@ function childOf(row: unknown): QueuedChildExecution {
 }
 
 /**
+ * What a child queued again keeps of its last run: nothing (no claim, no end, no failure). A
+ * constant of its own, so the mutation shard drops it (agbossjs/agboss#1302).
+ */
+const CLEARED = ", claimed_at = NULL, ended_at = NULL, failure = NULL";
+
+/**
+ * The claim's row lock, and its pass over a row another claimer holds locked (never waited for);
+ * the claim marks the child of the tenant it chose. Constants of their own, so the mutation shard
+ * drops each (agbossjs/agboss#1302).
+ */
+const SKIP_LOCKED = "SKIP LOCKED";
+const ROW_LOCK = `FOR UPDATE ${SKIP_LOCKED}`;
+const OF_TENANT = "AND queued.tenant_id = first.tenant_id";
+
+/**
  * Queues a child, or queues it again: a paused child (resumed), or a running claim whose worker
  * lost its lease (the caller names that claim's `claimedAt`) — one statement, so of two instances
  * saving one child exactly one gets `true`. A save that queues a child notifies the queue's
@@ -67,8 +82,7 @@ const SAVE = `WITH saved AS (INSERT INTO agboss_child_execution_queue AS queued 
     root_execution_id, parent_execution_id, root_workflow, workflow, depth, status, run, queued_at)
   VALUES ($1, $2, $3, $4, $5, $6, $7, 'queued', $8, $9)
   ON CONFLICT (tenant_id, execution_id) DO UPDATE SET status = 'queued', run = EXCLUDED.run,
-    queued_at = EXCLUDED.queued_at, instance_id = NULL, claimed_at = NULL, ended_at = NULL,
-    failure = NULL
+    queued_at = EXCLUDED.queued_at, instance_id = NULL ${CLEARED}
   WHERE queued.status = 'paused' OR (queued.status = 'running' AND queued.claimed_at = $10)
   RETURNING 1)
   SELECT pg_notify('${CHILD_QUEUED_CHANNEL}', current_schema()) FROM saved`;
@@ -84,12 +98,12 @@ const SAVE = `WITH saved AS (INSERT INTO agboss_child_execution_queue AS queued 
  */
 const CLAIM = `WITH first AS MATERIALIZED (
     SELECT tenant_id, execution_id FROM agboss_child_execution_queue WHERE status = 'queued'
-    ORDER BY depth DESC, queued_at LIMIT 1 FOR UPDATE SKIP LOCKED
+    ORDER BY depth DESC, queued_at LIMIT 1 ${ROW_LOCK}
   )
   UPDATE agboss_child_execution_queue AS queued
   SET status = 'running', instance_id = $1, claimed_at = $2
   FROM first
-  WHERE queued.tenant_id = first.tenant_id AND queued.execution_id = first.execution_id
+  WHERE queued.execution_id = first.execution_id ${OF_TENANT}
   RETURNING queued.*`;
 
 /**

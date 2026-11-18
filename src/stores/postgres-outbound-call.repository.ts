@@ -190,7 +190,8 @@ export class PostgresOutboundCallRepository extends OutboundCallRepository {
     await inLongTransaction(this.connection.pool, (client) =>
       changesOf(
         client,
-        "DELETE FROM agboss_outbound_calls WHERE ended_at IS NOT NULL AND ended_at < $1",
+        // a call not ended has no `ended_at`, which is never before the cutoff
+        "DELETE FROM agboss_outbound_calls WHERE ended_at < $1",
         [cutoff],
       ),
     );

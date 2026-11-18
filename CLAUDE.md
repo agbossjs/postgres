@@ -79,6 +79,12 @@ clock_timestamp())`, the parameter the test's clock only when `StoreClock.source
   (`tests/contracts/store-conformance.test.ts`, agbossjs/agboss#526) against the real database,
   nothing left out (`without`); every migration path and every error has a test. Tests fail
   without a database, never skip.
+- Stryker cannot see a clause inside a SQL string: it replaces the whole string with `""` and never
+  drops one clause. A clause a statement's safety rests on — a row lock, `SKIP LOCKED`, an `ON CONFLICT`
+  target, a tenant, token or state predicate — has a test that fails without it (a lock: two
+  connections and `pg_blocking_pids`, no timer; a predicate: two tenants that share every id), and a
+  lock, a target or a trailing `AND …` guard is a constant of its own, so the shard drops it too
+  (agbossjs/agboss#1302, #1327).
 - Conveyor, labels, branches and PRs as agbossjs/agboss (see CONTRIBUTING.md).
 - Changelog: a fragment `changes/<issue>-<slug>.md` (`section:` + `issue:` header, entry mentioning
   `agbossjs/agboss#<issue>`; see `changes/README.md`), never an edit of `CHANGELOG.md` (CI fails it
