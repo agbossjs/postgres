@@ -127,6 +127,42 @@ describe("#1104: migrate refuses while an execution lease is live", () => {
     expect(error).toMatchObject({ code: "postgres.live-leases", count: 1, holders: ["pod-old"] });
   });
 
+  it.each([
+    [14, "superseded"],
+    [17, "finished"],
+  ] as const)(
+    "AC2: at the very migration that added %s (%s), a lease closed by it is not live",
+    async (version, column) => {
+      const url = await freshSchema();
+      const later = migrationsIn().filter((file) => file.version > version);
+      await migrateWith(
+        { url },
+        migrationsIn(
+          migrationsFolder(
+            Object.fromEntries(
+              later.map((file) => [
+                `${String(file.version).padStart(4, "0")}_${file.name}.sql`,
+                null,
+              ]),
+            ),
+          ),
+        ),
+      );
+      await onSchema(
+        url,
+        `INSERT INTO agboss_execution_leases
+           (tenant_id, root_execution_id, holder_instance_id, lease_epoch, expires_at, released, ${column})
+         VALUES ('default', 'run-1', 'pod-old', 1, clock_timestamp() + interval '1 hour', false, true)`,
+      );
+
+      const report = await migratePostgres({ url });
+
+      expect(report.applied.map((migration) => migration.version)).toEqual(
+        later.map((file) => file.version),
+      );
+    },
+  );
+
   it("AC5: a database with no history (the first migrate) has no leases to look at", async () => {
     const report = await migratePostgres({ url: await freshSchema() });
 

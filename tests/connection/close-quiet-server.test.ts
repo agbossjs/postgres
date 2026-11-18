@@ -22,11 +22,11 @@ let server: PausableServer;
 beforeAll(async () => {
   server = await startPostgres();
 }, 120_000);
-afterEach(() => {
-  server.unpause();
+afterEach(async () => {
+  await server.unpause();
 });
-afterAll(() => {
-  server.remove();
+afterAll(async () => {
+  await server.remove();
 });
 
 async function connected(): Promise<PostgresConnection> {
@@ -39,11 +39,11 @@ describe.skipIf(!HAS_DOCKER)("#923: onDestroy against a paused PostgreSQL", () =
   it("idle: onDestroy returns, no unhandled rejection after the unpause", async () => {
     const unhandled = watchUnhandled();
     const connection = await connected();
-    server.pause();
+    await server.pause();
     await sleep(500);
 
     const outcome = await endsWithin(connection.onDestroy(), MARGIN_MS);
-    server.unpause();
+    await server.unpause();
     await sleep(2000);
     unhandled.stop();
 
@@ -54,13 +54,13 @@ describe.skipIf(!HAS_DOCKER)("#923: onDestroy against a paused PostgreSQL", () =
   it("with a statement in flight (a running execution's call): onDestroy returns", async () => {
     const unhandled = watchUnhandled();
     const connection = await connected();
-    server.pause();
+    await server.pause();
     await sleep(500);
     // the statement is never answered (pg leaves it pending once the pool ended): not awaited
     connection.ping().catch((): undefined => undefined);
 
     const outcome = await endsWithin(connection.onDestroy(), MARGIN_MS);
-    server.unpause();
+    await server.unpause();
     await sleep(2000);
     unhandled.stop();
 

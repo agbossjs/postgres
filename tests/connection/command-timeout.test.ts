@@ -255,7 +255,8 @@ describe("a retention's delete runs under the long timeout", () => {
 
     const deleting = retention.deleteByCreatedAtBefore(new Date());
     const ordinary = await settle(connection.pool.query("DELETE FROM agboss_mesh_requests"));
-    await new Promise((resolve) => setTimeout(resolve, 600));
+    // past the command timeout and pg's own limit a second after it: only the long timeout waits
+    await new Promise((resolve) => setTimeout(resolve, 1600));
     await holder.query("ROLLBACK");
 
     expect(ordinary).toBeInstanceOf(StoreCallTimeoutError);

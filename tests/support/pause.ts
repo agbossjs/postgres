@@ -1,10 +1,11 @@
-import { execFileSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createServer, Socket } from "node:net";
 import { Clock } from "@agboss/core";
 import type { Milliseconds } from "@agboss/core/units";
+import { outputOf } from "./process.js";
 
 /**
  * A server of the stop tests' own (agbossjs/agboss#923): a container started for the test file,
@@ -12,17 +13,13 @@ import type { Milliseconds } from "@agboss/core/units";
  * sockets stay open — a hung network, a frozen server) and removed after. Without Docker the
  * tests are skipped. Nothing else shares it, so pausing it disturbs no other test.
  */
-const docker = (...args: string[]): string =>
-  execFileSync("docker", args, { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+const docker = async (...args: string[]): Promise<string> =>
+  (await outputOf("docker", args)).trim();
 
-export const HAS_DOCKER = ((): boolean => {
-  try {
-    docker("info");
-    return true;
-  } catch {
-    return false;
-  }
-})();
+export const HAS_DOCKER = await docker("info").then(
+  () => true,
+  () => false,
+);
 
 /** A free TCP port of the host. */
 export function freePort(): Promise<number> {
@@ -42,10 +39,10 @@ export const sleep = (ms: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, ms));
 
 /** Runs `probe` until it passes (a server booting), up to `tries` seconds. */
-export async function untilReady(probe: () => void, tries = 60): Promise<void> {
+export async function untilReady(probe: () => Promise<unknown>, tries = 60): Promise<void> {
   for (let attempt = 0; ; attempt += 1) {
     try {
-      probe();
+      await probe();
       return;
     } catch (error) {
       if (attempt >= tries) throw error;
@@ -57,39 +54,33 @@ export async function untilReady(probe: () => void, tries = 60): Promise<void> {
 /** The container a test file pauses. */
 export interface PausableServer {
   readonly url: string;
-  pause(): void;
-  unpause(): void;
-  remove(): void;
+  pause(): Promise<void>;
+  unpause(): Promise<void>;
+  remove(): Promise<void>;
 }
 
 export function serverOf(name: string, url: string): PausableServer {
   return {
     url,
-    pause: () => {
-      docker("pause", name);
+    pause: async () => {
+      await docker("pause", name);
     },
-    unpause: () => {
-      try {
-        docker("unpause", name);
-      } catch {
-        // not paused
-      }
+    unpause: async () => {
+      // not paused: nothing to undo
+      await docker("unpause", name).catch(() => undefined);
     },
-    remove: () => {
-      try {
-        docker("rm", "-f", name);
-      } catch {
-        // already gone
-      }
+    remove: async () => {
+      // already gone: nothing to remove
+      await docker("rm", "-f", name).catch(() => undefined);
     },
   };
 }
 
 /** A PostgreSQL in its own container, ready. */
 export async function startPostgres(): Promise<PausableServer> {
-  const name = `agboss-923-postgres-${String(process.pid)}`;
+  const name = `agboss-923-postgres-${randomUUID()}`;
   const port = await freePort();
-  docker(
+  await docker(
     ...[
       "run",
       "-d",
@@ -102,12 +93,12 @@ export async function startPostgres(): Promise<PausableServer> {
     ],
     ...["-e", "POSTGRES_PASSWORD=pw", "-p", `127.0.0.1:${String(port)}:5432`, "postgres:16"],
   );
-  await untilReady(() => {
-    docker("exec", name, "pg_isready", "-U", "postgres", "-h", "127.0.0.1");
+  await untilReady(async () => {
+    await docker("exec", name, "pg_isready", "-U", "postgres", "-h", "127.0.0.1");
   });
   await sleep(2000); // the entrypoint restarts the server once after its first start
-  await untilReady(() => {
-    docker("exec", name, "pg_isready", "-U", "postgres", "-h", "127.0.0.1");
+  await untilReady(async () => {
+    await docker("exec", name, "pg_isready", "-U", "postgres", "-h", "127.0.0.1");
   });
   return serverOf(name, `postgres://postgres:pw@127.0.0.1:${String(port)}/postgres`);
 }
@@ -117,10 +108,10 @@ export async function startPostgres(): Promise<PausableServer> {
  * container: a client of `sslmode=no-verify` upgrades its socket to TLS (agbossjs/agboss#954).
  */
 export async function startPostgresTls(): Promise<PausableServer> {
-  const name = `agboss-954-postgres-tls-${String(process.pid)}`;
+  const name = `agboss-954-postgres-tls-${randomUUID()}`;
   const port = await freePort();
   const dir = mkdtempSync(join(tmpdir(), "agboss-954-tls-"));
-  execFileSync(
+  await outputOf(
     "openssl",
     ["req", "-new", "-x509", "-days", "2", "-nodes", "-subj", "/CN=127.0.0.1"].concat([
       "-out",
@@ -128,12 +119,11 @@ export async function startPostgresTls(): Promise<PausableServer> {
       "-keyout",
       join(dir, "server.key"),
     ]),
-    { stdio: "ignore" },
   );
   // the key must belong to the server's user with mode 0600: copied inside, the mount is read-only
   const prepare =
     "cp /tls/server.crt /tls/server.key /var/lib/postgresql/ && chown postgres /var/lib/postgresql/server.* && chmod 600 /var/lib/postgresql/server.key && exec docker-entrypoint.sh postgres -c ssl=on -c ssl_cert_file=/var/lib/postgresql/server.crt -c ssl_key_file=/var/lib/postgresql/server.key";
-  docker(
+  await docker(
     ...[
       "run",
       "-d",
@@ -147,12 +137,12 @@ export async function startPostgresTls(): Promise<PausableServer> {
     ...["-e", "POSTGRES_PASSWORD=pw", "-v", `${dir}:/tls:ro`],
     ...["-p", `127.0.0.1:${String(port)}:5432`, "--entrypoint", "sh", "postgres:16", "-c", prepare],
   );
-  await untilReady(() => {
-    docker("exec", name, "pg_isready", "-U", "postgres", "-h", "127.0.0.1");
+  await untilReady(async () => {
+    await docker("exec", name, "pg_isready", "-U", "postgres", "-h", "127.0.0.1");
   });
   await sleep(2000);
-  await untilReady(() => {
-    docker("exec", name, "pg_isready", "-U", "postgres", "-h", "127.0.0.1");
+  await untilReady(async () => {
+    await docker("exec", name, "pg_isready", "-U", "postgres", "-h", "127.0.0.1");
   });
   return serverOf(
     name,

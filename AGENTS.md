@@ -15,7 +15,18 @@ PostgreSQL (`AGBOSS_POSTGRES_TEST_URL`) · api-extractor (`api/postgres.api.md`)
 
 - `npm run pack:framework && npm run install:packed` — `@agboss/core` and `@agboss/cli` at the SHA
   pinned in `.agboss-version.json` (pin the current agboss `main` when a store needs a newer core).
-- `npm run check` — format, suppressions (budget 0), flow types (`check:types`: the CLI's
+- `npm run check` (`make check`) — `npm run check:static`, then the tests with coverage.
+- `npm run check:static` (`make static`; run it before queueing for a gate, agbossjs/agboss#1213) —
+  the root allowlist (`check:root`, `.root-allowlist`), unused files and dependencies
+  (`check:knip`, `knip.jsonc`), the docs (`check:docs`: every README ts block compiles against the
+  build — `file=`, `no-check: <reason>`, `<!-- snippet-context -->` as the core's — and every
+  `npm run …` / `scripts/…` they name exists), and the stages below but the tests.
+- `MUTATION_SHARD=<shard> npm run test:mutation` (`make mutation SHARD=<shard>`) — Stryker on one
+  shard of `scripts/mutation-shards.mjs` (`fencing`, `effects-and-calls`, `pauses`, `money`,
+  `migrations`, `store-bound`) against `AGBOSS_POSTGRES_TEST_URL`; below 100 % killed or justified it
+  fails (agbossjs/agboss#1213). CI runs each shard incrementally, cold when the mutation setup
+  changes, `mutation-nightly.yml` every night cold; run every shard a change touches locally first.
+- What `npm run check` runs: format, suppressions (budget 0), flow types (`check:types`: the CLI's
   `agboss check` on `tests/fixtures/`, writes the uncommitted `.agboss/types.d.ts`), lint, types,
   tests with coverage, API report.
 - `npx agboss-postgres migrate --url <url> [--schema <name>]` — the migrations (after `npm run build`).

@@ -46,10 +46,8 @@ export function closedNotices(
 ): readonly PlannedNotice[] {
   const reason = pauseClosedReasonOf(closed, at);
   const closedAt = closedAtOf(closed);
-  return noticesOf(recipients, PauseNoticeKind.Closed, at, {
-    ...(reason === undefined ? {} : { reason }),
-    ...(closedAt === undefined ? {} : { closedAt }),
-  });
+  // an undefined fact is no key in the notice's JSON
+  return noticesOf(recipients, PauseNoticeKind.Closed, at, { reason, closedAt });
 }
 
 /** The `answerNotTaken` notice: why it closed and when. */
@@ -68,7 +66,7 @@ export const untakenNotices = (
 
 /** The instant of a record's time text; a record stored before `askedAt` (empty) is the epoch. */
 function instantOf(text: string | undefined): Date {
-  const instant = new Date(text ?? "");
+  const instant = new Date(String(text)); // no text, like an empty one, is no instant
   return Number.isNaN(instant.getTime()) ? new Date(0) : instant;
 }
 
@@ -83,12 +81,9 @@ export function markSentNotices(
   pause: PauseRecord,
   recipients: PauseRecipients,
 ): readonly PlannedNotice[] {
-  const opened = noticesOf(
-    recipients,
-    PauseNoticeKind.Opened,
-    instantOf(pause.askedAt),
-    pause.expiresAt === undefined ? {} : { expiresAt: pause.expiresAt },
-  );
+  const opened = noticesOf(recipients, PauseNoticeKind.Opened, instantOf(pause.askedAt), {
+    expiresAt: pause.expiresAt,
+  });
   if (pause.status === PauseStatus.Pending) return opened;
   const closed = closedNotices(
     pause,

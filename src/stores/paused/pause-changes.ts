@@ -56,7 +56,7 @@ const OPEN = "AND (expires_at IS NULL OR expires_at > $4)";
 const DUE = "AND expires_at IS NOT NULL AND expires_at <= $4";
 
 /** The statement: the pause `$6` closed as the patch `$5` says, its status column `$3`, `resolved_at` `$4`. */
-const closing = (extra: string, resolution = "record"): string =>
+const closing = (extra: string, resolution: string): string =>
   `UPDATE agboss_pauses SET status = $3, resolved_at = $4, record = ${resolution}
    WHERE tenant_id = $1 AND pause_id = $2 AND status = $6 ${extra} RETURNING record`;
 
@@ -182,7 +182,7 @@ export class PauseChanges {
           status: PauseStatus.Cancelled,
           resolution: PauseResolution.Expired,
           resolvedAt,
-          ...(expiry.problem === undefined ? {} : { expiryProblem: expiry.problem }),
+          expiryProblem: expiry.problem, // undefined is no key in the JSON
         };
     const change = {
       from: PauseStatus.Pending,

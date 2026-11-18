@@ -41,6 +41,9 @@ export type StepIndexResult = "built" | "present" | "skipped";
 
 const IndexState = z.object({ valid: z.boolean().nullable() });
 
+/** The answer of the build's lock: whether this session got it. */
+const LockRow = z.object({ got: z.boolean() });
+
 /**
  * How long a drop of an INVALID index waits for a lock (agbossjs/agboss#1116). `DROP INDEX
  * CONCURRENTLY` waits for every transaction that holds a lock on `checkpoints`, even an idle one;
@@ -58,8 +61,9 @@ export class StepIndexFailure extends Error {
     override readonly cause: unknown,
     readonly invalidIndexLeft: boolean,
   ) {
-    super(cause instanceof Error ? cause.message : String(cause), { cause });
-    this.name = "StepIndexFailure";
+    // internal: `migrateWith` turns it into `PostgresStepIndexError`, the background build drops
+    // it, so neither a name nor the `cause` option (the parameter property sets it) is read
+    super(cause instanceof Error ? cause.message : String(cause));
   }
 }
 
@@ -80,11 +84,11 @@ export async function buildStepIndex(options: {
   await client.connect();
   try {
     const { schema } = options;
-    const got = await client.query<{ got: boolean }>(
-      "SELECT pg_try_advisory_lock($1, hashtext($2)) AS got",
-      [INDEX_LOCK_KEY, schema],
-    );
-    if (got.rows[0]?.got !== true) return "skipped";
+    const { rows } = await client.query("SELECT pg_try_advisory_lock($1, hashtext($2)) AS got", [
+      INDEX_LOCK_KEY,
+      schema,
+    ]);
+    if (!LockRow.parse(rows[0]).got) return "skipped";
     return await buildLocked(client, schema);
   } finally {
     await client.end();

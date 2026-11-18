@@ -32,11 +32,11 @@ beforeAll(async () => {
   process.env.AGBOSS_STOP_DATABASE_URL = server.url;
   process.env.AGBOSS_STOP_OPENROUTER_KEY = "placeholder";
 }, 120_000);
-afterEach(() => {
-  if (HAS_DOCKER) server.unpause();
+afterEach(async () => {
+  if (HAS_DOCKER) await server.unpause();
 });
-afterAll(() => {
-  if (HAS_DOCKER) server.remove();
+afterAll(async () => {
+  if (HAS_DOCKER) await server.remove();
 });
 
 async function closedAgainstPausedServer(running: boolean): Promise<{
@@ -55,18 +55,18 @@ async function closedAgainstPausedServer(running: boolean): Promise<{
       await sleep(1500);
     }
     await sleep(500);
-    server.pause();
+    await server.pause();
     await sleep(1000);
 
     await app.close({ timeout: seconds(5) });
     const open = sockets.open();
-    server.unpause();
+    await server.unpause();
     await sleep(500);
     return { open, unhandled: unhandled.seen };
   } finally {
     sockets.stop();
     unhandled.stop();
-    server.unpause();
+    await server.unpause();
   }
 }
 
@@ -101,7 +101,7 @@ describe.skipIf(!HAS_DOCKER)("#954 AC3: an abandoned execute() settles with a ty
         (error: unknown): unknown => error,
       );
       await sleep(1500);
-      server.pause();
+      await server.pause();
       await sleep(1000);
 
       await app.close({ timeout: seconds(5) });
@@ -113,7 +113,7 @@ describe.skipIf(!HAS_DOCKER)("#954 AC3: an abandoned execute() settles with a ty
     } finally {
       sockets.stop();
       unhandled.stop();
-      server.unpause();
+      await server.unpause();
     }
   }, 60_000);
 });
@@ -136,7 +136,7 @@ describe.skipIf(!HAS_DOCKER)("#954: a listener that reconnects while the connect
       },
       onNotify: () => undefined,
     });
-    server.pause();
+    await server.pause();
     for (let waited = 0; lost.length === 0 && waited < 10_000; waited += 100) await sleep(100);
     expect(lost.length).toBeGreaterThan(0);
     return { connection, sockets };
@@ -157,7 +157,7 @@ describe.skipIf(!HAS_DOCKER)("#954: a listener that reconnects while the connect
     } finally {
       sockets.stop();
       unhandled.stop();
-      server.unpause();
+      await server.unpause();
     }
   }, 60_000);
 
@@ -179,7 +179,7 @@ describe.skipIf(!HAS_DOCKER)("#954: a listener that reconnects while the connect
       expect(sockets.open()).toBe(0);
     } finally {
       sockets.stop();
-      server.unpause();
+      await server.unpause();
     }
   }, 60_000);
 });
@@ -195,7 +195,7 @@ describe.skipIf(!HAS_DOCKER)("#954: a client checked out of the pool by its hold
     const connection = new PostgresConnection({ url: server.url });
     try {
       const client = await connection.pool.connect();
-      server.pause();
+      await server.pause();
       await sleep(300);
       const statement = client.query("SELECT 1").then(
         () => "answered",
@@ -211,7 +211,7 @@ describe.skipIf(!HAS_DOCKER)("#954: a client checked out of the pool by its hold
     } finally {
       process.off("uncaughtException", onCrash);
       unhandled.stop();
-      server.unpause();
+      await server.unpause();
     }
   }, 60_000);
 });
@@ -221,8 +221,8 @@ describe.skipIf(!HAS_DOCKER)("#954: a client whose socket was upgraded to TLS", 
   beforeAll(async () => {
     tls = await startPostgresTls();
   }, 120_000);
-  afterAll(() => {
-    tls.remove();
+  afterAll(async () => {
+    await tls.remove();
   });
 
   it("the stop destroys the TLS stream pg works over, not only the socket it was given", async () => {
@@ -231,7 +231,7 @@ describe.skipIf(!HAS_DOCKER)("#954: a client whose socket was upgraded to TLS", 
       const client = await connection.pool.connect();
       const stream: unknown = Reflect.get(Reflect.get(client, "connection"), "stream");
       expect(stream).toBeInstanceOf(TLSSocket);
-      tls.pause();
+      await tls.pause();
       await sleep(300);
       client.query("SELECT 1").catch((): undefined => undefined);
 
@@ -239,7 +239,7 @@ describe.skipIf(!HAS_DOCKER)("#954: a client whose socket was upgraded to TLS", 
 
       expect((stream as TLSSocket).destroyed).toBe(true);
     } finally {
-      tls.unpause();
+      await tls.unpause();
     }
   }, 60_000);
 });

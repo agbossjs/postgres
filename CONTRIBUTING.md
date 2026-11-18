@@ -10,7 +10,8 @@ every change starts as an issue there (stage = its `status:*` label: Triage → 
    `docker run -d -e POSTGRES_PASSWORD=pw -p 5432:5432 postgres:16` and
    `export AGBOSS_POSTGRES_TEST_URL=postgres://postgres:pw@localhost:5432/postgres`.
 2. `npm ci && npm run pack:framework && npm run install:packed` — the core at the pinned SHA.
-3. `npm run check` — the gate CI runs too (with a `postgres:16` service).
+3. `npm run check` — the gate CI runs too (with a `postgres:16` service); its first half,
+   `npm run check:static`, needs no database.
 
 ## Branches, commits, PRs
 

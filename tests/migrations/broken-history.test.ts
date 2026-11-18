@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { ZodError } from "zod";
 import { migratePostgres, PostgresConnection } from "../../src/index.js";
 import { freshSchema, onSchema } from "../support/database.js";
 
@@ -26,6 +27,7 @@ describe("an unreadable history", () => {
       "CREATE TABLE checkpoint_migrations (v text); INSERT INTO checkpoint_migrations VALUES ('x')",
     );
 
-    await expect(migratePostgres({ url })).rejects.toThrow();
+    // the package's own read of it fails, before LangGraph's setup is asked anything
+    await expect(migratePostgres({ url })).rejects.toBeInstanceOf(ZodError);
   });
 });

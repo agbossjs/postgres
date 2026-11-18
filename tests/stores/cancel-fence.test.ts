@@ -127,6 +127,46 @@ describe("agbossjs/agboss#909, #1117: the cancel's fence is the root lease row's
     }
   });
 
+  it("a child's open fencing transaction holds its root's row although the root never had one: a cancel of the root waits for it", async () => {
+    const { effects, leases } = storesOn(connectionTo(database.url()));
+    const other = storesOn(connectionTo(database.url()));
+    const child = await leases.acquire("default", "child-race", hours(1));
+    const key = effectKeyForTesting({
+      scopeKey: "default:child-race",
+      tenantId: "default",
+      leaseExecutionId: "child-race",
+      rootExecutionId: "root-never-held",
+      token: child?.token ?? 0,
+      idempotencyKey: "child-race:charge-action:1:charge",
+      name: "charge",
+    });
+    let open = (): void => undefined;
+    const opened = new Promise<void>((resolve) => {
+      open = resolve;
+    });
+    let isInside = (): void => undefined;
+    const inside = new Promise<void>((resolve) => {
+      isInside = resolve;
+    });
+
+    const write = effects.runOnce(key, async () => {
+      isInside();
+      await opened;
+      return { receipt: "r1" };
+    });
+    await inside;
+    const cancel = other.leases.requestCancel({
+      tenantId: "default",
+      rootExecutionId: "root-never-held",
+    });
+
+    // the root's seed row is the child's to share until its transaction ends
+    expect(await settledWithin(cancel, 400)).toBe(false);
+    open();
+    expect((await write).status).toBe(FencedEffectStatus.Ran);
+    await cancel;
+  });
+
   it("a cancel of one tree never waits for another tree's open transaction", async () => {
     const { effects, leases } = storesOn(connectionTo(database.url()));
     const lease = await leases.acquire("default", "root-cancel-3", hours(1));

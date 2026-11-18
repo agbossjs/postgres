@@ -143,13 +143,19 @@ const SAVE_EXECUTION_ID = `INSERT INTO agboss_execution_ids (execution_id, tenan
 /** A lease's time left as the store answered it (never below 0). */
 const remainingOf = (value: number): Milliseconds => Math.max(0, value) as Milliseconds;
 
-const TakenRow = z.object({
-  token: z.number(),
-  expires_at: z.date(),
-  remaining: z.number(),
-  previous_holder: z.string().nullable(),
-  previous_token: z.number().nullable(),
-});
+const TakenRow = z
+  .object({
+    token: z.number(),
+    expires_at: z.date(),
+    remaining: z.number(),
+  })
+  .and(
+    // both from the one previous row, or both null (none, or not taken over)
+    z.union([
+      z.object({ previous_holder: z.null(), previous_token: z.null() }),
+      z.object({ previous_holder: z.string(), previous_token: z.number() }),
+    ]),
+  );
 
 /**
  * `ExecutionLeaseRepository` on PostgreSQL (#265, #482): one row per tree with its latest lease.
@@ -202,7 +208,7 @@ export class PostgresExecutionLeaseRepository extends ExecutionLeaseRepository {
       ...{ tenantId, rootExecutionId, holderInstanceId, token: row.token },
       ...{ expiresAt: row.expires_at, remaining: remainingOf(row.remaining) },
     };
-    return row.previous_holder === null || row.previous_token === null
+    return row.previous_holder === null
       ? held
       : {
           ...held,
@@ -263,7 +269,8 @@ export class PostgresExecutionLeaseRepository extends ExecutionLeaseRepository {
        WHERE tenant_id = $1 AND root_execution_id = $2`,
       [tree.tenantId, tree.rootExecutionId],
     );
-    return row !== undefined && Reflect.get(Object(row), "is_cancelled") === true;
+    // no row reads as `{}`: not requested
+    return Reflect.get(Object(row), "is_cancelled") === true;
   }
 
   /** `sql`'s first row, run after `lease`'s row is locked, in one transaction (review M1). */

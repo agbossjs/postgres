@@ -54,11 +54,8 @@ const KeysOf = z.array(z.object({ tenant_id: z.string(), pause_id: z.string() })
 function pageOf(rows: readonly unknown[], limit: number): PausePage {
   const sequenced = rows.map((row) => SequencedRow.parse(row));
   const page = sequenced.slice(0, limit);
-  const last = page.at(-1);
-  return {
-    pauses: page.map(recordOfRow),
-    ...(sequenced.length > limit && last !== undefined ? { next: last.seq } : {}),
-  };
+  const last = page.at(-1)?.seq; // undefined only for an empty page, which has no more after it
+  return { pauses: page.map(recordOfRow), ...(sequenced.length > limit ? { next: last } : {}) };
 }
 
 export class PauseScans {

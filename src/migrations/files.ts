@@ -18,7 +18,7 @@ export interface MigrationFile {
 /** The package's `migrations/` folder: next to `dist/` and `src/`, so both find it. */
 export const PACKAGE_MIGRATIONS = fileURLToPath(new URL("../../migrations/", import.meta.url));
 
-const FILE_NAME = /^(\d{4})_([a-z0-9_]+)\.sql$/;
+const FILE_NAME = /^\d{4}_[a-z0-9_]+\.sql$/;
 
 /** The SHA-256 of a migration's text, its line ends as LF (a Windows checkout changes nothing). */
 export const checksumOf = (sql: string): string =>
@@ -26,10 +26,15 @@ export const checksumOf = (sql: string): string =>
 
 /** One file of the folder as a migration; `undefined` for a file that is not one. */
 function migrationOf(folder: string, file: string): MigrationFile | undefined {
-  const match = FILE_NAME.exec(file);
-  if (match?.[1] === undefined || match[2] === undefined) return undefined;
+  if (!FILE_NAME.test(file)) return undefined;
   const sql = readFileSync(join(folder, file), "utf8");
-  return { version: Number(match[1]), name: match[2], sql, checksum: checksumOf(sql) };
+  // `NNNN_<name>.sql`: four digits, the underscore, the name, the extension
+  return {
+    version: Number(file.slice(0, 4)),
+    name: file.slice(5, -".sql".length),
+    sql,
+    checksum: checksumOf(sql),
+  };
 }
 
 /**

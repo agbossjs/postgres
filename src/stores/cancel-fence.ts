@@ -56,10 +56,10 @@ export async function checkCancel(
 ): Promise<void> {
   if (key.isCompensation === true) return;
   const tree = cancelTreeOf(key);
-  // a child's check may find no row of its root yet: one is seeded, so there is a row to lock
-  if (tree.rootExecutionId !== key.leaseExecutionId)
-    await changesOf(client, SEED, [tree.tenantId, tree.rootExecutionId, now]);
+  // a child's check may find no row of its root yet: one is seeded, so there is a row to lock (the
+  // root's own key finds its lease row, locked by the fence: the seed changes nothing)
+  await changesOf(client, SEED, [tree.tenantId, tree.rootExecutionId, now]);
   const row = await firstRowOf(client, FIND, [tree.tenantId, tree.rootExecutionId]);
-  const isCancelled = row !== undefined && Reflect.get(Object(row), "is_cancelled") === true;
+  const isCancelled = Reflect.get(Object(row), "is_cancelled") === true;
   if (isCancelled) throw ExecutionCancelFencedError.of(key);
 }

@@ -3,11 +3,11 @@
  * asserts a real-time duration against a fixed threshold, and this repository has none. The planted
  * assertions are built from parts, so this file itself holds none.
  */
-import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
+import { runNode } from "../support/process.js";
 
 const repo = new URL("../../", import.meta.url).pathname;
 const scratch = mkdtempSync(join(tmpdir(), "agboss-check-real-time-"));
@@ -98,18 +98,16 @@ describe("AC2: what is not a real-time threshold passes", () => {
 
 describe("AC2: the command", () => {
   const checkRealTime = (root: string) =>
-    spawnSync(process.execPath, [join(repo, "scripts/check-real-time.mjs"), root], {
-      encoding: "utf8",
-    });
+    runNode([join(repo, "scripts/check-real-time.mjs"), root]);
 
-  it("AC2: this repository's tests assert no real-time threshold, exit 0", () => {
-    const ran = checkRealTime(repo);
+  it("AC2: this repository's tests assert no real-time threshold, exit 0", async () => {
+    const ran = await checkRealTime(repo);
 
     expect(ran.stderr).toBe("");
     expect(ran.status).toBe(0);
   });
 
-  it("AC2: a planted one fails, exit 1, naming the file and line", () => {
+  it("AC2: a planted one fails, exit 1, naming the file and line", async () => {
     mkdirSync(join(scratch, "tests"), { recursive: true });
     writeFileSync(
       join(scratch, "tests", "slow.test.ts"),
@@ -120,7 +118,7 @@ describe("AC2: the command", () => {
       assertion("Date.now() - s", "toBeLessThan", "9"),
     );
 
-    const ran = checkRealTime(scratch);
+    const ran = await checkRealTime(scratch);
 
     expect(ran.status).toBe(1);
     expect(ran.stderr).toContain("tests/slow.test.ts:2: expect(Date.now() - started)");

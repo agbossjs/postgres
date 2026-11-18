@@ -9,7 +9,11 @@ import {
   PostgresLiveLeasesError,
 } from "../../src/index.js";
 import { migrationsIn } from "../../src/migrations/files.js";
-import { leaseWaitFor, waitForLeasesToLapse } from "../../src/migrations/live-leases.js";
+import {
+  DEFAULT_LEASE_WAIT,
+  leaseWaitFor,
+  waitForLeasesToLapse,
+} from "../../src/migrations/live-leases.js";
 import { migrateWith, migratePostgres } from "../../src/migrations/migrate.js";
 import { checkSchema } from "../../src/migrations/schema-check.js";
 import { TestApplicationContext, revealing } from "../support/application-context.js";
@@ -51,8 +55,15 @@ async function schemaWithLease(ms: number): Promise<string> {
   return url;
 }
 
+/**
+ * Every session of these tests ends a statement past a minute on the server: a wait whose poll
+ * asked for far longer (a mutant's `pg_sleep`) is cancelled there, never left holding a snapshot
+ * every later `CREATE INDEX CONCURRENTLY` of the database waits for.
+ */
+const SLEEP_BOUND_MS = 60_000;
+
 const startOf = (url: string, extra: object = {}): Promise<void> => {
-  const pool = new pg.Pool({ connectionString: url, max: 2 });
+  const pool = new pg.Pool({ connectionString: url, max: 2, statement_timeout: SLEEP_BOUND_MS });
   pools.push(pool);
   return checkSchema({
     url,
@@ -154,6 +165,39 @@ describe("#1104: how long the start waits", () => {
     expect((await historyOf(url)).at(-1)).toBe(NEWEST);
   });
 
+  it("a lease that never lapses is looked at once per poll of the wait, then refused: 600 ms of 200 ms polls is 3", async () => {
+    const url = await schemaWithLease(3_600_000);
+    const client = new pg.Client({ connectionString: url, statement_timeout: SLEEP_BOUND_MS });
+    await client.connect();
+    const counted = sleepsOf(client);
+
+    const error = await waitForLeasesToLapse(counted.client, FILES.length - 3, {
+      maxMs: 600,
+      pollMs: 200,
+      capMs: 600,
+    }).catch((reason: unknown) => reason);
+    await client.end();
+
+    expect(error).toBeInstanceOf(PostgresLiveLeasesError);
+    expect(counted.sleeps()).toBe(3);
+  });
+
+  it("the default wait (a minute, polled every second): a lease lapsing within 1.5 s is two looks, and the start migrates", async () => {
+    const url = await schemaWithLease(1_500);
+    const client = new pg.Client({ connectionString: url, statement_timeout: SLEEP_BOUND_MS });
+    await client.connect();
+    const counted = sleepsOf(client);
+
+    await waitForLeasesToLapse(counted.client, FILES.length - 3, DEFAULT_LEASE_WAIT);
+    await client.end();
+    // no leaseWait: the start's own default
+    await startOf(url, { leaseWait: undefined });
+
+    expect(counted.sleeps()).toBeGreaterThanOrEqual(1);
+    expect(counted.sleeps()).toBeLessThanOrEqual(2);
+    expect((await historyOf(url)).at(-1)).toBe(NEWEST);
+  });
+
   it("a lease past the cap is refused, not waited for", async () => {
     const url = await schemaWithLease(5_000);
 
@@ -198,7 +242,7 @@ describe("#1104: the wait polls only while a lease is live", () => {
   it("no live lease: no pg_sleep at all, the start goes on at once", async () => {
     const url = await freshSchema();
     await migratePostgres({ url });
-    const client = new pg.Client({ connectionString: url });
+    const client = new pg.Client({ connectionString: url, statement_timeout: SLEEP_BOUND_MS });
     await client.connect();
     const counted = sleepsOf(client);
 
@@ -210,7 +254,7 @@ describe("#1104: the wait polls only while a lease is live", () => {
 
   it("a live lease that lapses: the wait sleeps, and only until it has lapsed", async () => {
     const url = await schemaWithLease(1_000);
-    const client = new pg.Client({ connectionString: url });
+    const client = new pg.Client({ connectionString: url, statement_timeout: SLEEP_BOUND_MS });
     await client.connect();
     const counted = sleepsOf(client);
 

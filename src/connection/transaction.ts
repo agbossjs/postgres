@@ -36,10 +36,8 @@ export async function inPoolTransaction<TResult>(
   const client = await pool.connect();
   let isBroken = false;
   // a checked-out connection that drops emits `error` (the pool listens on idle ones only): the
-  // statement in flight rejects with it, the connection is not given back
-  const onLost = (): void => {
-    isBroken = true;
-  };
+  // statement in flight rejects with it, read below
+  const onLost = (): undefined => undefined;
   client.on("error", onLost);
   try {
     await client.query("BEGIN");
@@ -51,12 +49,9 @@ export async function inPoolTransaction<TResult>(
     // the hung statement for another timeout) and not given back: the server rolls the transaction
     // back at the session's end (agbossjs/agboss#928). After the server's own cancel (57014) it
     // rolls back as usual.
-    if (isLostConnection(error)) isBroken = true;
-    else
-      await client.query("ROLLBACK").catch(() => {
-        // a connection whose rollback fails is not given back: the pool opens a new one
-        isBroken = true;
-      });
+    isBroken = isLostConnection(error);
+    // a rollback fails only on a connection that is gone, which the pool does not take back
+    if (!isBroken) await client.query("ROLLBACK").catch(() => undefined);
     throw error;
   } finally {
     client.off("error", onLost);

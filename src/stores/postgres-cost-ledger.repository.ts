@@ -76,11 +76,13 @@ const PRUNE = `WITH mark AS (
   DELETE FROM agboss_cost_entries WHERE made_at < (SELECT pruned_before FROM mark)`;
 
 /** What a save answers: the entries it refused and the mark, or none (both `null`). */
-const ExpiredRow = z.object({
-  marked: z.boolean(),
-  expired: z.array(z.string()).nullable(),
-  pruned_before: z.date().nullable(),
-});
+const ExpiredRow = z.object({ marked: z.boolean() }).and(
+  // the mark is named exactly when an entry was refused
+  z.union([
+    z.object({ expired: z.null(), pruned_before: z.null() }),
+    z.object({ expired: z.array(z.string()), pruned_before: z.date() }),
+  ]),
+);
 
 /** The entries of a save, one per `ledgerId` (the first), as the statement's arrays. */
 function entriesOf(given: readonly LedgerEntry[]): {
@@ -153,11 +155,14 @@ export class PostgresCostLedgerRepository extends CostLedgerRepository {
       costs,
       madeAt,
     ]);
-    const { marked, expired, pruned_before: prunedBefore } = ExpiredRow.parse(row);
+    const answer = ExpiredRow.parse(row);
     // without its mark the ledger cannot tell a pruned entry: nothing was added (agbossjs/agboss#771)
-    if (!marked) throw new PostgresLedgerMarkMissingError();
-    if (expired !== null && prunedBefore !== null)
-      throw new CostLedgerEntryExpiredError({ ledgerIds: expired, prunedBefore });
+    if (!answer.marked) throw new PostgresLedgerMarkMissingError();
+    if (answer.expired !== null)
+      throw new CostLedgerEntryExpiredError({
+        ledgerIds: answer.expired,
+        prunedBefore: answer.pruned_before,
+      });
   }
 
   async deleteByMadeAtBefore(cutoff: Date): Promise<void> {
