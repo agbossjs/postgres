@@ -12,9 +12,17 @@ import { storeNow } from "./store-time.js";
  * to the token (a higher one refuses the key before any of its rows is read).
  */
 
+/**
+ * The lock of the key's lease row: for a child's key the only lock its write holds on it (the
+ * cancel check locks the root's), so without it a renewal, a close or a takeover of the child's
+ * lease would not wait for the write (agbossjs/agboss#1302). A constant of its own, so the mutation
+ * shard drops it.
+ */
+const ROW_LOCK = "FOR UPDATE";
+
 /** The key's lease row, locked for the transaction: a renewal, a close or a takeover of it waits. */
 const LOCK_LEASE = `SELECT token, expires_at, released FROM agboss_execution_leases
-  WHERE tenant_id = $1 AND root_execution_id = $2 FOR UPDATE`;
+  WHERE tenant_id = $1 AND root_execution_id = $2 ${ROW_LOCK}`;
 
 /**
  * Raises the scope's mark to the token (never lowers it); the mark as it is now, and the store's

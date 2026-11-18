@@ -18,6 +18,7 @@ import {
 } from "../../src/index.js";
 import { TestApplicationContext } from "../support/application-context.js";
 import { testDatabase } from "../support/database.js";
+import { blockedBy, heldWrite } from "../support/held-write.js";
 import { connectionTo } from "../support/stores.js";
 
 /**
@@ -60,52 +61,6 @@ const settledWithin = (promise: Promise<unknown>, ms: number): Promise<boolean> 
       }, ms);
     }),
   ]);
-
-/**
- * A fenced write's work held open at a seam: `entered` (called inside the work, on its client)
- * records the backend of the write's transaction (`pid`), `released` settles on `release()`.
- */
-function backendOfWork() {
-  let release = (): void => undefined;
-  const released = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  let recordPid: (pid: number) => void = () => undefined;
-  const pid = new Promise<number>((resolve) => {
-    recordPid = resolve;
-  });
-  const entered = async (client: pg.PoolClient): Promise<void> => {
-    const { rows } = await client.query<{ pid: number }>("SELECT pg_backend_pid() AS pid");
-    recordPid(rows[0]?.pid ?? -1);
-  };
-  return { entered, released, release, pid };
-}
-
-/**
- * Settles `true` once a backend waits for a lock `pid` holds (`pg_blocking_pids`), `false` once
- * `unless` settles first; polls the server, no timer.
- */
-async function blockedBy(pid: number, unless: Promise<unknown>): Promise<boolean> {
-  const state = { isOver: false };
-  const over = (): void => {
-    state.isOver = true;
-  };
-  unless.then(over, over);
-  const client = new pg.Client({ connectionString: database.url() });
-  await client.connect();
-  try {
-    while (!state.isOver) {
-      const { rowCount } = await client.query(
-        "SELECT 1 FROM pg_stat_activity WHERE $1 = ANY(pg_blocking_pids(pid))",
-        [pid],
-      );
-      if ((rowCount ?? 0) > 0) return true;
-    }
-    return false;
-  } finally {
-    await client.end();
-  }
-}
 
 /** Whether the root's lease row carries a committed cancel mark (read on a connection of its own). */
 async function isMarked(root: string): Promise<boolean> {
@@ -247,7 +202,7 @@ describe("agbossjs/agboss#909, #1117: the cancel's fence is the root lease row's
         idempotencyKey: `child-1302:charge-action:1:${name}`,
         name,
       });
-    const writer = backendOfWork();
+    const writer = heldWrite();
 
     const write = effects.runOnce(keyFor("charge"), async (client) => {
       await writer.entered(client);
@@ -258,7 +213,7 @@ describe("agbossjs/agboss#909, #1117: the cancel's fence is the root lease row's
     const cancel = other.leases.requestCancel({ tenantId: "default", rootExecutionId: root });
 
     // the cancel either answers or is seen waiting on the child's transaction: never both
-    expect(await blockedBy(writerPid, cancel)).toBe(true);
+    expect(await blockedBy(database.url(), writerPid, cancel)).toBe(true);
     expect(await isMarked(root)).toBe(false);
     writer.release();
     expect((await write).status).toBe(FencedEffectStatus.Ran);

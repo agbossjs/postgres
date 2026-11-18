@@ -1,12 +1,22 @@
-import { StoreClock, StoreTimeSource } from "@agboss/core";
+import {
+  FencedEffectSettings,
+  FencedEffectStatus,
+  StoreClock,
+  StoreTimeSource,
+} from "@agboss/core";
 import { VirtualClock } from "@agboss/core/testing";
-import { seconds } from "@agboss/core/units";
+import { effectKeyForTesting } from "@agboss/core/testing/contracts";
+import { hours, seconds } from "@agboss/core/units";
 import pg from "pg";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
-import { PostgresExecutionLeaseRepository } from "../../src/index.js";
+import {
+  PostgresExecutionLeaseRepository,
+  PostgresFencedEffectRepository,
+} from "../../src/index.js";
 import { TestApplicationContext } from "../support/application-context.js";
 import { onSchema, testDatabase } from "../support/database.js";
+import { blockedBy, heldWrite } from "../support/held-write.js";
 import { connectionTo } from "../support/stores.js";
 
 /**
@@ -67,6 +77,75 @@ describe("acquire: the lease before it", () => {
     );
 
     expect(taken?.takenOverFrom).toEqual({ holderInstanceId: "instance-1", token: 1 });
+  });
+});
+
+describe("agbossjs/agboss#1302: a take racing a release in progress", () => {
+  it("waits for the release and reads it: the lease released is no lease taken over", async () => {
+    const clock = new StoreClock(StoreTimeSource.Test, new VirtualClock());
+    await leasesOn(clock, "instance-1").acquire("default", "root-released", hours(1));
+    // the holder's release, its transaction still open
+    const releasing = new pg.Client({ connectionString: database.url() });
+    await releasing.connect();
+    try {
+      const release = heldWrite();
+      await release.entered(releasing);
+      await releasing.query("BEGIN");
+      await releasing.query(
+        "UPDATE agboss_execution_leases SET released = true WHERE root_execution_id = $1",
+        ["root-released"],
+      );
+      const take = leasesOn(clock, "instance-2").acquire("default", "root-released", hours(1));
+
+      expect(await blockedBy(database.url(), await release.pid, take)).toBe(true);
+      await releasing.query("COMMIT");
+      const taken = await take;
+
+      expect(taken).toMatchObject({ holderInstanceId: "instance-2", token: 2 });
+      expect(taken).not.toHaveProperty("takenOverFrom");
+    } finally {
+      await releasing.end();
+    }
+  });
+});
+
+describe("agbossjs/agboss#1302: a fenced write holds its own lease row", () => {
+  it("a child's open fenced write: a renewal of the child's lease from another connection waits for it", async () => {
+    const clock = new StoreClock(StoreTimeSource.Test, new VirtualClock());
+    const connection = connectionTo(database.url());
+    const effects = new PostgresFencedEffectRepository(
+      connection,
+      clock,
+      new FencedEffectSettings(),
+    );
+    await leasesOn(clock, "instance-1").acquire("default", "root-of-1302", hours(1));
+    const child = await leasesOn(clock, "instance-1").acquire("default", "child-of-1302", hours(1));
+    if (child === undefined) throw new Error("the take must succeed");
+    const writer = heldWrite();
+
+    const write = effects.runOnce(
+      effectKeyForTesting({
+        scopeKey: "default:child-of-1302",
+        tenantId: "default",
+        leaseExecutionId: "child-of-1302",
+        rootExecutionId: "root-of-1302",
+        token: child.token,
+        idempotencyKey: "child-of-1302:charge-action:1:charge",
+        name: "charge",
+      }),
+      async (client) => {
+        await writer.entered(client);
+        await writer.released;
+        return { receipt: "r1" };
+      },
+    );
+    const writerPid = await writer.pid;
+    const renewal = leasesOn(clock, "instance-1").renew(child, hours(1));
+
+    expect(await blockedBy(database.url(), writerPid, renewal)).toBe(true);
+    writer.release();
+    expect((await write).status).toBe(FencedEffectStatus.Ran);
+    expect(await renewal).toBeDefined();
   });
 });
 
