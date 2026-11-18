@@ -349,15 +349,20 @@ unknown, whatever its class. A connection of unknown outcome is ended at once an
 again; every later statement on it, `PostgresSaver`'s `ROLLBACK` included, rejects with the same
 outcome. A command timeout is `StoreCallTimeoutError`, whatever the statement.
 
-**A fenced work must finish well under the command timeout** (agbossjs/agboss#1334): a fenced write
-holds its tree's root lease row for the whole transaction (`FOR SHARE` for a child's, `FOR UPDATE` on
-its own row for the root's) and the root's lease renewal takes that row `FOR UPDATE` under
-`postgresCommandTimeoutMs` (default 10 s). A fenced `work`, the root's or any child's, that stays busy
-past it makes the renewal fail with `StoreCallTimeoutError`, an unknown outcome: the tree's holder is
-abandoned and the tree is recovered after the lease's TTL. Safety holds, every fence stands; what is
-lost is liveness. Keep the work to its database writes, and do the slow part outside it, or raise
-`postgresCommandTimeoutMs` (100 to 30 000 ms) above the longest work, remembering it bounds every
-command. A session idle inside the transaction is ended earlier, by `postgresIdleInTransactionTimeoutMs`.
+**A long fenced work can cost the tree its lease** (agbossjs/agboss#1334): a fenced write holds its
+tree's root lease row for the whole transaction (`FOR SHARE` for a child's, `FOR UPDATE` on its own
+row for the root's) and the root's lease renewal takes that row `FOR UPDATE`, so a renewal sent while
+a fenced `work` is open waits. The core bounds a background or checkpoint renewal at 5 s as an
+ordinary store error, never a hand-over; the holder survives two failed ticks in a row (a tick every
+7.5 s of a 30 s lease, 29 s trusted after the last confirmed renewal). A `work`, the root's or any
+child's, that blocks the renewals for about three ticks (roughly 20 s or more of a busy transaction)
+costs the tree its lease: the holder stops at its fence and the tree is recovered after the lease
+lapses. Safety holds, every fence stands; what is lost is liveness. A leased call that waits on the
+same row (`fence.renewNow()` before an outbound send, a write of the root's own under its lease)
+ends at `postgresCommandTimeoutMs` with an unknown outcome and hands the tree over;
+`postgresCommandTimeoutMs` does not move the 5 s renewal bound. Keep the work short and do the slow
+part outside it. A session idle inside the transaction is ended earlier, by
+`postgresIdleInTransactionTimeoutMs`.
 
 **One schema per application** (agbossjs/agboss#891): `postgresSchema` (or
 `PostgresConnectionSettings.schema`) puts every connection of the pool in that schema
