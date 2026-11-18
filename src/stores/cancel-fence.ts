@@ -27,10 +27,16 @@ const MARK = `INSERT INTO agboss_execution_leases AS lease
   ON CONFLICT (tenant_id, root_execution_id) DO UPDATE SET
     cancel_requested_at = COALESCE(lease.cancel_requested_at, EXCLUDED.cancel_requested_at)`;
 
+/**
+ * The only conflict the seed ignores is the root's own row: a violation of another unique key is an
+ * error. A constant of its own, so the mutation shard drops it (agbossjs/agboss#1327).
+ */
+const ROOT_KEY = "(tenant_id, root_execution_id)";
+
 const SEED = `INSERT INTO agboss_execution_leases
   (tenant_id, root_execution_id, holder_instance_id, token, expires_at, released)
   VALUES ($1, $2, '', 0, ${storeNow(3)}, true)
-  ON CONFLICT (tenant_id, root_execution_id) DO NOTHING`;
+  ON CONFLICT ${ROOT_KEY} DO NOTHING`;
 
 /**
  * The read's lock on the root's row: for a child's key the only lock its write holds on that row

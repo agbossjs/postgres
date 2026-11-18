@@ -20,12 +20,12 @@ const LOCK_LEASE = `SELECT token, released FROM agboss_execution_leases
   WHERE tenant_id = $1 AND root_execution_id = $2 ${ROW_LOCK}`;
 
 /**
- * Closes the lease at its token once it expired by the store's time (agbossjs/agboss#533: the
- * database's, `$4` null), read in this statement — the row already locked by this transaction.
+ * Closes the lease once it expired by the store's time (agbossjs/agboss#533: the database's, `$3`
+ * null), read in this statement. It names no token: the row was locked by this transaction and its
+ * token read at the lease's, so nothing can have changed it between the two statements.
  */
 const CLOSE = `UPDATE agboss_execution_leases SET released = true, superseded = true
-  WHERE tenant_id = $1 AND root_execution_id = $2 AND token = $3
-    AND expires_at <= ${storeNow(4)}`;
+  WHERE tenant_id = $1 AND root_execution_id = $2 AND expires_at <= ${storeNow(3)}`;
 
 const LeaseRow = z.object({ token: z.number(), released: z.boolean() });
 
@@ -43,6 +43,6 @@ export async function leaseStateIn(
   const found = row === undefined ? undefined : LeaseRow.parse(row);
   if (found === undefined || found.released || found.token !== token)
     return OutboundCallLeaseState.Ended;
-  const closed = await changesOf(client, CLOSE, [tenantId, leaseExecutionId, token, now]);
+  const closed = await changesOf(client, CLOSE, [tenantId, leaseExecutionId, now]);
   return closed === 1 ? OutboundCallLeaseState.LeaseClosed : OutboundCallLeaseState.Live;
 }
