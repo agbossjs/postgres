@@ -13,8 +13,11 @@ import { storeNow } from "../store-time.js";
  * win: whichever locks the row first decides what the other finds.
  */
 
+/** The lock of the lease row: a constant of its own, so the mutation shard drops it (agbossjs/agboss#1302). */
+const ROW_LOCK = "FOR UPDATE";
+
 const LOCK_LEASE = `SELECT token, released FROM agboss_execution_leases
-  WHERE tenant_id = $1 AND root_execution_id = $2 FOR UPDATE`;
+  WHERE tenant_id = $1 AND root_execution_id = $2 ${ROW_LOCK}`;
 
 /**
  * Closes the lease at its token once it expired by the store's time (agbossjs/agboss#533: the

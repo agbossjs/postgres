@@ -18,12 +18,14 @@ import {
 } from "../../src/index.js";
 import { TestApplicationContext } from "../support/application-context.js";
 import { testDatabase } from "../support/database.js";
+import { blockedBy, heldWrite } from "../support/held-write.js";
 import { connectionTo } from "../support/stores.js";
 
 /**
- * agbossjs/agboss#909 on PostgreSQL: the cancel's fence is a pair of advisory locks of the tree
- * (namespace 909). A cancel waits for the tree's open fencing transaction — the write lands first —,
- * and a fencing transaction that starts while a cancel holds the lock waits for it and reads the
+ * agbossjs/agboss#909, #1117 on PostgreSQL: the cancel's fence is the lock of the root's lease row
+ * (a root's key holds it FOR UPDATE through its fence, a child's FOR SHARE through its cancel check,
+ * #1302). A cancel waits for the tree's open fencing transaction — the write lands first —, and a
+ * fencing transaction that starts while a cancel holds the row waits for it and reads the
  * committed mark: refused. Never the write landing after the cancel answered.
  */
 const database = testDatabase();
@@ -59,6 +61,21 @@ const settledWithin = (promise: Promise<unknown>, ms: number): Promise<boolean> 
       }, ms);
     }),
   ]);
+
+/** Whether the root's lease row carries a committed cancel mark (read on a connection of its own). */
+async function isMarked(root: string): Promise<boolean> {
+  const client = new pg.Client({ connectionString: database.url() });
+  await client.connect();
+  try {
+    const { rowCount } = await client.query(
+      "SELECT 1 FROM agboss_execution_leases WHERE tenant_id = 'default' AND root_execution_id = $1 AND cancel_requested_at IS NOT NULL",
+      [root],
+    );
+    return (rowCount ?? 0) > 0;
+  } finally {
+    await client.end();
+  }
+}
 
 describe("agbossjs/agboss#909, #1117: the cancel's fence is the root lease row's lock", () => {
   it("a cancel waits for the tree's open fencing transaction: the write lands first, the next is refused", async () => {
@@ -165,6 +182,48 @@ describe("agbossjs/agboss#909, #1117: the cancel's fence is the root lease row's
     open();
     expect((await write).status).toBe(FencedEffectStatus.Ran);
     await cancel;
+  });
+
+  it("agbossjs/agboss#1302: a child's open fencing transaction holds its root's existing row for share: the root's cancel answers, and its mark commits, only after the child's write", async () => {
+    const root = "root-held-1302";
+    const { effects, leases } = storesOn(connectionTo(database.url()));
+    const other = storesOn(connectionTo(database.url()));
+    // the root's lease row exists (the root holds it), the child holds a lease row of its own: the
+    // child's fence locks only its own row FOR UPDATE, the root's is the cancel check's to lock
+    await leases.acquire("default", root, hours(1));
+    const child = await leases.acquire("default", "child-1302", hours(1));
+    const keyFor = (name: string) =>
+      effectKeyForTesting({
+        scopeKey: "default:child-1302",
+        tenantId: "default",
+        leaseExecutionId: "child-1302",
+        rootExecutionId: root,
+        token: child?.token ?? 0,
+        idempotencyKey: `child-1302:charge-action:1:${name}`,
+        name,
+      });
+    const writer = heldWrite();
+
+    const write = effects.runOnce(keyFor("charge"), async (client) => {
+      await writer.entered(client);
+      await writer.released;
+      return { receipt: "r1" };
+    });
+    const writerPid = await writer.pid;
+    const cancel = other.leases.requestCancel({ tenantId: "default", rootExecutionId: root });
+
+    // the cancel either answers or is seen waiting on the child's transaction: never both
+    expect(await blockedBy(database.url(), writerPid, cancel)).toBe(true);
+    expect(await isMarked(root)).toBe(false);
+    writer.release();
+    expect((await write).status).toBe(FencedEffectStatus.Ran);
+    await cancel;
+
+    expect(await isMarked(root)).toBe(true);
+    const later = await effects
+      .runOnce(keyFor("later"), () => ({ receipt: "r2" }))
+      .catch((error: unknown) => error);
+    expect(later).toBeInstanceOf(ExecutionCancelFencedError);
   });
 
   it("a cancel of one tree never waits for another tree's open transaction", async () => {

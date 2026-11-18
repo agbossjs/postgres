@@ -17,6 +17,14 @@ import { markCancel } from "./cancel-fence.js";
 import { remainingSql, storeNow, storeNowOf } from "./store-time.js";
 
 /**
+ * The lock of the take's read of the lease before it: a take racing a release, a close or another
+ * take waits for it and reads what it wrote — without it the read is the statement's snapshot, and
+ * a lease released meanwhile would be named as taken over (agbossjs/agboss#1302). A constant of its
+ * own, so the mutation shard drops it.
+ */
+const PREVIOUS_LOCK = "FOR UPDATE";
+
+/**
  * Takes the tree's lease unless another holder's is valid, in one statement: a new key is
  * inserted with token 1; an existing row is taken over — token + 1 — only when it was released or
  * expired (`expires_at <= now`: valid while `expires_at > now`, as every core store). `RETURNING`
@@ -33,7 +41,7 @@ import { remainingSql, storeNow, storeNowOf } from "./store-time.js";
 const ACQUIRE = `WITH previous AS MATERIALIZED (
     SELECT holder_instance_id, token, NOT released OR superseded AS expired
     FROM agboss_execution_leases
-    WHERE tenant_id = $1 AND root_execution_id = $2 FOR UPDATE
+    WHERE tenant_id = $1 AND root_execution_id = $2 ${PREVIOUS_LOCK}
   )
   INSERT INTO agboss_execution_leases AS lease
     (tenant_id, root_execution_id, holder_instance_id, token, expires_at, released, yielded,
@@ -115,6 +123,9 @@ const heldBy = (lease: ExecutionLease): readonly [string, string, string, number
   lease.token,
 ];
 
+/** The lock of `LOCK_ROW`: a constant of its own, so the mutation shard drops it (agbossjs/agboss#1302). */
+const ROW_LOCK = "FOR UPDATE";
+
 /**
  * The lease's row, locked first (agbossjs/agboss#533 review M1): an UPDATE computes its `WHERE`
  * and `SET` before it waits for a row another transaction locked `FOR UPDATE` (a fenced write, a
@@ -122,7 +133,7 @@ const heldBy = (lease: ExecutionLease): readonly [string, string, string, number
  * the row, then reads the database's time in its own statement, after the wait.
  */
 const LOCK_ROW = `SELECT 1 FROM agboss_execution_leases
-  WHERE tenant_id = $1 AND root_execution_id = $2 FOR UPDATE`;
+  WHERE tenant_id = $1 AND root_execution_id = $2 ${ROW_LOCK}`;
 
 const ReclaimedRow = z.object({
   token: z.number(),
