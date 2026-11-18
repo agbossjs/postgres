@@ -16,6 +16,7 @@ import {
   forgetBefore,
   lockKey,
   PAUSE,
+  OF_SLOT,
   RENEW_SLOT,
   TAKE_SLOT,
   windowTotal,
@@ -88,11 +89,9 @@ export class PostgresRateLimitRepository extends RateLimitRepository {
   }
 
   async release(rateLimitLease: RateLimitLease): Promise<void> {
-    await changesOf(
-      this.connection.pool,
-      "DELETE FROM agboss_rate_limit_slots WHERE slot_id = $1",
-      [rateLimitLease.slotId],
-    );
+    await changesOf(this.connection.pool, `DELETE FROM agboss_rate_limit_slots ${OF_SLOT}`, [
+      rateLimitLease.slotId,
+    ]);
   }
 
   addToWindow(

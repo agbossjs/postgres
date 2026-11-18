@@ -16,6 +16,38 @@ import { changesOf, firstRowOf } from "../connection/query.js";
 import { PostgresLedgerMarkMissingError } from "../errors.js";
 
 /**
+ * The pruning mark's row lock (agbossjs/agboss#771): a save holds it for share, so a prune's `UPDATE`
+ * of the mark waits for the save, or the save waits for the prune and reads the new mark. A
+ * constant of its own, so the mutation shard drops it (agbossjs/agboss#1302). The table holds one
+ * row (`id` is a primary key that must be true), so neither statement names it.
+ */
+const MARK_LOCK = "FOR SHARE";
+
+/**
+ * An entry the save's snapshot holds is a replay, never `expired`, even dated before the mark: a
+ * prune that committed while the save waited for the mark deleted it, and the entry's cost was
+ * counted before. Constants of their own, so the mutation shard drops each (agbossjs/agboss#1302).
+ */
+const NOT_HELD =
+  "AND NOT EXISTS (SELECT 1 FROM agboss_cost_entries held WHERE held.ledger_id = given.ledger_id)";
+
+/**
+ * An entry made before the mark is never inserted, held or not: a prune that committed while the
+ * save waited for the mark deleted the entry the save's snapshot still holds, and the insert's
+ * conflict check no longer finds it — inserting it again would count its cost twice.
+ */
+const FROM_MARK = "given.made_at >= mark.pruned_before AND";
+
+/** One expired entry refuses the whole save: no counter is written either. */
+const NONE_EXPIRED = "AND NOT EXISTS (SELECT 1 FROM expired)";
+
+/**
+ * The only conflict the insert of an entry ignores is its ledger id's (a replay): a violation of
+ * any other unique key is an error, not an entry skipped (its cost never counted).
+ */
+const ENTRY_KEY = "(ledger_id)";
+
+/**
  * Adds to every counter of the arrays (one counter per index), in one statement: the cost of each
  * entry of `$5` / `$6` / `$7` (ids, costs, `madeAt`s; every save is of entries, agbossjs/agboss#817)
  * whose id this statement inserts (agbossjs/agboss#727: an id already there, or inserted
@@ -30,19 +62,18 @@ import { PostgresLedgerMarkMissingError } from "../errors.js";
  * order and never deadlock.
  */
 const ADD = `WITH mark AS (
-    SELECT pruned_before FROM agboss_cost_entries_pruned WHERE id FOR SHARE
+    SELECT pruned_before FROM agboss_cost_entries_pruned ${MARK_LOCK}
   ), given AS (
     SELECT * FROM unnest($5::text[], $6::double precision[], $7::timestamptz[])
       AS entry (ledger_id, cost, made_at)
   ), expired AS (
     SELECT given.ledger_id FROM given, mark
-      WHERE given.made_at < mark.pruned_before
-        AND NOT EXISTS (SELECT 1 FROM agboss_cost_entries held WHERE held.ledger_id = given.ledger_id)
+      WHERE given.made_at < mark.pruned_before ${NOT_HELD}
   ), inserted AS (
     INSERT INTO agboss_cost_entries (ledger_id, made_at)
       SELECT given.ledger_id, given.made_at FROM given, mark
-        WHERE given.made_at >= mark.pruned_before AND NOT EXISTS (SELECT 1 FROM expired)
-    ON CONFLICT (ledger_id) DO NOTHING
+        WHERE ${FROM_MARK} NOT EXISTS (SELECT 1 FROM expired)
+    ON CONFLICT ${ENTRY_KEY} DO NOTHING
     RETURNING ledger_id
   ), spent AS (
     SELECT COALESCE(sum(given.cost), 0) AS usd
@@ -53,7 +84,7 @@ const ADD = `WITH mark AS (
     SELECT budget, scope, scope_key, period, count(*) * (SELECT usd FROM spent)
       FROM unnest($1::text[], $2::text[], $3::text[], $4::text[])
         AS counted (budget, scope, scope_key, period)
-      WHERE NOT EXISTS (SELECT 1 FROM expired) AND EXISTS (SELECT 1 FROM mark)
+      WHERE EXISTS (SELECT 1 FROM mark) ${NONE_EXPIRED}
       GROUP BY budget, scope, scope_key, period
       ORDER BY budget, scope, scope_key, period
     ON CONFLICT (budget, scope, scope_key, period)
@@ -71,7 +102,7 @@ const ADD = `WITH mark AS (
  */
 const PRUNE = `WITH mark AS (
     UPDATE agboss_cost_entries_pruned SET pruned_before = greatest(pruned_before, $1::timestamptz)
-      WHERE id RETURNING pruned_before
+      RETURNING pruned_before
   )
   DELETE FROM agboss_cost_entries WHERE made_at < (SELECT pruned_before FROM mark)`;
 

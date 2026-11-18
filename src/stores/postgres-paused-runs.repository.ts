@@ -19,6 +19,13 @@ const PausedRow = z.object({
 });
 
 /**
+ * What a run saved again takes of the new save besides the run: the versions it pauses under and the
+ * time. A constant of its own, so the mutation shard drops it (agbossjs/agboss#1302).
+ */
+const VERSIONED =
+  ", workflow_version = EXCLUDED.workflow_version, config_hash = EXCLUDED.config_hash, paused_at = EXCLUDED.paused_at";
+
+/**
  * The first layer of `PostgresPausedExecutionRepository`: one row per thread of a tenant — the
  * paused run and the versions it paused under — and the reads of a pause. The statements of the
  * pauses are in `paused/`; the connection and the clock are what the leaf class is given.
@@ -62,8 +69,7 @@ export abstract class PostgresPausedRunRepository extends PausedExecutionReposit
          (tenant_id, thread_id, run_id, run, workflow_version, config_hash, paused_at)
        VALUES ($1, $2, $3, $4, $5, $6, $7)
        ON CONFLICT (tenant_id, thread_id) DO UPDATE SET run_id = EXCLUDED.run_id,
-         run = EXCLUDED.run, workflow_version = EXCLUDED.workflow_version,
-         config_hash = EXCLUDED.config_hash, paused_at = EXCLUDED.paused_at`,
+         run = EXCLUDED.run ${VERSIONED}`,
       [
         run.tenantId,
         run.threadId,

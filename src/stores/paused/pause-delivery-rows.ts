@@ -25,6 +25,17 @@ function heldClaimOf(row: unknown): PauseNoticeClaim {
   return { mailbox: mailboxOf(mailboxRowOf(row)), token, until };
 }
 
+/**
+ * The row lock of a statement that picks mailboxes, and its pass over a row another statement holds
+ * (never waited for): two instances pick disjoint mailboxes. Constants of their own, so the
+ * mutation shard drops each (agbossjs/agboss#1302).
+ */
+const SKIP_LOCKED = "SKIP LOCKED";
+const ROW_LOCK = `FOR UPDATE ${SKIP_LOCKED}`;
+
+/** A mailbox set aside is never set aside again: its first problem stays. */
+const NOT_DEAD = "AND NOT is_dead";
+
 /** Claims up to `limit` due mailboxes of `recipients`, oldest due first, each under a fresh token. */
 export async function claimDue(
   database: Queryable,
@@ -40,7 +51,7 @@ export async function claimDue(
        SELECT tenant_id, pause_id, recipient FROM agboss_pause_notices
        WHERE NOT is_dead AND ${UNDELIVERED} AND next_attempt_at <= $2
          AND (claimed_until IS NULL OR claimed_until <= $2) AND recipient = ANY($3::text[])
-       ORDER BY next_attempt_at LIMIT $4 FOR UPDATE SKIP LOCKED)
+       ORDER BY next_attempt_at LIMIT $4 ${ROW_LOCK})
      RETURNING *`,
     [new Date(at.getTime() + claimFor), at, [...recipients], limit],
   );
@@ -131,7 +142,11 @@ export async function setAside(
   return changed === 1;
 }
 
-/** Sets aside, at most `limit`, the live unclaimed mailboxes whose head was written before `before`. */
+/**
+ * Sets aside, at most `limit`, the live unclaimed mailboxes whose head was written before `before`.
+ * A mailbox whose notices were all delivered is none of them without a clause of its own: its last
+ * acknowledgement set `head_written_at` to NULL (there is no head), which is never before anything.
+ */
 export async function setAsideStale(
   database: Queryable,
   before: Date,
@@ -145,9 +160,8 @@ export async function setAsideStale(
        claimed_until = NULL
      WHERE (tenant_id, pause_id, recipient) IN (
        SELECT tenant_id, pause_id, recipient FROM agboss_pause_notices
-       WHERE NOT is_dead AND ${UNDELIVERED} AND head_written_at < $1
-         AND (claimed_until IS NULL OR claimed_until <= $2)
-       ORDER BY head_written_at LIMIT $4 FOR UPDATE SKIP LOCKED)
+       WHERE head_written_at < $1 AND (claimed_until IS NULL OR claimed_until <= $2) ${NOT_DEAD}
+       ORDER BY head_written_at LIMIT $4 ${ROW_LOCK})
      RETURNING tenant_id, pause_id, recipient, head_written_at`,
     [before, at, problem, limit],
   );

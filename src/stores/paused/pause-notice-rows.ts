@@ -48,6 +48,19 @@ export type StoredMailbox = Omit<z.infer<typeof MailboxRow>, "notices"> & {
 export const UNDELIVERED = "delivered < jsonb_array_length(notices)";
 export const OF_MAILBOX = "tenant_id = $1 AND pause_id = $2 AND recipient = $3";
 
+/** Of the pause alone: a notice of one kind written once is stopped by this pause's, no other's. */
+const OF_THIS_PAUSE = "AND n.tenant_id = $1 AND n.pause_id = $2";
+
+/**
+ * A mailbox with nothing undelivered takes the appended notice as its head (its last
+ * acknowledgement left it none): the head's time, a constant of its own so the mutation shard drops
+ * it (agbossjs/agboss#1302). Its attempts and problem need no reset here: that acknowledgement
+ * zeroed the one and cleared the other.
+ */
+const NEW_HEAD = (idle: string): string =>
+  `, head_written_at = CASE WHEN ${idle} THEN EXCLUDED.head_written_at
+         ELSE agboss_pause_notices.head_written_at END`;
+
 /** A row as read back: its notices' text unescaped, checked. */
 export const mailboxRowOf = (row: unknown): StoredMailbox => {
   const parsed = MailboxRow.parse(row);
@@ -108,18 +121,13 @@ export function appendNotices(
      SELECT $1, $2, r.recipient, r.notices, 0, 0, r.at, r.at, false
      FROM jsonb_to_recordset($3::jsonb) AS r(recipient text, at timestamptz, notices jsonb)
      WHERE $4::text IS NULL OR NOT EXISTS (SELECT 1 FROM agboss_pause_notices n
-       WHERE n.tenant_id = $1 AND n.pause_id = $2
-         AND n.notices @> jsonb_build_array(jsonb_build_object('kind', $4::text)))
+       WHERE n.notices @> jsonb_build_array(jsonb_build_object('kind', $4::text)) ${OF_THIS_PAUSE})
      ON CONFLICT (tenant_id, pause_id, recipient) DO UPDATE SET
        notices = agboss_pause_notices.notices || (SELECT jsonb_agg(e || jsonb_build_object('seq',
          jsonb_array_length(agboss_pause_notices.notices) + o) ORDER BY o)
          FROM jsonb_array_elements(EXCLUDED.notices) WITH ORDINALITY AS t(e, o)),
-       head_written_at = CASE WHEN ${idle} THEN EXCLUDED.head_written_at
-         ELSE agboss_pause_notices.head_written_at END,
        next_attempt_at = CASE WHEN ${idle} THEN EXCLUDED.next_attempt_at
-         ELSE agboss_pause_notices.next_attempt_at END,
-       attempts = CASE WHEN ${idle} THEN 0 ELSE agboss_pause_notices.attempts END,
-       problem = CASE WHEN ${idle} THEN NULL ELSE agboss_pause_notices.problem END`,
+         ELSE agboss_pause_notices.next_attempt_at END ${NEW_HEAD(idle)}`,
     [tenantId, pauseId, payloadOf(planned), onceKind ?? null],
   );
 }

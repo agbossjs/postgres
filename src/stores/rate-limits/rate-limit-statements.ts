@@ -7,8 +7,20 @@ import { changesOf, firstRowOf } from "../../connection/query.js";
  * framework `Clock`'s, passed as a parameter — never the database's `now()`.
  */
 
-/** The key's row, locked for the transaction: another instance's count of the key waits. */
-const LOCK_KEY = "SELECT limit_key FROM agboss_rate_limit_keys WHERE limit_key = $1 FOR UPDATE";
+/**
+ * The key's row, locked for the transaction: another instance's count of the key waits, another
+ * key's does not. Each a constant of its own, so the mutation shard drops it (agbossjs/agboss#1302).
+ */
+const ROW_LOCK = "FOR UPDATE";
+const OF_KEY = "WHERE limit_key = $1";
+const LOCK_KEY = `SELECT limit_key FROM agboss_rate_limit_keys ${OF_KEY} ${ROW_LOCK}`;
+
+/** The slots, and the buckets, of one key only: a statement of a key never touches another's. */
+const OWN_SLOTS = "AND slot_key = $2::text";
+const OWN_BUCKETS = "AND window_key = $1";
+
+/** One slot: a release frees the slot it names, not the others. */
+export const OF_SLOT = "WHERE slot_id = $1";
 
 /**
  * Locks the key's row (`FOR UPDATE`) for the rest of the transaction, making it first when the key
@@ -27,16 +39,16 @@ export async function lockKey(client: pg.ClientBase, key: string): Promise<void>
 /**
  * Takes a slot under a count check, in one statement (under the key's lock): the key's expired
  * slots are swept, and the new one inserted only while fewer than `$5` slots are valid (`expires_at
- * > now`, `$6`). Returns a row only when it took the slot.
+ * > now`, `$6`). The insert changes one row only when it took the slot: its count is the answer
+ * (no `RETURNING`: the row it would return is never read).
  */
 export const TAKE_SLOT = `WITH swept AS (
-    DELETE FROM agboss_rate_limit_slots WHERE slot_key = $2::text AND expires_at <= $6::timestamptz
+    DELETE FROM agboss_rate_limit_slots WHERE expires_at <= $6::timestamptz ${OWN_SLOTS}
   )
   INSERT INTO agboss_rate_limit_slots (slot_id, slot_key, holder_instance_id, expires_at)
   SELECT $1::text, $2::text, $3::text, $4::timestamptz
   WHERE (SELECT count(*) FROM agboss_rate_limit_slots
-    WHERE slot_key = $2 AND expires_at > $6::timestamptz) < $5::integer
-  RETURNING slot_id`;
+    WHERE slot_key = $2 AND expires_at > $6::timestamptz) < $5::integer`;
 
 /** Extends a slot still valid; an expired one (its place may be given away) is not revived. */
 export const RENEW_SLOT = `UPDATE agboss_rate_limit_slots SET expires_at = $1
@@ -69,7 +81,7 @@ export async function windowTotal(
 export const forgetBefore = (client: pg.ClientBase, key: string, since: Date): Promise<number> =>
   changesOf(
     client,
-    "DELETE FROM agboss_rate_limit_window_buckets WHERE window_key = $1 AND counted_at <= $2",
+    `DELETE FROM agboss_rate_limit_window_buckets WHERE counted_at <= $2 ${OWN_BUCKETS}`,
     [key, since],
   );
 

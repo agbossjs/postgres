@@ -22,6 +22,13 @@ import { LOCKED_PAUSE, recordOfRow } from "./pause-rows.js";
  * mailbox of the pause is appended to by two at once — and the write is still a compare-and-set.
  */
 
+/**
+ * A reminder is of a pending pause only: a resolved or cancelled one keeps its `remind_at` column,
+ * and must not fire it. A constant of its own, so the mutation shard drops it
+ * (agbossjs/agboss#1302).
+ */
+const PENDING = "AND status = 'pending'";
+
 export class PauseTimerChanges {
   constructor(private readonly pool: pg.Pool) {}
 
@@ -43,8 +50,7 @@ export class PauseTimerChanges {
         database,
         `UPDATE agboss_pauses SET expires_at = $3::timestamptz, remind_at = $4::timestamptz,
            record = (record - 'remindAt') || $5::jsonb
-         WHERE tenant_id = $1 AND pause_id = $2 AND status = 'pending' AND expires_at IS NOT NULL
-           AND expires_at > $6 AND $3::timestamptz > $6
+         WHERE tenant_id = $1 AND pause_id = $2 AND status = 'pending' AND expires_at > $6
            AND record->>'expiresAt' = $7 AND $3::timestamptz > expires_at RETURNING record`,
         [
           tenantId,
@@ -79,12 +85,12 @@ export class PauseTimerChanges {
       const row = await firstRowOf(
         database,
         `UPDATE agboss_pauses SET remind_at = NULL, record = record - 'remindAt'
-         WHERE tenant_id = $1 AND pause_id = $2 AND status = 'pending' AND expires_at IS NOT NULL
-           AND expires_at > $3 AND remind_at IS NOT NULL AND remind_at <= $3 RETURNING record`,
+         WHERE tenant_id = $1 AND pause_id = $2 AND expires_at > $3 AND remind_at <= $3
+           ${PENDING} RETURNING record`,
         [tenantId, pauseId, at],
       );
       if (row === undefined) return false;
-      // the statement matched `expires_at IS NOT NULL`: the record has its deadline
+      // the statement matched `expires_at > at`: the record has its deadline
       const { expiresAt } = recordOfRow(row);
       const facts = { expiresAt };
       await appendNotices(

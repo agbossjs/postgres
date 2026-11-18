@@ -42,7 +42,7 @@ export const SHARDS = {
     ],
     tests: [
       CONFORMANCE,
-      "tests/stores/{fenced-effect,outbound-call*,stored-not-json-fenced,key-text.property}.test.ts",
+      "tests/stores/{fenced-effect*,outbound-call*,stored-not-json-fenced,key-text.property}.test.ts",
     ],
     testNamePattern: conformanceOf(
       "fenced effect contract",
@@ -73,7 +73,7 @@ export const SHARDS = {
     ],
     tests: [
       CONFORMANCE,
-      "tests/stores/{cost-ledger,rate-limit,child-execution-queue}.test.ts",
+      "tests/stores/{cost-ledger*,rate-limit*,child-execution-queue*}.test.ts",
       // the child queue's watch: its wake-ups, its close, the warning of a connection lost
       "tests/connection/{listener,listener-silent-death,listener-close-reopen}.test.ts",
     ],
