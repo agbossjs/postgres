@@ -53,6 +53,10 @@ export default tseslint.config(
       "no-console": "error",
       "@typescript-eslint/explicit-module-boundary-types": "error",
       "@typescript-eslint/no-extraneous-class": ["error", { allowWithDecorator: true }],
+      // typescript-eslint 8.73 added it to strictTypeChecked (agbossjs/agboss#1330, #1340): an object
+      // literal where a DTO class (or a class the framework or a driver types) is the parameter type
+      // is the documented call shape, as the project template has it off
+      "@typescript-eslint/no-unsafe-class-instance-assignment": "off",
     },
   },
   {
