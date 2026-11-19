@@ -10,22 +10,24 @@ export interface LivenessOptions {
   readonly ping: () => Promise<unknown>;
   /** Ends the watch (the connection is closed or replaced). */
   readonly signal: AbortSignal;
+  /** Called once, with why the connection is dead, when the watch ends because it is. */
+  readonly onDead: (why: string) => void;
 }
 
 /**
  * Pings a connection every half of `liveness` until `signal` aborts (agbossjs/agboss#789): a
  * half-open TCP connection (a NAT or a load balancer that dropped its state) answers nothing and
  * fails nothing, so only a command that is not answered shows it. Every timer is on the `Clock`.
- * Resolves with why the connection is dead — the ping failed, or was not answered within the other
- * half of `livenessSeconds` — or with `undefined` when `signal` aborted first.
+ * Ends when `signal` aborts, saying nothing, or when the connection is dead — the ping failed, or
+ * was not answered within the other half of `livenessSeconds` — after calling `onDead` with why.
  */
-export async function watchLiveness(options: LivenessOptions): Promise<string | undefined> {
-  const { clock, livenessSeconds, ping, signal } = options;
+export async function watchLiveness(options: LivenessOptions): Promise<void> {
+  const { clock, livenessSeconds, ping, signal, onDead } = options;
   const half = seconds(livenessSeconds / 2);
   const isEnded = (): boolean => signal.aborted;
   for (;;) {
     await clock.sleep(half, signal);
-    if (isEnded()) return undefined;
+    if (isEnded()) return;
     const answered = new AbortController();
     const outcome = await Promise.race([
       ping().then(
@@ -37,7 +39,10 @@ export async function watchLiveness(options: LivenessOptions): Promise<string | 
         .then(() => `no answer to a ping in ${String(livenessSeconds / 2)} s`),
     ]);
     answered.abort();
-    if (isEnded()) return undefined;
-    if (outcome !== "answered") return outcome;
+    if (isEnded()) return;
+    if (outcome !== "answered") {
+      onDead(outcome);
+      return;
+    }
   }
 }

@@ -37,8 +37,9 @@ export interface PostgresListenerOptions {
   readonly onNotify: () => void;
 }
 
-/** The pauses before each attempt to listen again; the last one repeats. */
-const PAUSES = [1, 2, 4, 8, 16, 30].map((pause) => seconds(pause));
+/** The pauses before the first attempts to listen again, in seconds; `LONGEST_PAUSE` follows and repeats. */
+const PAUSES = [1, 2, 4, 8, 16].map((pause) => seconds(pause));
+const LONGEST_PAUSE = seconds(30);
 
 /** A channel listened to until `close()`. */
 export class PostgresListener {
@@ -97,6 +98,7 @@ export class PostgresListener {
       this.options.clock.sleep(seconds(this.options.livenessSeconds / 2), ended.signal),
     ]);
     ended.abort();
+    // Stryker disable next-line OptionalChaining: `close()` hands over the socket of a client it holds, which always has one; the `?.` is the type's own guard
     socket?.destroy();
   }
 
@@ -111,12 +113,14 @@ export class PostgresListener {
       connectionTimeoutMillis: connectTimeoutOf(url),
       stream: () => socket,
     });
+    // Stryker disable next-line ObjectLiteral,BooleanLiteral: an abort fires once, so `once` only frees the listener after it fired: nothing observes it
+    const once = { once: true };
     // dropped the moment `destroy()` is called, whatever step the connection is at (#954)
     const drop = (): void => {
       dropClient(client, socket);
     };
     if (this.#dropped.signal.aborted) drop();
-    else this.#dropped.signal.addEventListener("abort", drop, { once: true });
+    else this.#dropped.signal.addEventListener("abort", drop, once);
     client.on("notification", (message) => {
       if (message.channel === channel && message.payload === payload) onNotify();
     });
@@ -157,13 +161,15 @@ export class PostgresListener {
 
   /** Pings `client` until it is replaced; a connection that does not answer is lost. */
   async #heartbeat(client: pg.Client, signal: AbortSignal): Promise<void> {
-    const dead = await watchLiveness({
+    await watchLiveness({
       clock: this.options.clock,
       livenessSeconds: this.options.livenessSeconds,
       ping: () => client.query("SELECT 1"),
       signal,
+      onDead: (why) => {
+        this.#lost(client, why);
+      },
     });
-    if (dead !== undefined) this.#lost(client, dead);
   }
 
   /** The connection failed, ended or went silent: open another, unless it is closed or replaced. */
@@ -173,8 +179,10 @@ export class PostgresListener {
     this.#beat.abort();
     this.options.warn(`The child queue's LISTEN connection is lost (${reason}); listening again`);
     // a silent connection never answers an orderly end: its socket is dropped
+    // Stryker disable next-line OptionalChaining: a current client always has its socket (both are set together); the `?.` is the type's own guard
     this.#socket?.destroy();
     void client.end().catch(() => undefined);
+    // Stryker disable next-line BlockStatement: a reconnect that ended stays as a settled promise, which `close()` awaits at no cost: the reset only lets it go
     this.#reconnecting = this.#reconnect().finally(() => {
       this.#reconnecting = undefined;
     });
@@ -184,23 +192,16 @@ export class PostgresListener {
     const signal = this.#stopped.signal;
     const isStopped = (): boolean => signal.aborted;
     for (let attempt = 0; ; attempt += 1) {
-      const pause = PAUSES[Math.min(attempt, PAUSES.length - 1)] ?? seconds(30);
+      const pause = PAUSES[attempt] ?? LONGEST_PAUSE;
       await this.options.clock.sleep(pause, signal).catch(() => undefined);
       if (isStopped()) return;
-      if (await this.#connected()) {
-        if (this.#client !== undefined) this.options.onNotify();
-        return;
+      try {
+        await this.#connect();
+      } catch {
+        continue;
       }
-    }
-  }
-
-  /** One attempt to listen again: `false` when it failed. */
-  async #connected(): Promise<boolean> {
-    try {
-      await this.#connect();
-      return true;
-    } catch {
-      return false;
+      if (this.#client !== undefined) this.options.onNotify();
+      return;
     }
   }
 }

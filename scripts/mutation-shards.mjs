@@ -83,6 +83,17 @@ export const SHARDS = {
       "child execution queue contract",
     ),
   },
+  // the child queue's watch (agbossjs/agboss#777, #789, #954; agbossjs/postgres#127): the LISTEN
+  // connection of its own, its reconnect with the doubling pause, the wake-up once it listens
+  // again, the liveness ping of a half-open connection, the drop of a connection at once, and
+  // the close that never waits on a silent server
+  "queue-watch": {
+    mutate: ["src/connection/{listener,heartbeat,drop-client}.ts"],
+    tests: [
+      "tests/connection/{listener*,heartbeat,drop-client}.test.ts",
+      "tests/connection/watch-liveness-*.test.ts",
+    ],
+  },
   // the schema: the migrations, their history and its check, the checkpoint tables, the live-lease
   // guard of an upgrade and a migrating start's wait for leases to lapse (agbossjs/agboss#1104)
   migrations: {
