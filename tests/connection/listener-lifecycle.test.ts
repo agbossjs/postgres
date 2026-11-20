@@ -432,3 +432,83 @@ describe("agbossjs/postgres#127: how the listener stops", () => {
     expect(listener.closed).toBe(true);
   });
 });
+
+/** The `drop` listeners the listener has on abort signals now, counted by what `pg` clients are made. */
+function watchDrops(): () => number {
+  const live = new Set<unknown>();
+  const named = (listener: unknown): boolean =>
+    typeof listener === "function" && listener.name === "drop";
+  const add = Reflect.get(EventTarget.prototype, "addEventListener") as (
+    ...args: unknown[]
+  ) => void;
+  const remove = Reflect.get(EventTarget.prototype, "removeEventListener") as (
+    ...args: unknown[]
+  ) => void;
+  vi.spyOn(EventTarget.prototype, "addEventListener").mockImplementation(function (
+    this: EventTarget,
+    ...args: unknown[]
+  ) {
+    if (args[0] === "abort" && named(args[1])) live.add(args[1]);
+    Reflect.apply(add, this, args);
+  });
+  vi.spyOn(EventTarget.prototype, "removeEventListener").mockImplementation(function (
+    this: EventTarget,
+    ...args: unknown[]
+  ) {
+    if (args[0] === "abort" && named(args[1])) live.delete(args[1]);
+    Reflect.apply(remove, this, args);
+  });
+  return () => live.size;
+}
+
+describe("agbossjs/postgres#130: a connection that ended leaves nothing on the listener", () => {
+  it("N reconnects keep one drop listener (the current connection's), and close() none", async () => {
+    const r = rig();
+    const drops = watchDrops();
+    const listener = await opened(r.options);
+    expect(drops()).toBe(1);
+
+    for (let reconnect = 1; reconnect <= 5; reconnect += 1) {
+      r.seen.clients[reconnect - 1]?.emit("end");
+      await r.clock.advance(seconds(1));
+      await vi.waitFor(() => {
+        expect(r.wakes()).toBe(reconnect);
+      }, CONNECTS);
+      // the lost connection's socket closes after its destroy
+      await vi.waitFor(() => {
+        expect(drops()).toBe(1);
+      }, CONNECTS);
+    }
+
+    expect(r.seen.clients).toHaveLength(6);
+    await listener.close();
+    await vi.waitFor(() => {
+      expect(drops()).toBe(0);
+    }, CONNECTS);
+  });
+
+  it("attempts that fail leave none either", async () => {
+    const { proxy, url } = await proxied();
+    const r = rig(url, 7);
+    const drops = watchDrops();
+    await opened(r.options);
+    await proxy.close();
+    r.seen.clients[0]?.emit("end");
+
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      await vi.waitFor(() => {
+        expect(r.clock.sleeps.some((sleep) => sleep.delay === seconds(2 ** (attempt - 1)))).toBe(
+          true,
+        );
+      }, CONNECTS);
+      await r.clock.advance(seconds(2 ** (attempt - 1)));
+      await vi.waitFor(() => {
+        expect(r.seen.clients).toHaveLength(attempt + 1);
+      }, CONNECTS);
+    }
+
+    await vi.waitFor(() => {
+      expect(drops()).toBe(0);
+    }, CONNECTS);
+  }, 60_000);
+});
