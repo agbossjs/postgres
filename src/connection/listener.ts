@@ -119,6 +119,11 @@ export class PostgresListener {
     };
     if (this.#dropped.signal.aborted) drop();
     else this.#dropped.signal.addEventListener("abort", drop);
+    // the listener's signal lives until `destroy()`: a connection that ended must not stay on it
+    // with its client and socket, one more with every reconnect (agbossjs/postgres#130)
+    socket.once("close", () => {
+      this.#dropped.signal.removeEventListener("abort", drop);
+    });
     client.on("notification", (message) => {
       if (message.channel === channel && message.payload === payload) onNotify();
     });
