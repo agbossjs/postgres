@@ -113,14 +113,12 @@ export class PostgresListener {
       connectionTimeoutMillis: connectTimeoutOf(url),
       stream: () => socket,
     });
-    // Stryker disable next-line ObjectLiteral,BooleanLiteral: an abort fires once, so `once` only frees the listener after it fired: nothing observes it
-    const once = { once: true };
     // dropped the moment `destroy()` is called, whatever step the connection is at (#954)
     const drop = (): void => {
       dropClient(client, socket);
     };
     if (this.#dropped.signal.aborted) drop();
-    else this.#dropped.signal.addEventListener("abort", drop, once);
+    else this.#dropped.signal.addEventListener("abort", drop);
     client.on("notification", (message) => {
       if (message.channel === channel && message.payload === payload) onNotify();
     });

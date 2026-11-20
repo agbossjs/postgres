@@ -16,10 +16,6 @@ export function trackedClientOf(
     constructor(config?: string | pg.ClientConfig) {
       const given = typeof config === "string" ? { connectionString: config } : (config ?? {});
       let socket: Duplex | undefined;
-      const own: { drop?: () => void } = {};
-      const forget = (): void => {
-        if (own.drop !== undefined) clients.delete(own.drop);
-      };
       super({
         ...given,
         stream: (...args: unknown[]) => {
@@ -29,7 +25,9 @@ export function trackedClientOf(
               : new Socket()
           ) as Duplex;
           // an SSL refusal ends the stream without the client's `end`: its close forgets it too
-          made.once("close", forget);
+          made.once("close", () => {
+            forget();
+          });
           socket = made;
           return made;
         },
@@ -40,8 +38,11 @@ export function trackedClientOf(
       const drop = (): void => {
         dropClient(this, socket);
       };
-      own.drop = drop;
       clients.add(drop);
+      // `pg` asks for the stream when it connects, after this constructor ended: `forget` is set
+      const forget = (): void => {
+        clients.delete(drop);
+      };
       this.once("end", forget);
     }
   }
