@@ -9,3 +9,4 @@ export interface MutationShard {
 }
 export declare const SHARDS: Readonly<Record<string, MutationShard>>;
 export declare function chosenShard(): MutationShard & { readonly name: string };
+export declare const NON_SHARDED_SRC: ReadonlySet<string>;

@@ -101,10 +101,12 @@ export const SHARDS = {
     tests: ["tests/migrations/*.test.ts", "tests/cli/*.test.ts"],
   },
   // every store call bounded (agbossjs/agboss#928, #1064): the command timeout, the outcome of a
-  // call whose answer was lost, the transaction, and the stored texts read back
+  // call whose answer was lost, the transaction, the stored texts read back, the pool's clients
+  // whose socket is ours to drop (#954) and the memo of a start that may be asked again
+  // (agbossjs/postgres#129)
   "store-bound": {
     mutate: [
-      "src/connection/{outcome,known-failure,timed-client,timed-pool,transaction,query,connect-timeout,pool-options}.ts",
+      "src/connection/{outcome,known-failure,timed-client,timed-pool,transaction,query,connect-timeout,pool-options,tracked-client,once}.ts",
       "src/stores/{unreadable,framework-json,nul-escape}.ts",
     ],
     tests: [
@@ -115,6 +117,47 @@ export const SHARDS = {
     exclude: ["tests/connection/close-quiet-*.test.ts"],
   },
 };
+
+/**
+ * The files of `src/` no shard mutates, each group with its reason (agbossjs/postgres#129):
+ * `tests/scripts/mutation-shards-complete.test.ts` fails for a file that is in a shard's `mutate`
+ * and here, and for one that is in neither, so a new module gets a conscious assignment.
+ */
+export const NON_SHARDED_SRC = new Set([
+  // the public surface and the types: no behaviour a mutant could change
+  "src/index.ts",
+  "src/errors.ts",
+  // the command line (its own tests, tests/cli) and the wiring of a connection and its stores
+  // from the settings: no money-path decision
+  "src/cli.ts",
+  "src/connection/postgres-connection.ts",
+  "src/connection/settings.ts",
+  "src/store-bundles.ts",
+  "src/redaction.ts",
+  // the stores of the execution records, trees, history, audit log, mesh requests, A2A tasks and
+  // direct messages, and the checkpoint saver: reads and writes by the contracts, no fence, cost,
+  // limit or queue guarantee of the payment-grade bar; not sharded yet
+  "src/stores/postgres-a2a-direct-message.repository.ts",
+  "src/stores/postgres-a2a-task.repository.ts",
+  "src/stores/postgres-checkpoint-saver.ts",
+  "src/stores/postgres-execution-audit-log.repository.ts",
+  "src/stores/postgres-execution-history.repository.ts",
+  "src/stores/postgres-execution-record.repository.ts",
+  "src/stores/postgres-execution-tree.repository.ts",
+  "src/stores/postgres-mesh-request.repository.ts",
+  "src/stores/a2a-direct-messages/a2a-direct-message-rows.ts",
+  "src/stores/a2a-direct-messages/a2a-direct-message-statements.ts",
+  "src/stores/a2a-tasks/a2a-task-pages.ts",
+  "src/stores/a2a-tasks/a2a-task-rows.ts",
+  "src/stores/a2a-tasks/a2a-task-statements.ts",
+  "src/stores/audit-log/audit-event-rows.ts",
+  "src/stores/history/history-rows.ts",
+  "src/stores/records/record-memory.ts",
+  "src/stores/records/record-reads.ts",
+  "src/stores/records/record-rows.ts",
+  "src/stores/records/record-scores.ts",
+  "src/stores/records/record-writes.ts",
+]);
 
 /** The shard `MUTATION_SHARD` names (default `fencing`); a name of none fails. */
 export function chosenShard() {
