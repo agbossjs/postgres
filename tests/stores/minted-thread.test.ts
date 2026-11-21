@@ -132,4 +132,22 @@ describe("agbossjs/agboss#550: a minted thread id is a new thread", () => {
 
     expectExhausted(refused);
   });
+
+  it("a generator that only repeats a taken id is asked for exactly 100 ids, no more", async () => {
+    class CountingIdGenerator extends StuckIdGenerator {
+      asked = 0;
+      override newThreadId(): string {
+        this.asked += 1;
+        return super.newThreadId();
+      }
+    }
+    const ids = new CountingIdGenerator();
+    const records = recordsOn(database.url(), new VirtualClock(), ids);
+    await records.createThread({ workflow: "desk-workflow", tenantId: "default" });
+    ids.asked = 0;
+
+    await exhausted(records);
+
+    expect(ids.asked).toBe(100);
+  });
 });

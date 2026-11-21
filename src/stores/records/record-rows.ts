@@ -18,14 +18,31 @@ const STATUSES = [
 ] as const satisfies readonly Turn["status"][];
 
 /** The columns a record is read with, in every query. */
-export const RECORD_COLUMNS = `id, run_id, tenant_id, thread_id, workflow, created_at, task,
-  reply_with, status, stop_reason, route, steps, cost_usd, prompt_version, model_version,
-  replay_of, config_version, config_hash`;
+const COLUMNS = [
+  "id",
+  "run_id",
+  "tenant_id",
+  "thread_id",
+  "workflow",
+  "created_at",
+  "task",
+  "reply_with",
+  "status",
+  "stop_reason",
+  "route",
+  "steps",
+  "cost_usd",
+  "prompt_version",
+  "model_version",
+  "replay_of",
+  "config_version",
+  "config_hash",
+];
+
+export const RECORD_COLUMNS = COLUMNS.join(", ");
 
 /** `RECORD_COLUMNS` of the table aliased `r`. */
-export const RECORD_COLUMNS_OF_R = RECORD_COLUMNS.split(",")
-  .map((column) => `r.${column.trim()}`)
-  .join(", ");
+export const RECORD_COLUMNS_OF_R = COLUMNS.map((column) => `r.${column}`).join(", ");
 
 /** A string a column keeps escaped (agbossjs/agboss#521: no U+0000 in PostgreSQL). */
 const kept = z.string().transform(unescapedText);

@@ -122,6 +122,39 @@ describe("PostgresExecutionRecordRepository", () => {
     expect(stored).toMatchObject({ status: "answered", costUsd: 0.5, route: ["start", "finish"] });
   });
 
+  it("the paused -> running mark of an answer, written with no lease on two instances at once: exactly one lands", async () => {
+    const [first, second] = [recordsOn(database.url()), recordsOn(database.url())];
+    for (let round = 0; round < 5; round += 1) {
+      const { ids } = await threadWith(first, [Paused]);
+      const [id = ""] = ids;
+
+      const marks = await Promise.all([
+        first.completeIfStatus(id, Paused, outcomeOf(Running, { costUsd: 1 })),
+        second.completeIfStatus(id, Paused, outcomeOf(Running, { costUsd: 2 })),
+      ]);
+
+      expect(marks.filter(Boolean)).toHaveLength(1);
+      const [stored] = await first.byIds([id]);
+      expect(stored?.status).toBe("running");
+      expect(stored?.costUsd).toBe(marks[0] ? 1 : 2);
+      // the answer that lost finds the record already moved: a second mark from paused never lands
+      expect(await second.completeIfStatus(id, Paused, outcomeOf(Running, { costUsd: 3 }))).toBe(
+        false,
+      );
+      expect((await first.byIds([id]))[0]?.costUsd).toBe(marks[0] ? 1 : 2);
+    }
+  });
+
+  it("a status write for an id no record has changes nothing", async () => {
+    const records = recordsOn(database.url());
+
+    expect(await records.completeIfStatus("no-such-id", Paused, outcomeOf(Running))).toBe(false);
+  });
+
+  it("ping resolves on the connection's own ping", async () => {
+    await expect(recordsOn(database.url()).ping()).resolves.toBeUndefined();
+  });
+
   it("lastTurns: the newest records of a thread, oldest first; another tenant's thread is its own", async () => {
     const records = recordsOn(database.url());
     const { threadId } = await threadWith(records, [Answered, Answered, Answered]);
