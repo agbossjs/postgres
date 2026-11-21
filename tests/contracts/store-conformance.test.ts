@@ -26,6 +26,7 @@ import {
   PostgresRateLimitRepository,
 } from "../../src/index.js";
 import { onSchema, testDatabase, truncateAll } from "../support/database.js";
+import { storesOfShard } from "./mutation-contracts.js";
 import { postgresStore } from "./postgres-store.js";
 
 /**
@@ -84,7 +85,7 @@ storeConformance<PoolClient>({
   reset: async () => {
     await truncateAll(database.url());
   },
-  stores: {
+  stores: storesOfShard({
     // agbossjs/agboss#860: the direct replies, their ids claimed among the A2A task store's messages
     // on the same pool
     a2aDirectMessage: postgresStore(database, (connection) => ({
@@ -161,5 +162,5 @@ storeConformance<PoolClient>({
       (connection, seam) =>
         new PostgresRateLimitRepository(connection, seam.clock, seam.application),
     ),
-  },
+  }),
 });

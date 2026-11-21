@@ -6,17 +6,27 @@
  */
 const CONFORMANCE = "tests/contracts/store-conformance.test.ts";
 /**
- * Only these suites of the store contracts, and every case of the shard's other files: the
- * contracts of the other shards' stores take most of a run and kill none of its mutants.
+ * `timeoutMS` of a shard and the `timeoutFactor` of `stryker.config.mjs` (agbossjs/agboss#1367, agbossjs/mongodb#103):
+ * Stryker's limit for one mutant is `timeoutFactor` x the net time of the tests that cover it + `timeoutMS`; a static
+ * mutant, or one every test covers, has the net time of the whole shard, and the net time leaves out hooks and setup
+ * (the dry run's "overhead"). A mutant no test kills then outlasted the old limit (1.5 x + 20 s), read as a
+ * Timeout, and a Timeout counts as killed: a survivor hid in the score. The dry run is one worker alone, the
+ * mutants run three at once, so a mutant's run takes up to 3 x the dry run's: the factor is 3 and `timeoutMS` is 3 x
+ * the shard's overhead on CI (nightly and main runs of 2026-11-20), 120 s at least, so the limit is 3 x the whole run.
+ * A Timeout is then a hang, and `scripts/stryker-timeouts.mjs` fails a job on one not in
+ * `scripts/stryker-proven-hangs.json`. A hang of an async test stays vitest's (`testTimeout`, `hookTimeout` of
+ * `vitest.mutation.config.ts`). A new shard needs one: read "Initial test run succeeded. Ran N tests in X seconds
+ * (net Y ms, overhead Z ms)" and set 3 x Z, rounded up to 10 s, 120 s at least (a hung async test takes about 60 s to be ended by vitest, test then hooks: a lower limit read such a mutant as a Timeout in one run and Killed in the next). The contracts of the store
+ * conformance a shard needs are picked in `tests/contracts/mutation-contracts.ts`, never by a `testNamePattern`
+ * here: vitest keeps a config's pattern as an override of the pattern Stryker sets for each mutant's covering
+ * tests, so every mutant ran every test of the shard.
  */
-const conformanceOf = (...suites) =>
-  String.raw`(${suites.join("|")}) \(PostgreSQL\)|^(?!.*\(PostgreSQL\))`;
-
 export const SHARDS = {
   // the lease in SQL: epochs, expiry, finish, yield and reclaim, the database's own clock, the
   // tree's durable cancel mark (agbossjs/agboss#909, #1117, #1152) and the fence every fencing
   // write checks in its own transaction
   fencing: {
+    timeoutMS: 120_000,
     mutate: [
       "src/stores/postgres-execution-lease.repository.ts",
       "src/stores/fence.ts",
@@ -33,6 +43,7 @@ export const SHARDS = {
   // the fenced effect and the outbound call: one effect per key, the business key's fingerprint,
   // the intent, its attempts and outcomes, the paged listing
   "effects-and-calls": {
+    timeoutMS: 120_000,
     mutate: [
       "src/stores/postgres-fenced-effect.repository.ts",
       "src/stores/key-entry.ts",
@@ -44,16 +55,11 @@ export const SHARDS = {
       CONFORMANCE,
       "tests/stores/{fenced-effect*,outbound-call*,stored-not-json-fenced,key-text.property}.test.ts",
     ],
-    testNamePattern: conformanceOf(
-      "fenced effect contract",
-      "outbound call contract",
-      "interleavings",
-      "store set",
-    ),
   },
   // the pause store: decisions, answers, notices and their claims (agbossjs/agboss#946), deadlines
   // and their timers (#941, #1064), reassignment
   pauses: {
+    timeoutMS: 120_000,
     mutate: [
       "src/stores/postgres-paused-execution.repository.ts",
       "src/stores/postgres-paused-runs.repository.ts",
@@ -61,10 +67,10 @@ export const SHARDS = {
       "src/stores/paused/*.ts",
     ],
     tests: [CONFORMANCE, "tests/stores/{pause*,paused*}.test.ts"],
-    testNamePattern: conformanceOf("paused execution contract"),
   },
   // money and its limits: the cost ledger, the rate limits, the child queue
   money: {
+    timeoutMS: 120_000,
     mutate: [
       "src/stores/postgres-cost-ledger.repository.ts",
       "src/stores/postgres-rate-limit.repository.ts",
@@ -77,17 +83,13 @@ export const SHARDS = {
       // the child queue's watch: its wake-ups, its close, the warning of a connection lost
       "tests/connection/{listener,listener-silent-death,listener-close-reopen}.test.ts",
     ],
-    testNamePattern: conformanceOf(
-      "cost ledger contract",
-      "rate limit contract",
-      "child execution queue contract",
-    ),
   },
   // the child queue's watch (agbossjs/agboss#777, #789, #954; agbossjs/postgres#127): the LISTEN
   // connection of its own, its reconnect with the doubling pause, the wake-up once it listens
   // again, the liveness ping of a half-open connection, the drop of a connection at once, and
   // the close that never waits on a silent server
   "queue-watch": {
+    timeoutMS: 120_000,
     mutate: ["src/connection/{listener,heartbeat,drop-client}.ts"],
     tests: [
       "tests/connection/{listener*,heartbeat,drop-client}.test.ts",
@@ -131,6 +133,7 @@ export const SHARDS = {
   // the schema: the migrations, their history and its check, the checkpoint tables, the live-lease
   // guard of an upgrade and a migrating start's wait for leases to lapse (agbossjs/agboss#1104)
   migrations: {
+    timeoutMS: 120_000,
     mutate: ["src/migrations/*.ts"],
     tests: ["tests/migrations/*.test.ts", "tests/cli/*.test.ts"],
   },
@@ -139,6 +142,7 @@ export const SHARDS = {
   // whose socket is ours to drop (#954) and the memo of a start that may be asked again
   // (agbossjs/postgres#129)
   "store-bound": {
+    timeoutMS: 120_000,
     mutate: [
       "src/connection/{outcome,known-failure,timed-client,timed-pool,transaction,query,connect-timeout,pool-options,tracked-client,once}.ts",
       "src/stores/{unreadable,framework-json,nul-escape}.ts",

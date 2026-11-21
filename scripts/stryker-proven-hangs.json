@@ -1,0 +1,20 @@
+[
+  {
+    "shard": "store-bound",
+    "file": "src/stores/framework-json.ts",
+    "mutator": "ObjectLiteral",
+    "replacement": "{}",
+    "anchor": "const NonFinite = z.object({ $number: z.enum([\"Infinity\", \"-Infinity\", \"NaN\"]) });",
+    "kind": "runtime-error",
+    "reason": "ObjectLiteral -> {}: the mutant makes tests/stores/framework-json.test.ts throw while it loads (a stored paused run the test builds is refused), outside any test, which Stryker counts as an error and not as a kill; the same in two cold runs"
+  },
+  {
+    "shard": "store-bound",
+    "file": "src/stores/framework-json.ts",
+    "mutator": "BlockStatement",
+    "replacement": "{}",
+    "anchor": "parsedOrUnreadable(\"paused run\", json, ids, (_key, item: unknown) => {",
+    "kind": "runtime-error",
+    "reason": "BlockStatement -> {}: the mutant makes tests/stores/framework-json.test.ts throw while it loads (a stored paused run the test builds is refused), outside any test, which Stryker counts as an error and not as a kill; the same in two cold runs"
+  }
+]
