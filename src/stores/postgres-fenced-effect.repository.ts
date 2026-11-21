@@ -97,7 +97,8 @@ function replayOf<TResult>(key: EffectKey, row: unknown): FencedEffectOutcome<TR
       ? undefined
       : replayedFromOf(key, {
           fingerprint: facts.fingerprint,
-          origin: facts.origin === null ? null : unescapedJson(facts.origin),
+          // a stored `null` comes back as it is
+          origin: unescapedJson(facts.origin),
         });
   return {
     status: FencedEffectStatus.Replayed,
