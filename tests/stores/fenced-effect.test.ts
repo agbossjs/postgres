@@ -243,4 +243,66 @@ describe("PostgresFencedEffectRepository: business keys (agbossjs/agboss#508)", 
     );
     expect(rows).toEqual([{ business_key: "sweep:new" }]);
   });
+  // agbossjs/agboss#1367: mutants a Stryker Timeout used to hide (the shard's run outlasted its limit)
+  it("#1367: a replay by the step that wrote the row has no replayedFrom at all, not an undefined one", async () => {
+    const { effects, leases } = storesOn(connectionTo(database.url()));
+    await leases.acquire("default", "bk-same", hours(1));
+    await effects.runOnce(businessKeyOf("bk-same", 1), () => ({ receipt: "r1" }));
+
+    const same = await effects.runOnce(businessKeyOf("bk-same", 1), () => ({ receipt: "r2" }));
+
+    expect(same.status).toBe(FencedEffectStatus.Replayed);
+    expect("replayedFrom" in same).toBe(false);
+  });
+
+  it("#1367: two business keys of one tenant do not wait on each other: the advisory lock is of the key's own identity", async () => {
+    const slow = storesOn(connectionTo(database.url(), 2));
+    const fast = storesOn(connectionTo(database.url(), 2));
+    await slow.leases.acquire("default", "lock-slow", hours(1));
+    await fast.leases.acquire("default", "lock-fast", hours(1));
+    let release = (): void => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const held = slow.effects.runOnce(
+      effectKeyForTesting(businessKeyOf("lock-slow", 1), { businessKey: "order:slow" }),
+      async () => {
+        await gate;
+        return { by: "slow" };
+      },
+    );
+
+    // the other key's effect finishes while the first one's work still holds its transaction
+    const other = await fast.effects.runOnce(
+      effectKeyForTesting(businessKeyOf("lock-fast", 1), { businessKey: "order:fast" }),
+      () => ({ by: "fast" }),
+    );
+    release();
+
+    expect(other.status).toBe(FencedEffectStatus.Ran);
+    expect((await held).status).toBe(FencedEffectStatus.Ran);
+  });
+
+  it("#1367: the store's own entry refuses an invalid name, business key and missing fingerprint, whatever its base class checked", async () => {
+    class Probe extends PostgresFencedEffectRepository {
+      enter(key: Parameters<PostgresFencedEffectRepository["runOnce"]>[0]): Promise<unknown> {
+        return this.runInTransaction(key, () => ({ ran: true }));
+      }
+    }
+    const probe = new Probe(
+      connectionTo(database.url()),
+      new StoreClock(StoreTimeSource.Test, new VirtualClock()),
+      new FencedEffectSettings(),
+    );
+
+    await expect(
+      probe.enter(effectKeyForTesting(keyOf("entry", 1), { name: "charge:twice" })),
+    ).rejects.toBeInstanceOf(InvalidFencedEffectNameError);
+  });
+
+  it("#1367: ping resolves on the connection's own ping", async () => {
+    const { effects } = storesOn(connectionTo(database.url()));
+
+    await expect(effects.ping()).resolves.toBeUndefined();
+  });
 });

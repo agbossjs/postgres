@@ -242,6 +242,21 @@ describe("PostgresOutboundCallRepository: edges", () => {
     });
   });
 
+  it("#1367: a move to a new attempt writes the attempt to its column, not only to the record", async () => {
+    const stores = instanceOn(new VirtualClock(), 0);
+    const lease = await leaseOf(stores, "attempt-column");
+    const key = keyOf(lease);
+    await stores.calls.saveIfAbsent(key, intentOf(key));
+
+    await stores.calls.markPending(key, PENDING, { attempt: 2, attemptOwner: "owner-2" });
+
+    const { rows } = await onSchema(
+      database.url(),
+      "SELECT attempt, attempt_owner FROM agboss_outbound_calls WHERE root_execution_id = 'attempt-column'",
+    );
+    expect(rows).toEqual([{ attempt: 2, attempt_owner: "owner-2" }]);
+  });
+
   it("a pool of one: every fenced method runs its checks and its statement on one connection", async () => {
     const stores = instanceOn(new VirtualClock(), 0, 1);
     const lease = await leaseOf(stores, "pool-one");

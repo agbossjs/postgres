@@ -44,4 +44,19 @@ describe("findAllByTenantIdAndStatus: the cursor", () => {
 
     expect(page).toEqual({ calls: [] });
   });
+
+  it.each([0, 1.5, Number.NaN, -1])(
+    "#1367: a limit of %j is a RangeError that says what a limit is",
+    async (limit) => {
+      const page = callsOf().findAllByTenantIdAndStatus({
+        tenantId: "default",
+        status: OutboundCallStatus.Pending,
+        limit,
+      });
+
+      await expect(page).rejects.toThrow(
+        new RangeError(`a page's limit is a whole number of calls from 1, got ${String(limit)}`),
+      );
+    },
+  );
 });
