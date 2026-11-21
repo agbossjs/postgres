@@ -123,6 +123,17 @@ export const SHARDS = {
     mutate: ["src/stores/postgres-mesh-request.repository.ts"],
     tests: [CONFORMANCE, "tests/stores/mesh-request*.test.ts"],
   },
+  // the execution record store (agbossjs/agboss#1367, agbossjs/postgres#129 acceptance): the status
+  // write is a compare-and-set (`completeIfStatus`: `UPDATE ... WHERE status = $expected`) and the
+  // only guard of the paused -> running mark of a resume's first phase and of a channel's decision,
+  // which run on whichever instance got the answer, before and without any lease; a thread is
+  // created once, the first answer of a pause is kept, and the reads recovery, replay, eval and
+  // memory rely on
+  "execution-records": {
+    timeoutMS: 120_000,
+    mutate: ["src/stores/postgres-execution-record.repository.ts", "src/stores/records/*.ts"],
+    tests: [CONFORMANCE, "tests/stores/{execution-record*,minted-thread}.test.ts"],
+  },
   // the checkpoint saver (agbossjs/agboss#1165): the latest checkpoint of a thread by its step,
   // and the version a branch of one checkpoint gets, which its blobs rely on
   checkpoints: {
@@ -172,25 +183,16 @@ export const NON_SHARDED_SRC = new Set([
   "src/connection/settings.ts",
   "src/store-bundles.ts",
   "src/redaction.ts",
-  // Not sharded yet (agbossjs/postgres#133 shards them, and each line goes with its shard). Their
-  // compare-and-set and once-only writes are not the fence: each runs in the pass of the caller
-  // that holds the execution's lease, and the lease's epoch is the fence, which the `fencing`
-  // shard mutates; the contracts exercise their headline guarantees:
-  // - the execution tree store: `saveIfAbsentInTree` has one winner per key (the child-failure
-  //   announcement claim, the undo-done marks), written by the holder of the lease; a cancel
-  //   request written without the lease goes to the lease store's mark first (`cancel-fence.ts`)
+  // Not sharded yet (agbossjs/postgres#133 shards it, and its line goes with its shard). Its
+  // once-only writes are not guarded by the lease alone, and the reason is not "every caller holds
+  // it" (re-checked at the pinned core, agbossjs/postgres#129): `saveIfAbsentInTree` has one winner
+  // per key by its own `ON CONFLICT DO NOTHING`, which the contract exercises; the child-failure
+  // announcement claim and the undo-done marks are written in a pass, by the holder of the lease,
+  // whose epoch is the fence the `fencing` shard mutates; a cancel request is written without the
+  // lease, but the lease store's mark goes first (`cancel-fence.ts`, `writeCancelRequest`); the
+  // without-recovery mark of a new root is written before its first lease, on a root id minted
+  // for that call, so no second writer of the key exists
   "src/stores/postgres-execution-tree.repository.ts",
-  // - the execution record store: `completeIfStatus` is a compare-and-set whose caller holds the
-  //   lease (the recovery pass, an answered pause's wake-up after it holds the lease), so the late
-  //   status write is stopped by the lease epoch; a thread is created once and the first answer of
-  //   a pause is kept (`ON CONFLICT DO NOTHING`); the rows, reads, scores and memory are its other
-  //   statements
-  "src/stores/postgres-execution-record.repository.ts",
-  "src/stores/records/record-memory.ts",
-  "src/stores/records/record-reads.ts",
-  "src/stores/records/record-rows.ts",
-  "src/stores/records/record-scores.ts",
-  "src/stores/records/record-writes.ts",
   // No compare-and-set, claim or once-only write in these two, so no guarantee of the bar to
   // mutate: the audit log is an append-only `INSERT` read back in the order of its time and its
   // identity, and the history is a last-write-wins upsert read by period; their order and paging

@@ -31,6 +31,7 @@ jobs:
             a2a-direct,
             a2a-tasks,
             mesh-requests,
+            execution-records,
             checkpoints,
           ]
     services:

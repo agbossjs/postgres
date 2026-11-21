@@ -15,6 +15,7 @@ export const CONTRACTS_OF_SHARD: Readonly<Record<string, readonly (keyof StoreSe
   "a2a-direct": ["a2aDirectMessage"],
   "a2a-tasks": ["a2aTask", "a2aDirectMessage"],
   "mesh-requests": ["meshRequest"],
+  "execution-records": ["executionRecord"],
   checkpoints: ["checkpointSaver"],
   money: ["costLedger", "rateLimit", "childExecutionQueue"],
 };
