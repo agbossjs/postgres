@@ -193,7 +193,18 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [fencing, effects-and-calls, pauses, money, migrations, store-bound, queue-watch]
+        shard:
+          [
+            fencing,
+            effects-and-calls,
+            pauses,
+            money,
+            migrations,
+            store-bound,
+            queue-watch,
+            a2a-direct,
+            checkpoints,
+          ]
     services:
       postgres:
         image: postgres:16

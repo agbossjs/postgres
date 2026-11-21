@@ -1,5 +1,6 @@
 import { emptyCheckpoint, type CheckpointMetadata } from "@langchain/langgraph-checkpoint";
 import { describe, expect, it, vi } from "vitest";
+import { PostgresSaver } from "@langchain/langgraph-checkpoint-postgres";
 import { PostgresCheckpointSaver } from "../../src/index.js";
 import { STEP_INDEX_NAME } from "../../src/migrations/checkpoint-step-index.js";
 import { onSchema, testDatabase } from "../support/database.js";
@@ -131,5 +132,65 @@ describe("agbossjs/agboss#962: PostgresCheckpointSaver.latestByStep", () => {
     }
     await writes;
     expect((await reader.latestByStep(at("live")))?.checkpoint.id).toBe("id-029");
+  });
+});
+
+describe("agbossjs/postgres#129: latestByStep reads only a config that names a thread", () => {
+  const stored = async () => {
+    const saver = new PostgresCheckpointSaver(connectionTo(database.url()));
+    await put(saver, at("5"), "id-a", 1);
+    await put(saver, at("5", "7"), "id-b", 1);
+    await put(saver, at("6", "child"), "id-c", 1);
+    return saver;
+  };
+
+  it("answers the namespace of the config, and the empty one when it names none", async () => {
+    const saver = await stored();
+
+    expect((await saver.latestByStep({ configurable: { thread_id: "5" } }))?.checkpoint.id).toBe(
+      "id-a",
+    );
+    expect((await saver.latestByStep(at("5", "7")))?.checkpoint.id).toBe("id-b");
+    // the thread has nothing in the empty namespace: the other's is not the answer
+    expect(await saver.latestByStep({ configurable: { thread_id: "6" } })).toBeUndefined();
+  });
+
+  it("answers nothing, and asks the database nothing, for a config with no thread, or one that is not text", async () => {
+    const connection = connectionTo(database.url());
+    const saver = new PostgresCheckpointSaver(connection);
+    await put(saver, at("5"), "id-a", 1);
+    await put(saver, at("5", "7"), "id-b", 1);
+    const query = vi.spyOn(connection.pool, "query");
+
+    expect(await saver.latestByStep({})).toBeUndefined();
+    expect(await saver.latestByStep({ configurable: {} })).toBeUndefined();
+    expect(await saver.latestByStep({ configurable: { checkpoint_ns: "" } })).toBeUndefined();
+    // a number the driver would send as the text of the thread, and of the namespace
+    expect(await saver.latestByStep({ configurable: { thread_id: 5 } })).toBeUndefined();
+    expect(
+      await saver.latestByStep({ configurable: { thread_id: "5", checkpoint_ns: 7 } }),
+    ).toBeUndefined();
+    expect(query).not.toHaveBeenCalled();
+  });
+
+  it("reads no checkpoint of a thread that has none", async () => {
+    const connection = connectionTo(database.url());
+    const saver = new PostgresCheckpointSaver(connection);
+    await saver.getTuple(at("nobody")); // the saver's own setup, once
+    const read = vi.spyOn(PostgresSaver.prototype, "getTuple");
+
+    expect(await saver.latestByStep(at("nobody"))).toBeUndefined();
+
+    expect(read).not.toHaveBeenCalled();
+  });
+
+  it("ping asks the connection, and fails as it fails", async () => {
+    const connection = connectionTo(database.url());
+    const saver = new PostgresCheckpointSaver(connection);
+    const ping = vi.spyOn(connection, "ping").mockRejectedValue(new Error("no answer"));
+
+    await expect(saver.ping()).rejects.toThrow("no answer");
+
+    expect(ping).toHaveBeenCalledTimes(1);
   });
 });
