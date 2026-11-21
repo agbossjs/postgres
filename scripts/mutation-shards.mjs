@@ -105,6 +105,22 @@ export const SHARDS = {
     tests: [CONFORMANCE, "tests/stores/a2a-direct-message{,-clauses}.test.ts"],
     testNamePattern: conformanceOf("A2A direct message contract"),
   },
+  // the A2A task store (agbossjs/agboss#824): of two pods accepting one message exactly one claims
+  // it, a task is saved once, the status moves by a compare-and-set on its version and never off a
+  // terminal state, the reply is kept once, the retention sweep, and the page of `list`; the
+  // message claim is the one the direct-message store shares (agbossjs/postgres#129 acceptance)
+  "a2a-tasks": {
+    mutate: ["src/stores/postgres-a2a-task.repository.ts", "src/stores/a2a-tasks/*.ts"],
+    tests: [CONFORMANCE, "tests/stores/{a2a-task*,a2a-direct-message*}.test.ts"],
+    testNamePattern: conformanceOf("A2A task contract", "A2A direct message contract"),
+  },
+  // the mesh request store (agbossjs/agboss#483): of two pods admitting one idempotency key
+  // exactly one inserts it, which is what runs a trusted repeat `tools/call` once
+  "mesh-requests": {
+    mutate: ["src/stores/postgres-mesh-request.repository.ts"],
+    tests: [CONFORMANCE, "tests/stores/mesh-request*.test.ts"],
+    testNamePattern: conformanceOf("mesh request contract"),
+  },
   // the checkpoint saver (agbossjs/agboss#1165): the latest checkpoint of a thread by its step,
   // and the version a branch of one checkpoint gets, which its blobs rely on
   checkpoints: {
@@ -152,24 +168,19 @@ export const NON_SHARDED_SRC = new Set([
   "src/connection/settings.ts",
   "src/store-bundles.ts",
   "src/redaction.ts",
-  // Not sharded yet, each with the guarantee it holds that a mutation run does not prove (the
-  // contracts exercise them; agbossjs/postgres#133 shards them, and each line goes with its shard):
-  // - the A2A task store (agbossjs/agboss#824): `compareAndSetStatus` is one `UPDATE … WHERE
-  //   version = $n AND state NOT IN (terminal)`, `saveIfAbsent` accepts a message once, and the
-  //   message claim (`a2a-task-rows.ts`, `a2a-task-statements.ts`) is the one the direct-message
-  //   store shares; core mutates its own twin in its `a2a-tasks` shard
-  "src/stores/postgres-a2a-task.repository.ts",
-  "src/stores/a2a-tasks/a2a-task-pages.ts",
-  "src/stores/a2a-tasks/a2a-task-rows.ts",
-  "src/stores/a2a-tasks/a2a-task-statements.ts",
-  // - the mesh request store (agbossjs/agboss#483): one `INSERT … ON CONFLICT DO NOTHING` decides
-  //   which pod runs a retried request
-  "src/stores/postgres-mesh-request.repository.ts",
-  // - the execution tree store: `saveIfAbsentInTree` has one winner per key
+  // Not sharded yet (agbossjs/postgres#133 shards them, and each line goes with its shard). Their
+  // compare-and-set and once-only writes are not the fence: each runs in the pass of the caller
+  // that holds the execution's lease, and the lease's epoch is the fence, which the `fencing`
+  // shard mutates; the contracts exercise their headline guarantees:
+  // - the execution tree store: `saveIfAbsentInTree` has one winner per key (the child-failure
+  //   announcement claim, the undo-done marks), written by the holder of the lease; a cancel
+  //   request written without the lease goes to the lease store's mark first (`cancel-fence.ts`)
   "src/stores/postgres-execution-tree.repository.ts",
-  // - the execution record store: `completeIfStatus` is a compare-and-set, the late status write
-  //   that must not land; a thread is created once and the first answer of a pause is kept
-  //   (`ON CONFLICT DO NOTHING`); the rows, reads, scores and memory are its other statements
+  // - the execution record store: `completeIfStatus` is a compare-and-set whose caller holds the
+  //   lease (the recovery pass, an answered pause's wake-up after it holds the lease), so the late
+  //   status write is stopped by the lease epoch; a thread is created once and the first answer of
+  //   a pause is kept (`ON CONFLICT DO NOTHING`); the rows, reads, scores and memory are its other
+  //   statements
   "src/stores/postgres-execution-record.repository.ts",
   "src/stores/records/record-memory.ts",
   "src/stores/records/record-reads.ts",
