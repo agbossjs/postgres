@@ -99,6 +99,29 @@ describe("agbossjs/agboss#860: the direct messages on PostgreSQL", () => {
     expect(task.status).toBe(A2ATaskSaveStatus.MessageTaken);
   });
 
+  it("the sweep of a completed message that has no owner frees its claim, as an owner's", async () => {
+    const messages = messagesOn();
+    const ownerless = newMessage({ ownerId: undefined });
+    const key = { tenantId: "acme", ownerId: undefined, messageId: "m-1" };
+    await messages.saveIfAbsent(ownerless);
+    await messages.completeIfInFlight(key, "run-1", { finish: "f", output: 1, spentUsd: 0 }, at(5));
+    // the claim is younger than the cutoff: only the removed message's own sweep may free it,
+    // not the one of the claims whose row is gone
+    await onSchema(
+      database.url(),
+      "UPDATE agboss_a2a_messages SET saved_at = $1 WHERE message_id = 'm-1'",
+      [at(600)],
+    );
+    const claims = () =>
+      onSchema(database.url(), "SELECT 1 FROM agboss_a2a_messages WHERE message_id = 'm-1'");
+    expect((await claims()).rows).toHaveLength(1);
+
+    const removed = await messages.deleteByCreatedAtBefore(at(60), 10);
+
+    expect(removed.map((message) => message.messageId)).toEqual(["m-1"]);
+    expect((await claims()).rows).toHaveLength(0);
+  });
+
   it.each([
     ["a field it does not know", { finish: "f", output: 1, spentUsd: 0, grantedUsd: 5 }],
     ["a negative spend", { finish: "f", output: 1, spentUsd: -1 }],
