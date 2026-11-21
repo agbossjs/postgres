@@ -100,35 +100,35 @@ export const SHARDS = {
   // exactly one claims it, and only the attempt that holds it completes or frees it; an attempt
   // is retaken only once its `expires_at` has passed (agbossjs/postgres#129 acceptance)
   "a2a-direct": {
+    timeoutMS: 120_000,
     mutate: [
       "src/stores/postgres-a2a-direct-message.repository.ts",
       "src/stores/a2a-direct-messages/*.ts",
     ],
     tests: [CONFORMANCE, "tests/stores/a2a-direct-message{,-clauses}.test.ts"],
-    testNamePattern: conformanceOf("A2A direct message contract"),
   },
   // the A2A task store (agbossjs/agboss#824): of two pods accepting one message exactly one claims
   // it, a task is saved once, the status moves by a compare-and-set on its version and never off a
   // terminal state, the reply is kept once, the retention sweep, and the page of `list`; the
   // message claim is the one the direct-message store shares (agbossjs/postgres#129 acceptance)
   "a2a-tasks": {
+    timeoutMS: 120_000,
     mutate: ["src/stores/postgres-a2a-task.repository.ts", "src/stores/a2a-tasks/*.ts"],
     tests: [CONFORMANCE, "tests/stores/{a2a-task*,a2a-direct-message*}.test.ts"],
-    testNamePattern: conformanceOf("A2A task contract", "A2A direct message contract"),
   },
   // the mesh request store (agbossjs/agboss#483): of two pods admitting one idempotency key
   // exactly one inserts it, which is what runs a trusted repeat `tools/call` once
   "mesh-requests": {
+    timeoutMS: 120_000,
     mutate: ["src/stores/postgres-mesh-request.repository.ts"],
     tests: [CONFORMANCE, "tests/stores/mesh-request*.test.ts"],
-    testNamePattern: conformanceOf("mesh request contract"),
   },
   // the checkpoint saver (agbossjs/agboss#1165): the latest checkpoint of a thread by its step,
   // and the version a branch of one checkpoint gets, which its blobs rely on
   checkpoints: {
+    timeoutMS: 120_000,
     mutate: ["src/stores/postgres-checkpoint-saver.ts"],
     tests: [CONFORMANCE, "tests/stores/{checkpoint-saver,checkpoint-latest-by-step}.test.ts"],
-    testNamePattern: conformanceOf("checkpoint saver contract"),
   },
   // the schema: the migrations, their history and its check, the checkpoint tables, the live-lease
   // guard of an upgrade and a migrating start's wait for leases to lapse (agbossjs/agboss#1104)

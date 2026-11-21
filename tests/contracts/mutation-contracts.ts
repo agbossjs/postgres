@@ -12,6 +12,10 @@ import type { StoreSet } from "@agboss/core/testing/contracts";
 export const CONTRACTS_OF_SHARD: Readonly<Record<string, readonly (keyof StoreSet)[]>> = {
   "effects-and-calls": ["executionLease", "executionAuditLog", "fencedEffect", "outboundCall"],
   pauses: ["pausedExecution"],
+  "a2a-direct": ["a2aDirectMessage"],
+  "a2a-tasks": ["a2aTask", "a2aDirectMessage"],
+  "mesh-requests": ["meshRequest"],
+  checkpoints: ["checkpointSaver"],
   money: ["costLedger", "rateLimit", "childExecutionQueue"],
 };
 
