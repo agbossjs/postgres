@@ -264,22 +264,33 @@ describe("PostgresFencedEffectRepository: business keys (agbossjs/agboss#508)", 
     const gate = new Promise<void>((resolve) => {
       release = resolve;
     });
+    let holding = (): void => undefined;
+    const slowHoldsItsLock = new Promise<void>((resolve) => {
+      holding = resolve;
+    });
+    // the work runs inside the transaction, after the key's advisory lock was taken: when it runs, the slow key's lock is held
     const held = slow.effects.runOnce(
       effectKeyForTesting(businessKeyOf("lock-slow", 1), { businessKey: "order:slow" }),
       async () => {
+        holding();
         await gate;
         return { by: "slow" };
       },
     );
 
-    // the other key's effect finishes while the first one's work still holds its transaction
-    const other = await fast.effects.runOnce(
-      effectKeyForTesting(businessKeyOf("lock-fast", 1), { businessKey: "order:fast" }),
-      () => ({ by: "fast" }),
-    );
-    release();
+    try {
+      await slowHoldsItsLock;
+      // the other key's effect finishes while the first one's work still holds its transaction; on one
+      // shared lock it waits for a transaction that waits for `release`, and the command timeout ends it
+      const other = await fast.effects.runOnce(
+        effectKeyForTesting(businessKeyOf("lock-fast", 1), { businessKey: "order:fast" }),
+        () => ({ by: "fast" }),
+      );
+      expect(other.status).toBe(FencedEffectStatus.Ran);
+    } finally {
+      release();
+    }
 
-    expect(other.status).toBe(FencedEffectStatus.Ran);
     expect((await held).status).toBe(FencedEffectStatus.Ran);
   });
 
