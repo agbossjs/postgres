@@ -26,7 +26,7 @@ PostgreSQL (`AGBOSS_POSTGRES_TEST_URL`) · api-extractor (`api/postgres.api.md`)
   `npm run …` / `scripts/…` they name exists), and the stages below but the tests.
 - `MUTATION_SHARD=<shard> npm run test:mutation` (`make mutation SHARD=<shard>`) — Stryker on one
   shard of `scripts/mutation-shards.mjs` (`fencing`, `effects-and-calls`, `pauses`, `money`,
-  `migrations`, `store-bound`, `queue-watch`, `a2a-direct`, `checkpoints`) against `AGBOSS_POSTGRES_TEST_URL`; below 100 % killed or justified it
+  `migrations`, `store-bound`, `queue-watch`, `a2a-direct`, `a2a-tasks`, `mesh-requests`, `checkpoints`) against `AGBOSS_POSTGRES_TEST_URL`; below 100 % killed or justified it
   fails (agbossjs/agboss#1213). CI runs each shard incrementally, cold when the mutation setup
   changes, `mutation-nightly.yml` every night cold; run every shard a change touches locally first.
 - What `npm run check` runs: format, suppressions (budget 0), reviewed installs (`check:installs`: a

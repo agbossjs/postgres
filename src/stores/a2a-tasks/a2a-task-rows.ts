@@ -145,11 +145,13 @@ export const pageTokenOf = (task: Pick<A2ATaskRecord, "statusAt" | "taskId">): s
 
 /** A token's JSON; `undefined` for text that is none, which the token's schema refuses. */
 function jsonOf(token: string): unknown {
+  let json: unknown;
   try {
-    return JSON.parse(Buffer.from(token, "base64url").toString("utf8"));
+    json = JSON.parse(Buffer.from(token, "base64url").toString("utf8"));
   } catch {
-    return undefined;
+    // not JSON: `json` stays undefined, which the token's schema refuses
   }
+  return json;
 }
 
 /** Where the page of `token` starts; `InvalidA2APageTokenError` for a token no list gave. */

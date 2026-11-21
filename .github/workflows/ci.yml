@@ -203,6 +203,8 @@ jobs:
             store-bound,
             queue-watch,
             a2a-direct,
+            a2a-tasks,
+            mesh-requests,
             checkpoints,
           ]
     services:
