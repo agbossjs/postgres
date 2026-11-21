@@ -23,7 +23,9 @@ export default {
   reporters: ["clear-text", "progress", "json"],
   jsonReporter: { fileName: `reports/mutation/${shard.name}.json` },
   thresholds: { high: 100, low: 95, break: 100 },
-  timeoutMS: 20000,
+  timeoutMS: shard.timeoutMS,
+  // agbossjs/agboss#1367: x the covering tests' net time, beside timeoutMS (scripts/mutation-shards.mjs)
+  timeoutFactor: 3,
   // the initial run is the shard's whole suite on the real server (the store contracts alone take
   // about 4 min): the default 5 min is too short on a loaded machine
   dryRunTimeoutMinutes: 20,

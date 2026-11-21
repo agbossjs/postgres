@@ -4,7 +4,7 @@ import { Socket } from "node:net";
 import pg from "pg";
 import { dropClient } from "./drop-client.js";
 import { connectTimeoutOf } from "./connect-timeout.js";
-import { watchLiveness } from "./heartbeat.js";
+import { hasEnded, watchLiveness } from "./heartbeat.js";
 
 /**
  * A `LISTEN` on one channel of the database (agbossjs/agboss#777): a connection of its own, outside
@@ -193,11 +193,10 @@ export class PostgresListener {
 
   async #reconnect(): Promise<void> {
     const signal = this.#stopped.signal;
-    const isStopped = (): boolean => signal.aborted;
     for (let attempt = 0; ; attempt += 1) {
       const pause = PAUSES[attempt] ?? LONGEST_PAUSE;
       await this.options.clock.sleep(pause, signal).catch(() => undefined);
-      if (isStopped()) return;
+      if (hasEnded(signal)) return;
       try {
         await this.#connect();
       } catch {

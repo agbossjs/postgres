@@ -2,8 +2,8 @@
 export interface MutationShard {
   readonly mutate: readonly string[];
   readonly tests: readonly string[];
-  /** Only the cases whose full name matches it (a regular expression's source). */
-  readonly testNamePattern?: string;
+  /** Stryker's `timeoutMS` for the shard's mutants: above the shard's whole run (agbossjs/agboss#1367). */
+  readonly timeoutMS: number;
   /** Files of `tests` left out. */
   readonly exclude?: readonly string[];
 }

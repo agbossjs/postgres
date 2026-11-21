@@ -12,7 +12,6 @@ export default defineConfig({
   test: {
     include: [...shard.tests],
     exclude: [...(shard.exclude ?? []), "node_modules/**"],
-    ...(shard.testNamePattern === undefined ? {} : { testNamePattern: shard.testNamePattern }),
     expect: { requireAssertions: true },
     globalSetup: ["./tests/support/global-setup.ts"],
     testTimeout: 20_000,
