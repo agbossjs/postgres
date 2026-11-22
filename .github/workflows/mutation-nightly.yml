@@ -89,9 +89,10 @@ jobs:
         run: npm run test:mutation -- --force
       # agbossjs/agboss#1367: a Timeout counts as killed, and a survivor whose run outlasts Stryker's limit reads
       # as one: each shard's timeoutMS is above its whole run (scripts/mutation-shards.mjs), so a Timeout left
-      # must be a proven hang (scripts/stryker-proven-hangs.json)
+      # must be a proven hang (scripts/stryker-proven-hangs.json); one that is not listed is run again alone
+      # (agbossjs/mongodb#103: a loaded runner moves it between mutants), in a fresh Stryker process
       - name: No Timeout that is not a proven hang (agbossjs/agboss#1367)
-        run: node scripts/stryker-timeouts.mjs reports/mutation/${{ matrix.shard }}.json
+        run: node scripts/stryker-timeouts.mjs --rerun reports/mutation/${{ matrix.shard }}.json
 
       - if: always()
         uses: actions/upload-artifact@v4
