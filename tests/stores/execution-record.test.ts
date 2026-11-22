@@ -96,6 +96,57 @@ describe("PostgresExecutionRecordRepository", () => {
     expect(await records.hasThread("desk-workflow", "acme", made)).toBe(false);
   });
 
+  it("a thread id created on several instances at once is created once: its first owner is kept (agbossjs/agboss#133)", async () => {
+    const writers = 4;
+    const url = database.url();
+    // every write to a thread row is logged by the server itself: the insert that won, and any later overwrite
+    await onSchema(
+      url,
+      `CREATE TABLE thread_writes (id text, op text, owner text);
+       CREATE FUNCTION log_thread_write() RETURNS trigger LANGUAGE plpgsql AS
+         $$ BEGIN INSERT INTO thread_writes VALUES (NEW.id, TG_OP, NEW.owner); RETURN NEW; END $$;
+       CREATE TRIGGER log_thread_write AFTER INSERT OR UPDATE ON agboss_threads
+         FOR EACH ROW EXECUTE FUNCTION log_thread_write()`,
+    );
+    const instances = Array.from({ length: writers }, () => recordsOn(url));
+    await Promise.all(instances.map((records) => records.ping()));
+    try {
+      for (let round = 0; round < 8; round += 1) {
+        const threadId = `shared-${String(round)}`;
+        let release: () => void = () => undefined;
+        const go = new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        const running = instances.map(async (records, index) => {
+          await go;
+          return records.createThread({
+            workflow: "desk-workflow",
+            tenantId: "default",
+            threadId,
+            ownerId: `owner-${String(index)}`,
+          });
+        });
+        release();
+
+        expect(await Promise.all(running)).toEqual(Array.from({ length: writers }, () => threadId));
+
+        const writes = await onSchema(url, "SELECT op, owner FROM thread_writes WHERE id = $1", [
+          threadId,
+        ]);
+        expect(writes.rows).toHaveLength(1);
+        expect(writes.rows[0]).toMatchObject({ op: "INSERT" });
+        const winner = (writes.rows[0] as { owner: string }).owner;
+        expect(winner).toMatch(/^owner-[0-3]$/);
+        for (const records of instances)
+          expect(await records.threadOwner("desk-workflow", "default", threadId)).toEqual({
+            owner: winner,
+          });
+      }
+    } finally {
+      await onSchema(url, "DROP TRIGGER log_thread_write ON agboss_threads");
+    }
+  });
+
   it("append: a new id and the Clock's time; read back as written", async () => {
     const clock = new VirtualClock(new Date("2026-03-01T12:00:00.000Z"));
     const records = recordsOn(database.url(), clock);
