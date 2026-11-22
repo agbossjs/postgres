@@ -1,0 +1,158 @@
+import type { ExecutionTree, ExecutionTreeValue } from "@agboss/core";
+import { describe, expect, it, vi } from "vitest";
+import { PostgresExecutionTreeRepository } from "../../src/index.js";
+import { testDatabase } from "../support/database.js";
+import { connectionTo } from "../support/stores.js";
+
+/**
+ * agbossjs/postgres#133 (agbossjs/agboss#133): the execution tree store's once-only write. The public
+ * `ExecutionTreeRepository.saveIfAbsent(key, value)` is called by user code in any execution of the tree, a child on
+ * any instance included, and the child-failure claim of the core's re-entry is written in passes that overlap during a
+ * lease takeover: none of those writers holds the root's lease, so the store's own insert is the only guard. The
+ * writers here are instances of their own (a connection each), released together.
+ */
+const database = testDatabase();
+
+const WRITERS = 4;
+const ROUNDS = 8;
+const TREE: ExecutionTree = { tenantId: "acme", rootExecutionId: "root-1" };
+
+const treesOn = (url = database.url()) => new PostgresExecutionTreeRepository(connectionTo(url));
+
+describe("agbossjs/postgres#133: the execution tree store under concurrent writers", () => {
+  it("one key saved on several instances at once is saved by exactly one, and its value is kept", async () => {
+    const trees = Array.from({ length: WRITERS }, () => treesOn());
+    await Promise.all(trees.map((store) => store.ping()));
+    for (let round = 0; round < ROUNDS; round += 1) {
+      const key = `claim-${String(round)}`;
+      let release: () => void = () => undefined;
+      const go = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const running = trees.map(async (store, index) => {
+        await go;
+        return store.saveIfAbsentInTree(TREE, key, { writer: index, round });
+      });
+      release();
+
+      const saved = await Promise.all(running);
+
+      const winners = saved.flatMap((won, index) => (won ? [index] : []));
+      expect(winners).toHaveLength(1);
+      for (const store of trees)
+        expect(await store.findByIdInTree(TREE, key)).toEqual({ writer: winners[0], round });
+    }
+  });
+});
+
+describe("agbossjs/postgres#133: the execution tree store's keys", () => {
+  it("the first save of a key is true and the second is false, and the first value stays", async () => {
+    const trees = treesOn();
+
+    expect(await trees.saveIfAbsentInTree(TREE, "once", "first")).toBe(true);
+    expect(await trees.saveIfAbsentInTree(TREE, "once", "second")).toBe(false);
+    expect(await trees.saveIfAbsentInTree(TREE, "once", "first")).toBe(false);
+
+    expect(await trees.findByIdInTree(TREE, "once")).toBe("first");
+  });
+
+  it("a key is its tenant's and its root's own: the same key of another root or tenant is another key", async () => {
+    const trees = treesOn();
+    const otherRoot: ExecutionTree = { ...TREE, rootExecutionId: "root-2" };
+    const otherTenant: ExecutionTree = { ...TREE, tenantId: "globex" };
+
+    expect(await trees.saveIfAbsentInTree(TREE, "same", "mine")).toBe(true);
+    expect(await trees.saveIfAbsentInTree(otherRoot, "same", "root")).toBe(true);
+    expect(await trees.saveIfAbsentInTree(otherTenant, "same", "tenant")).toBe(true);
+
+    expect(await trees.findByIdInTree(TREE, "same")).toBe("mine");
+    expect(await trees.findByIdInTree(otherRoot, "same")).toBe("root");
+    expect(await trees.findByIdInTree(otherTenant, "same")).toBe("tenant");
+  });
+
+  it("a key that was never saved is undefined; a value that is falsy or null is a value", async () => {
+    const trees = treesOn();
+    const falsy: ExecutionTreeValue[] = [0, false, "", null, [], {}];
+    for (const [index, value] of falsy.entries())
+      await trees.saveIfAbsentInTree(TREE, `falsy-${String(index)}`, value);
+
+    expect(await trees.findByIdInTree(TREE, "never")).toBeUndefined();
+    for (const [index, value] of falsy.entries())
+      expect(await trees.findByIdInTree(TREE, `falsy-${String(index)}`)).toEqual(value);
+  });
+
+  it("a nested value comes back as it was saved, a U+0000 in its texts and keys included", async () => {
+    const trees = treesOn();
+    const value: ExecutionTreeValue = {
+      note: 'say "paid"\u0000',
+      list: [1, "two", null, { three: [3] }],
+      nested: { "a\u0000b": false },
+    };
+
+    expect(await trees.saveIfAbsentInTree(TREE, "nested", value)).toBe(true);
+
+    expect(await trees.findByIdInTree(TREE, "nested")).toEqual(value);
+  });
+
+  it("a key is one row in its tenant's and its root's name", async () => {
+    const connection = connectionTo(database.url());
+    await new PostgresExecutionTreeRepository(connection).saveIfAbsentInTree(TREE, "shape", {
+      a: [1],
+    });
+
+    const rows = await connection.pool.query(
+      "SELECT tenant_id, root_execution_id, tree_key, value FROM agboss_execution_tree_keys WHERE tree_key = 'shape'",
+    );
+
+    expect(rows.rows).toEqual([
+      { tenant_id: "acme", root_execution_id: "root-1", tree_key: "shape", value: { a: [1] } },
+    ]);
+  });
+});
+
+describe("agbossjs/postgres#133: the execution tree store's delete", () => {
+  it("deletes every key of its tree and no key of another root or tenant", async () => {
+    const trees = treesOn();
+    const otherRoot: ExecutionTree = { ...TREE, rootExecutionId: "root-del-2" };
+    const otherTenant: ExecutionTree = { ...TREE, tenantId: "globex" };
+    const doomed: ExecutionTree = { ...TREE, rootExecutionId: "root-del" };
+    for (const tree of [doomed, otherRoot, otherTenant]) {
+      await trees.saveIfAbsentInTree(tree, "a", 1);
+      await trees.saveIfAbsentInTree(tree, "b", 2);
+    }
+    const sameRootOtherTenant: ExecutionTree = { tenantId: "globex", rootExecutionId: "root-del" };
+    await trees.saveIfAbsentInTree(sameRootOtherTenant, "a", 3);
+
+    await trees.deleteAllInTree(doomed);
+
+    expect(await trees.findByIdInTree(doomed, "a")).toBeUndefined();
+    expect(await trees.findByIdInTree(doomed, "b")).toBeUndefined();
+    expect(await trees.findByIdInTree(otherRoot, "a")).toBe(1);
+    expect(await trees.findByIdInTree(otherRoot, "b")).toBe(2);
+    expect(await trees.findByIdInTree(otherTenant, "b")).toBe(2);
+    expect(await trees.findByIdInTree(sameRootOtherTenant, "a")).toBe(3);
+  });
+
+  it("a deleted tree's key can be saved again; a tree with no key deletes without error", async () => {
+    const trees = treesOn();
+    const tree: ExecutionTree = { ...TREE, rootExecutionId: "root-again" };
+    await trees.deleteAllInTree(tree);
+    await trees.saveIfAbsentInTree(tree, "k", "old");
+
+    await trees.deleteAllInTree(tree);
+
+    expect(await trees.saveIfAbsentInTree(tree, "k", "new")).toBe(true);
+    expect(await trees.findByIdInTree(tree, "k")).toBe("new");
+  });
+});
+
+describe("agbossjs/postgres#133: the execution tree store's ping", () => {
+  it("ping is the connection's own ping", async () => {
+    const connection = connectionTo(database.url());
+    const ping = vi.spyOn(connection, "ping").mockResolvedValue();
+
+    await new PostgresExecutionTreeRepository(connection).ping();
+
+    expect(ping).toHaveBeenCalledOnce();
+  });
+});

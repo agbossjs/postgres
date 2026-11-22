@@ -134,6 +134,15 @@ export const SHARDS = {
     mutate: ["src/stores/postgres-execution-record.repository.ts", "src/stores/records/*.ts"],
     tests: [CONFORMANCE, "tests/stores/{execution-record*,minted-thread}.test.ts"],
   },
+  // the execution tree store (agbossjs/postgres#133, agbossjs/agboss#133): `saveIfAbsentInTree`, one `INSERT ... ON
+  // CONFLICT DO NOTHING RETURNING`, is the only guard of every once-only key of a tree: the public `saveIfAbsent` of
+  // user code in any execution (a child on any instance, no lease of the root) and the child-failure claim of passes
+  // that overlap during a lease takeover; the keys of a tenant's root, the value as JSON, the delete of one tree
+  "execution-tree": {
+    timeoutMS: 120_000,
+    mutate: ["src/stores/postgres-execution-tree.repository.ts"],
+    tests: [CONFORMANCE, "tests/stores/{execution-tree,acceptance-text}.test.ts"],
+  },
   // the checkpoint saver (agbossjs/agboss#1165): the latest checkpoint of a thread by its step,
   // and the version a branch of one checkpoint gets, which its blobs rely on
   checkpoints: {
@@ -183,16 +192,6 @@ export const NON_SHARDED_SRC = new Set([
   "src/connection/settings.ts",
   "src/store-bundles.ts",
   "src/redaction.ts",
-  // Not sharded yet (agbossjs/postgres#133 shards it, and its line goes with its shard). Its
-  // once-only writes are not guarded by the lease alone, and the reason is not "every caller holds
-  // it" (re-checked at the pinned core, agbossjs/postgres#129): `saveIfAbsentInTree` has one winner
-  // per key by its own `ON CONFLICT DO NOTHING`, which the contract exercises; the child-failure
-  // announcement claim and the undo-done marks are written in a pass, by the holder of the lease,
-  // whose epoch is the fence the `fencing` shard mutates; a cancel request is written without the
-  // lease, but the lease store's mark goes first (`cancel-fence.ts`, `writeCancelRequest`); the
-  // without-recovery mark of a new root is written before its first lease, on a root id minted
-  // for that call, so no second writer of the key exists
-  "src/stores/postgres-execution-tree.repository.ts",
   // No compare-and-set, claim or once-only write in these two, so no guarantee of the bar to
   // mutate: the audit log is an append-only `INSERT` read back in the order of its time and its
   // identity, and the history is a last-write-wins upsert read by period; their order and paging
