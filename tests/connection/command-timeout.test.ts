@@ -253,7 +253,7 @@ describe("a retention's delete runs under the long timeout", () => {
     await holder.query("LOCK TABLE agboss_mesh_requests IN ACCESS EXCLUSIVE MODE");
     const retention = new PostgresMeshRequestRepository(connection);
 
-    const deleting = retention.deleteByCreatedAtBefore(new Date());
+    const deleting = retention.deleteExpired(new Date());
     const ordinary = await settle(connection.pool.query("DELETE FROM agboss_mesh_requests"));
     // past the command timeout and pg's own limit a second after it: only the long timeout waits
     await new Promise((resolve) => setTimeout(resolve, 1600));

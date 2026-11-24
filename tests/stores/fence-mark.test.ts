@@ -1,10 +1,5 @@
 import { effectKeyForTesting } from "@agboss/core/testing/contracts";
-import {
-  ExecutionFencedError,
-  FencedEffectSettings,
-  StoreClock,
-  StoreTimeSource,
-} from "@agboss/core";
+import { StoreClock, StoreTimeSource, ExecutionError } from "@agboss/core";
 import { VirtualClock } from "@agboss/core/testing";
 import { hours } from "@agboss/core/units";
 import { describe, expect, it } from "vitest";
@@ -24,7 +19,7 @@ import { connectionTo } from "../support/stores.js";
 const database = testDatabase();
 
 describe("the scope's mark", () => {
-  it("a mark above the key's token refuses it: ExecutionFencedError naming the mark, nothing runs", async () => {
+  it("a mark above the key's token refuses it: ExecutionError.Fenced naming the mark, nothing runs", async () => {
     const connection = connectionTo(database.url());
     const clock = new StoreClock(StoreTimeSource.Test, new VirtualClock());
     const leases = new PostgresExecutionLeaseRepository(
@@ -32,11 +27,7 @@ describe("the scope's mark", () => {
       clock,
       new TestApplicationContext({}),
     );
-    const effects = new PostgresFencedEffectRepository(
-      connection,
-      clock,
-      new FencedEffectSettings(),
-    );
+    const effects = new PostgresFencedEffectRepository(connection, clock);
     const lease = await leases.acquire("default", "root-mark", hours(1));
     const token = lease?.token ?? 0;
     // a newer token of this scope wrote before the lease row was set back to `token`
@@ -64,7 +55,7 @@ describe("the scope's mark", () => {
       )
       .catch((reason: unknown) => reason);
 
-    expect(error).toBeInstanceOf(ExecutionFencedError);
+    expect(error).toBeInstanceOf(ExecutionError.Fenced);
     expect(error).toMatchObject({ scopeKey: "default:root-mark", token, observedToken: token + 5 });
     expect(runs).toBe(0);
   });

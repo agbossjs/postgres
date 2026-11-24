@@ -1,9 +1,4 @@
-import {
-  FencedEffectSettings,
-  FencedEffectStatus,
-  StoreClock,
-  StoreTimeSource,
-} from "@agboss/core";
+import { StoreClock, StoreTimeSource, IdempotencyRunStatus } from "@agboss/core";
 import { VirtualClock } from "@agboss/core/testing";
 import { effectKeyForTesting } from "@agboss/core/testing/contracts";
 import { hours, seconds } from "@agboss/core/units";
@@ -13,6 +8,7 @@ import { z } from "zod";
 import {
   PostgresExecutionLeaseRepository,
   PostgresFencedEffectRepository,
+  requirePostgresTransaction,
 } from "../../src/index.js";
 import { TestApplicationContext } from "../support/application-context.js";
 import { onSchema, testDatabase } from "../support/database.js";
@@ -113,11 +109,7 @@ describe("agbossjs/agboss#1302: a fenced write holds its own lease row", () => {
   it("a child's open fenced write: a renewal of the child's lease from another connection waits for it", async () => {
     const clock = new StoreClock(StoreTimeSource.Test, new VirtualClock());
     const connection = connectionTo(database.url());
-    const effects = new PostgresFencedEffectRepository(
-      connection,
-      clock,
-      new FencedEffectSettings(),
-    );
+    const effects = new PostgresFencedEffectRepository(connection, clock);
     await leasesOn(clock, "instance-1").acquire("default", "root-of-1302", hours(1));
     const child = await leasesOn(clock, "instance-1").acquire("default", "child-of-1302", hours(1));
     if (child === undefined) throw new Error("the take must succeed");
@@ -133,8 +125,8 @@ describe("agbossjs/agboss#1302: a fenced write holds its own lease row", () => {
         idempotencyKey: "child-of-1302:charge-action:1:charge",
         name: "charge",
       }),
-      async (client) => {
-        await writer.entered(client);
+      async () => {
+        await writer.entered(requirePostgresTransaction());
         await writer.released;
         return { receipt: "r1" };
       },
@@ -144,7 +136,7 @@ describe("agbossjs/agboss#1302: a fenced write holds its own lease row", () => {
 
     expect(await blockedBy(database.url(), writerPid, renewal)).toBe(true);
     writer.release();
-    expect((await write).status).toBe(FencedEffectStatus.Ran);
+    expect((await write).status).toBe(IdempotencyRunStatus.Ran);
     expect(await renewal).toBeDefined();
   });
 });

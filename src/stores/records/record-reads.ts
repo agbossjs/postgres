@@ -1,4 +1,5 @@
 import type { ExecutionRecordStatus, Turn } from "@agboss/core";
+import type { ExecutionRecordStatusQuery, Page } from "@agboss/core/stores";
 import { rowsOf, type Queryable } from "../../connection/query.js";
 import { RECORD_COLUMNS, RECORD_COLUMNS_OF_R, recordsOf } from "./record-rows.js";
 
@@ -116,4 +117,24 @@ export async function recentOriginalRecords(
       [workflow, limit],
     ),
   );
+}
+
+/** The default size of a page of `findByStatus`, as recovery reads it. */
+const STATUS_PAGE_LIMIT = 100;
+
+/**
+ * The page of `query`: one more than the page is read, to know whether another follows; the cursor
+ * is the id of the last record of the page before.
+ */
+export async function statusPageOf(
+  database: Queryable,
+  query: ExecutionRecordStatusQuery,
+): Promise<Page<Turn>> {
+  const limit = query.limit ?? STATUS_PAGE_LIMIT;
+  if (!Number.isSafeInteger(limit) || limit < 1)
+    throw new RangeError("a page's limit is a positive whole number");
+  const found = await recordsByStatus(database, query.status, limit + 1, query.cursor);
+  const items = found.slice(0, limit);
+  const last = items.at(-1);
+  return found.length > limit && last !== undefined ? { items, nextCursor: last.id } : { items };
 }

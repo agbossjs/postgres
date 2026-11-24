@@ -1,3 +1,4 @@
+import { usd } from "@agboss/core/units";
 import { z } from "zod";
 import { changesOf, firstRowOf, rowsOf, type Queryable } from "../../connection/query.js";
 import type { ConfigSnapshot, VersionScore } from "@agboss/core";
@@ -70,7 +71,7 @@ export async function versionScoresOf(
       turns: r.records,
       scored: r.scored,
       meanScore: r.mean_score,
-      costUsd: r.cost_usd,
+      costUsd: usd(r.cost_usd),
     };
   });
 }

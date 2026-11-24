@@ -1,3 +1,4 @@
+import { type EffectKey } from "@agboss/core/stores";
 /**
  * agbossjs/agboss#658 on PostgreSQL, in the process: what a `reconcile` is told of a pending
  * attempt — when it started (`attemptStartedAt`) and when the store read it (`readAt`, which a key's
@@ -7,13 +8,7 @@
  * the same store handed the caller's clock as its time (`TestStoreClock`) writes the skewed time.
  */
 import { effectKeyForTesting } from "@agboss/core/testing/contracts";
-import {
-  Clock,
-  type ExecutionLease,
-  type EffectKey,
-  StoreClock,
-  StoreTimeSource,
-} from "@agboss/core";
+import { Clock, type ExecutionLease, StoreClock, StoreTimeSource } from "@agboss/core";
 import { ClockSkew, SkewedClock } from "@agboss/core/testing";
 import { hours, seconds, type Milliseconds } from "@agboss/core/units";
 import { describe, expect, it } from "vitest";

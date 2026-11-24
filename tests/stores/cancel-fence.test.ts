@@ -1,10 +1,9 @@
 import { effectKeyForTesting } from "@agboss/core/testing/contracts";
 import {
   ExecutionCancelFencedError,
-  FencedEffectSettings,
-  FencedEffectStatus,
   StoreClock,
   StoreTimeSource,
+  IdempotencyRunStatus,
 } from "@agboss/core";
 import { VirtualClock } from "@agboss/core/testing";
 import { hours } from "@agboss/core/units";
@@ -15,6 +14,7 @@ import {
   PostgresFencedEffectRepository,
   PostgresOutboundCallRepository,
   type PostgresConnection,
+  requirePostgresTransaction,
 } from "../../src/index.js";
 import { TestApplicationContext } from "../support/application-context.js";
 import { testDatabase } from "../support/database.js";
@@ -33,7 +33,7 @@ const database = testDatabase();
 function storesOn(connection: PostgresConnection) {
   const clock = new StoreClock(StoreTimeSource.Test, new VirtualClock());
   return {
-    effects: new PostgresFencedEffectRepository(connection, clock, new FencedEffectSettings()),
+    effects: new PostgresFencedEffectRepository(connection, clock),
     leases: new PostgresExecutionLeaseRepository(connection, clock, new TestApplicationContext({})),
   };
 }
@@ -106,7 +106,7 @@ describe("agbossjs/agboss#909, #1117: the cancel's fence is the root lease row's
     const written = await write;
     await cancel;
 
-    expect(written.status).toBe(FencedEffectStatus.Ran);
+    expect(written.status).toBe(IdempotencyRunStatus.Ran);
     const later = await effects
       .runOnce(keyOf(root, lease?.token ?? 0, "later"), () => ({ receipt: "r2" }))
       .catch((error: unknown) => error);
@@ -180,7 +180,7 @@ describe("agbossjs/agboss#909, #1117: the cancel's fence is the root lease row's
     // the root's seed row is the child's to share until its transaction ends
     expect(await settledWithin(cancel, 400)).toBe(false);
     open();
-    expect((await write).status).toBe(FencedEffectStatus.Ran);
+    expect((await write).status).toBe(IdempotencyRunStatus.Ran);
     await cancel;
   });
 
@@ -204,8 +204,8 @@ describe("agbossjs/agboss#909, #1117: the cancel's fence is the root lease row's
       });
     const writer = heldWrite();
 
-    const write = effects.runOnce(keyFor("charge"), async (client) => {
-      await writer.entered(client);
+    const write = effects.runOnce(keyFor("charge"), async () => {
+      await writer.entered(requirePostgresTransaction());
       await writer.released;
       return { receipt: "r1" };
     });
@@ -216,7 +216,7 @@ describe("agbossjs/agboss#909, #1117: the cancel's fence is the root lease row's
     expect(await blockedBy(database.url(), writerPid, cancel)).toBe(true);
     expect(await isMarked(root)).toBe(false);
     writer.release();
-    expect((await write).status).toBe(FencedEffectStatus.Ran);
+    expect((await write).status).toBe(IdempotencyRunStatus.Ran);
     await cancel;
 
     expect(await isMarked(root)).toBe(true);
@@ -248,7 +248,7 @@ describe("agbossjs/agboss#909, #1117: the cancel's fence is the root lease row's
 
     expect(await settledWithin(cancel, 2000)).toBe(true);
     open();
-    expect((await write).status).toBe(FencedEffectStatus.Ran);
+    expect((await write).status).toBe(IdempotencyRunStatus.Ran);
   });
 });
 
@@ -290,8 +290,8 @@ describe("agbossjs/agboss#1117: the cancel's mark is permanent", () => {
       if (finished !== undefined) await leases.retire(finished);
       const farFuture = new Date(Date.now() + hours(24 * 365));
 
-      if (sweeper === "effects") await effects.deleteByStoredAtBefore(farFuture);
-      else await calls.deleteByEndedAtBefore(farFuture);
+      if (sweeper === "effects") await effects.deleteExpired(farFuture);
+      else await calls.deleteExpired(farFuture);
 
       expect(await marksOf([over, alive, never])).toEqual([alive, never, over].sort());
     },
@@ -324,7 +324,7 @@ describe("agbossjs/agboss#1117: the cancel's mark is permanent", () => {
       });
 
     expect((await effects.runOnce(keyFor("charge"), () => ({ receipt: "r1" }))).status).toBe(
-      FencedEffectStatus.Ran,
+      IdempotencyRunStatus.Ran,
     );
     await leases.requestCancel({ tenantId: "default", rootExecutionId: "root-of-child" });
     const later = await effects

@@ -9,20 +9,21 @@ import {
   type OutboundCallIntent,
   type OutboundCallLease,
   type OutboundCallLeaseState,
-  type OutboundCallPage,
   type OutboundCallRecord,
   type OutboundCallState,
   type OutboundCallStatusQuery,
+  type Page,
   type StoreDescriptor,
 } from "@agboss/core/stores";
 import type { PoolClient } from "pg";
 import { PostgresConnection } from "../connection/postgres-connection.js";
-import { changesOf, firstRowOf, rowsOf } from "../connection/query.js";
+import { changesOf, rowsOf } from "../connection/query.js";
 import { inLongTransaction, inPoolTransaction } from "../connection/transaction.js";
 import { checkCancel } from "./cancel-fence.js";
 import { checkFence } from "./fence.js";
 import { storeNowOf } from "./store-time.js";
 import { escapedText } from "./nul-escape.js";
+import { foundRowOf } from "./outbound-calls/outbound-call-lookup.js";
 import { leaseStateIn } from "./outbound-calls/lease-state.js";
 import {
   callRecordOf,
@@ -32,18 +33,11 @@ import {
   type Change,
   type ChangeAt,
 } from "./outbound-calls/outbound-call-rows.js";
-import { z } from "zod";
-import { idOfCursor, pageLimitOf } from "./outbound-call-pages.js";
+import { callsPageOf } from "./outbound-call-pages.js";
 import { assertKeyAtEntry } from "./key-entry.js";
 
-/**
- * A row of a page (agbossjs/agboss#825): its id — an identity `bigint`, from 1, as text: the cursor
- * the page hands out, checked when it comes back (`idOfCursor`) — and its record.
- */
-const PagedRow = z.object({ id: z.string(), record: z.unknown() });
-
 const SAVE = `INSERT INTO agboss_outbound_calls (scope_key, idempotency_key, name, tenant_id,
-    root_execution_id, business_key, status, attempt, attempt_owner, ended_at, record)
+    root_execution_id, business_key, status, attempt, attempt_owner, expires_at, record)
   VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NULL, $10::jsonb)
   ON CONFLICT DO NOTHING`;
 
@@ -82,12 +76,7 @@ export class PostgresOutboundCallRepository extends OutboundCallRepository {
 
   findByKey(key: EffectKey): Promise<OutboundCallRecord | undefined> {
     return this.#fenced(key, false, async (client, now) => {
-      const [where, values] = whereOf(key, 1);
-      const row = await firstRowOf(
-        client,
-        `SELECT record FROM agboss_outbound_calls WHERE ${where}`,
-        values,
-      );
+      const row = await foundRowOf(client, key);
       // read at the store's time the fence decided by (agbossjs/agboss#658), never stored
       return row === undefined ? undefined : { ...callRecordOf(row), readAt: now.toISOString() };
     });
@@ -134,23 +123,33 @@ export class PostgresOutboundCallRepository extends OutboundCallRepository {
     return this.#moved(key, expected, claimed, true);
   }
 
-  markCompleted(key: EffectKey, attemptOwner: string, result: string): Promise<boolean> {
+  markCompleted(
+    key: EffectKey,
+    attemptOwner: string,
+    result: string,
+    expiresAt: Date | null,
+  ): Promise<boolean> {
     const status = OutboundCallStatus.Completed;
     const endedAt = this.clock.now().toISOString();
     return this.#moved(key, { status: OutboundCallStatus.Pending, attemptOwner }, () => ({
       status,
-      endedAt,
+      expiresAt,
       fields: { status, result, endedAt },
     }));
   }
 
-  markFailed(key: EffectKey, attemptOwner: string, failure: OutboundCallFailure): Promise<boolean> {
+  markFailed(
+    key: EffectKey,
+    attemptOwner: string,
+    failure: OutboundCallFailure,
+    expiresAt: Date | null,
+  ): Promise<boolean> {
     const status = OutboundCallStatus.Failed;
     const endedAt = this.clock.now().toISOString();
     const { name, code, message } = failure;
     return this.#moved(key, { status: OutboundCallStatus.Pending, attemptOwner }, () => ({
       status,
-      endedAt,
+      expiresAt,
       fields: { status, failure: { name, code, message }, endedAt },
     }));
   }
@@ -167,32 +166,21 @@ export class PostgresOutboundCallRepository extends OutboundCallRepository {
     return rows.map(callRecordOf);
   }
 
-  /**
-   * A page of a tenant's calls in `status` (agbossjs/agboss#825): keyset on the identity `id` — a row keeps its id
-   * while it lives, an id is never reused — on the index `(tenant_id, status, id)`; the cursor is
-   * the page's last id, as text (a `bigint`).
-   */
-  async findAllByTenantIdAndStatus(query: OutboundCallStatusQuery): Promise<OutboundCallPage> {
-    const { tenantId, status, after } = query;
-    const limit = pageLimitOf(query.limit);
-    const rows = await rowsOf(
-      this.connection.pool,
-      "SELECT id::text AS id, record FROM agboss_outbound_calls WHERE tenant_id = $1 AND status = $2 AND id > $3::bigint ORDER BY id LIMIT $4",
-      [tenantId, status, after === undefined ? "0" : idOfCursor(after), limit + 1],
-    );
-    const page = rows.slice(0, limit).map((row) => PagedRow.parse(row));
-    const calls = page.map((row) => callRecordOf(row));
-    const last = page.at(-1);
-    return last === undefined || rows.length <= limit ? { calls } : { calls, next: last.id };
+  /** A page of a tenant's calls in `status` (agbossjs/agboss#825): keyset on the identity `id`. */
+  findAllByTenantIdAndStatus(query: OutboundCallStatusQuery): Promise<Page<OutboundCallRecord>> {
+    return callsPageOf(this.connection.pool, query);
   }
 
-  async deleteByEndedAtBefore(cutoff: Date): Promise<void> {
-    await inLongTransaction(this.connection.pool, (client) =>
+  /**
+   * Removes the ended calls whose `expires_at` has come (`<= now`); a call with none (`Ttl.Forever`,
+   * or still pending) is never removed. How many went.
+   */
+  deleteExpired(now: Date): Promise<number> {
+    return inLongTransaction(this.connection.pool, (client) =>
       changesOf(
         client,
-        // a call not ended has no `ended_at`, which is never before the cutoff
-        "DELETE FROM agboss_outbound_calls WHERE ended_at < $1",
-        [cutoff],
+        "DELETE FROM agboss_outbound_calls WHERE expires_at IS NOT NULL AND expires_at <= $1",
+        [now],
       ),
     );
   }
@@ -217,7 +205,7 @@ export class PostgresOutboundCallRepository extends OutboundCallRepository {
         client,
         `UPDATE agboss_outbound_calls SET record = ${CHANGED_RECORD}, status = $2,
            attempt = COALESCE($3::integer, attempt), attempt_owner = COALESCE($4::text, attempt_owner),
-           ended_at = $8::timestamptz
+           expires_at = $8::timestamptz
          WHERE ${where} AND status = $9 AND ($10::integer IS NULL OR attempt = $10)
            AND attempt_owner = $11`,
         [
@@ -226,7 +214,7 @@ export class PostgresOutboundCallRepository extends OutboundCallRepository {
           change.attempt ?? null,
           change.attemptOwner === undefined ? null : escapedText(change.attemptOwner),
           ...values,
-          change.endedAt ?? null,
+          change.expiresAt ?? null,
           from.status,
           from.attempt ?? null,
           escapedText(from.attemptOwner),

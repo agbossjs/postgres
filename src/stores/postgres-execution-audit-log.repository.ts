@@ -2,11 +2,13 @@ import { inLongTransaction } from "../connection/transaction.js";
 import {
   ExecutionAuditLogRepository,
   Injectable,
+  type EndedTree,
   type ExecutionAuditEventRecord,
 } from "@agboss/core";
 import { PostgresConnection } from "../connection/postgres-connection.js";
 import { changesOf, rowsOf } from "../connection/query.js";
 import { auditEventOf } from "./audit-log/audit-event-rows.js";
+import { z } from "zod";
 import { escapedJsonOf } from "./nul-escape.js";
 
 /**
@@ -18,6 +20,8 @@ import { escapedJsonOf } from "./nul-escape.js";
  * `Clock`'s cutoff, passed as a parameter. Every statement runs alone at `READ COMMITTED`. Listed
  * in `@Application({ providers })` with `postgresUrl`; `app.auditLogOf` reads it.
  */
+const TreeRow = z.object({ tenant_id: z.string(), root_execution_id: z.string() });
+
 @Injectable({ deps: [PostgresConnection] })
 export class PostgresExecutionAuditLogRepository extends ExecutionAuditLogRepository {
   constructor(private readonly connection: PostgresConnection) {
@@ -50,11 +54,31 @@ export class PostgresExecutionAuditLogRepository extends ExecutionAuditLogReposi
     return rows.map(auditEventOf);
   }
 
-  async deleteByOccurredAtBefore(cutoff: Date): Promise<void> {
-    await inLongTransaction(this.connection.pool, (client) =>
-      changesOf(client, "DELETE FROM agboss_execution_lease_events WHERE occurred_at < $1", [
-        cutoff,
-      ]),
+  /**
+   * Removes the audit rows older than `cutoff` — of an ended tree only (#1321b: the log of a live
+   * tree is never swept), asked once per tree before its rows go. How many went.
+   */
+  async deleteExpired(cutoff: Date, isEnded: EndedTree): Promise<number> {
+    const trees = await rowsOf(
+      this.connection.pool,
+      `SELECT DISTINCT tenant_id, root_execution_id FROM agboss_execution_lease_events
+       WHERE occurred_at < $1`,
+      [cutoff],
     );
+    let removed = 0;
+    for (const row of trees) {
+      const { tenant_id: tenantId, root_execution_id: rootExecutionId } = TreeRow.parse(row);
+      // an ended tree stays ended: asked before its rows go
+      if (!(await isEnded({ tenantId, rootExecutionId }))) continue;
+      removed += await inLongTransaction(this.connection.pool, (client) =>
+        changesOf(
+          client,
+          `DELETE FROM agboss_execution_lease_events
+           WHERE tenant_id = $1 AND root_execution_id = $2 AND occurred_at < $3`,
+          [tenantId, rootExecutionId, cutoff],
+        ),
+      );
+    }
+    return removed;
   }
 }

@@ -24,6 +24,7 @@ const entry = (ledgerId: string, madeAt: Date, costUsd = 0.5): LedgerEntry => ({
   cacheWriteTokens: 0,
   costUsd: usd(costUsd),
   costSource: CostSource.Api,
+  provider: "test",
   ledgerId,
   madeAt,
 });
@@ -81,7 +82,7 @@ describe("PostgresCostLedgerRepository: the save's clauses", () => {
 
     expect(isBlocked).toBe(true);
     await expect(saving).resolves.toBeUndefined();
-    expect(await ledger.findSpentByCounter(counter)).toBe(0.5);
+    expect((await ledger.findUsageByCounter(counter)).spent).toBe(0.5);
     expect(await heldIds(url)).toEqual([]);
   });
 
@@ -89,20 +90,24 @@ describe("PostgresCostLedgerRepository: the save's clauses", () => {
     const { ledger } = await markedLedger();
     await ledger.saveAll([counter], [entry("spent", AFTER)]);
 
-    expect(await ledger.findSpentByCounter(counter)).toBe(0.5);
-    expect(await ledger.findSpentByCounter({ ...counter, budget: "another-budget" })).toBe(0);
-    expect(await ledger.findSpentByCounter({ ...counter, scope: BudgetScope.Application })).toBe(0);
+    expect((await ledger.findUsageByCounter(counter)).spent).toBe(0.5);
+    expect((await ledger.findUsageByCounter({ ...counter, budget: "another-budget" })).spent).toBe(
+      0,
+    );
+    expect(
+      (await ledger.findUsageByCounter({ ...counter, scope: BudgetScope.Application })).spent,
+    ).toBe(0);
   });
 
   it("a budget's account is its budget, scope and key: each tells it from another", async () => {
     const { ledger } = await markedLedger();
     const account = { budget: counter.budget, scope: counter.scope, key: counter.key };
-    await ledger.saveMaxSpend(account, usd(10));
+    await ledger.saveLimit(account, { maxSpend: usd(10) });
 
     expect(
-      await ledger.findMaxSpendByAccount({ ...account, budget: "another-budget" }),
+      (await ledger.findLimitByAccount({ ...account, budget: "another-budget" }))?.maxSpend,
     ).toBeUndefined();
-    expect(await ledger.findMaxSpendByAccount(account)).toBe(10);
+    expect((await ledger.findLimitByAccount(account))?.maxSpend).toBe(10);
   });
 
   it("a violation of another unique key of the entries is an error, not an entry skipped", async () => {
@@ -118,6 +123,6 @@ describe("PostgresCostLedgerRepository: the save's clauses", () => {
     ).rejects.toMatchObject({ code: "23505" });
 
     expect(await heldIds(url)).toEqual([]);
-    expect(await ledger.findSpentByCounter(counter)).toBe(0);
+    expect((await ledger.findUsageByCounter(counter)).spent).toBe(0);
   });
 });

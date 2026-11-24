@@ -3,7 +3,7 @@ import {
   A2ATaskState,
   InvalidA2APageTokenError,
   type NewA2ATask,
-} from "@agboss/core";
+} from "@agboss/core/stores";
 import { describe, expect, it } from "vitest";
 import { PostgresA2ATaskRepository } from "../../src/index.js";
 import { onSchema, testDatabase } from "../support/database.js";
@@ -22,6 +22,7 @@ const HASH = `sha256:${"cd".repeat(32)}`;
 const tasksOn = (url = database.url()) => new PostgresA2ATaskRepository(connectionTo(url));
 
 const newTask = (taskId: string, extra: Partial<NewA2ATask> = {}): NewA2ATask => ({
+  endpoint: "ep-1",
   tenantId: "acme",
   taskId,
   ownerId: "alice",
@@ -96,7 +97,7 @@ describe("agbossjs/postgres#129: the A2A task store, clause by clause", () => {
     const tenantId = "paged";
     await tasks.saveIfAbsent(newTask("one", { tenantId }));
     await tasks.saveIfAbsent(newTask("two", { tenantId }));
-    const query = { tenantId, ownerId: "alice" } as const;
+    const query = { endpoint: "ep-1", tenantId, ownerId: "alice" } as const;
 
     expect(await tasks.list({ ...query, pageSize: 0 })).toEqual({
       tasks: [],

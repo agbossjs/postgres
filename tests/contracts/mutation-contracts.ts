@@ -22,10 +22,10 @@ export const CONTRACTS_OF_SHARD: Readonly<Record<string, readonly (keyof StoreSe
 };
 
 /** `stores` with the contracts `MUTATION_SHARD` needs, or all of them when it names no shard of the map. */
-export function storesOfShard<TTransaction>(
-  stores: StoreSet<TTransaction>,
+export function storesOfShard(
+  stores: StoreSet,
   shard: string | undefined = process.env.MUTATION_SHARD,
-): StoreSet<TTransaction> {
+): StoreSet {
   const keep = shard === undefined ? undefined : CONTRACTS_OF_SHARD[shard];
   if (keep === undefined) return stores;
   return Object.fromEntries(

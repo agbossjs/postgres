@@ -1,11 +1,11 @@
-import { DIRECT_MESSAGE_CLAIM } from "@agboss/core/stores";
-import type {
-  A2AMessageKey,
-  A2AMessageRecord,
-  A2ATaskKey,
-  A2ATaskRecord,
-  NewA2ATask,
-} from "@agboss/core";
+import {
+  DIRECT_MESSAGE_CLAIM,
+  type A2AMessageKey,
+  type A2AMessageRecord,
+  type A2ATaskKey,
+  type A2ATaskRecord,
+  type NewA2ATask,
+} from "@agboss/core/stores";
 import { changesOf, firstRowOf, type Queryable } from "../../connection/query.js";
 import { escapedJsonOf } from "../nul-escape.js";
 import {
@@ -21,6 +21,7 @@ import {
 
 /** The fields a new task keeps as they came. */
 export const taskFieldsOf = (task: NewA2ATask): Omit<A2ATaskRecord, "version" | "statusAt"> => ({
+  endpoint: task.endpoint,
   tenantId: task.tenantId,
   taskId: task.taskId,
   ownerId: task.ownerId,
@@ -39,8 +40,8 @@ export async function insertedMessage(
   const inserted = await changesOf(
     database,
     `INSERT INTO agboss_a2a_messages
-       (tenant_id, owner_id, message_id, request_hash, task_id, saved_at, reply)
-     VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)
+       (tenant_id, owner_id, message_id, request_hash, task_id, saved_at, reply, endpoint)
+     VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8)
      ON CONFLICT (tenant_id, owner_id, message_id) DO NOTHING`,
     [
       ...messageKeyOf(message),
@@ -48,6 +49,7 @@ export async function insertedMessage(
       message.taskId,
       message.savedAt,
       message.reply === undefined ? null : escapedJsonOf(message.reply),
+      message.endpoint,
     ],
   );
   return inserted === 1;
@@ -57,8 +59,8 @@ export async function insertedTask(database: Queryable, task: A2ATaskRecord): Pr
   const inserted = await changesOf(
     database,
     `INSERT INTO agboss_a2a_tasks (tenant_id, task_id, owner_id, context_id, skill, state, status,
-       version, accepted_at, status_at, caller_peer, mesh_body_hash)
-     VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10, $11, $12)
+       version, accepted_at, status_at, caller_peer, mesh_body_hash, endpoint)
+     VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10, $11, $12, $13)
      ON CONFLICT (tenant_id, task_id) DO NOTHING`,
     [
       task.tenantId,
@@ -73,6 +75,7 @@ export async function insertedTask(database: Queryable, task: A2ATaskRecord): Pr
       task.statusAt,
       task.callerPeer ?? null,
       task.meshBodyHash ?? null,
+      task.endpoint,
     ],
   );
   return inserted === 1;
@@ -130,12 +133,14 @@ export async function savedOrKept(
  */
 export async function sweptOrphanMessagesBefore(
   database: Queryable,
+  endpoint: string,
   cutoff: Date,
 ): Promise<number> {
   return changesOf(
     database,
-    `DELETE FROM agboss_a2a_messages m WHERE m.saved_at < $1 AND m.task_id <> $2 AND NOT EXISTS (
+    `DELETE FROM agboss_a2a_messages m WHERE m.endpoint = $3 AND m.saved_at < $1 AND m.task_id <> $2
+       AND NOT EXISTS (
        SELECT 1 FROM agboss_a2a_tasks t WHERE t.tenant_id = m.tenant_id AND t.task_id = m.task_id)`,
-    [cutoff, DIRECT_MESSAGE_CLAIM],
+    [cutoff, DIRECT_MESSAGE_CLAIM, endpoint],
   );
 }

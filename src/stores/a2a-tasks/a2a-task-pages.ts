@@ -1,4 +1,4 @@
-import type { A2ATaskPage, A2ATaskQuery } from "@agboss/core";
+import { type A2ATaskPage, type A2ATaskQuery } from "@agboss/core/stores";
 import { rowsOf, type Queryable } from "../../connection/query.js";
 import { ownerColumnOf, pagePositionOf, pageTokenOf, taskOf, totalOf } from "./a2a-task-rows.js";
 
@@ -10,8 +10,8 @@ import { ownerColumnOf, pagePositionOf, pageTokenOf, taskOf, totalOf } from "./a
 
 /** The filters of `query` as SQL and parameters, from `$1`. */
 function filtersOf(query: A2ATaskQuery): { readonly where: string[]; readonly values: unknown[] } {
-  const where = ["tenant_id = $1", "owner_id = $2"];
-  const values: unknown[] = [query.tenantId, ownerColumnOf(query.ownerId)];
+  const where = ["endpoint = $1", "tenant_id = $2", "owner_id = $3"];
+  const values: unknown[] = [query.endpoint, query.tenantId, ownerColumnOf(query.ownerId)];
   const add = (sql: (at: string) => string, value: unknown): void => {
     values.push(value);
     where.push(sql(`$${String(values.length)}`));

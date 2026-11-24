@@ -1,4 +1,6 @@
 import { ComponentKind, ExecutionHistoryStatus, type ExecutionHistoryRecord } from "@agboss/core";
+import { CostCategory } from "@agboss/core/stores";
+import { usd } from "@agboss/core/units";
 import { describe, expect, it } from "vitest";
 import { PostgresExecutionHistoryRepository } from "../../src/index.js";
 import { onSchema, testDatabase } from "../support/database.js";
@@ -24,22 +26,20 @@ const recordOf = (
   scope: [],
   outdatedValues: [],
   spend: {
-    totalUsd: 0,
+    totalUsd: usd(0),
     calls: 0,
     unknownCalls: 0,
+    inputTokens: 0,
+    outputTokens: 0,
+    totalTokens: 0,
     cacheReadTokens: 0,
+    cacheWriteTokens: 0,
     byCaller: {},
-    byCategory: {
-      agents: 0,
-      routing: 0,
-      guards: 0,
-      review: 0,
-      tools: 0,
-      compaction: 0,
-      retrieval: 0,
-      files: 0,
-    },
+    byCategory: Object.fromEntries(
+      Object.values(CostCategory).map((category) => [category, usd(0)]),
+    ) as Record<CostCategory, ReturnType<typeof usd>>,
     byModel: {},
+    byProvider: {},
     trace: [],
   },
   children: [],
@@ -102,11 +102,11 @@ describe("PostgresExecutionHistoryRepository", () => {
     const history = historyOn();
     const paused = recordOf("ended-later", { status: ExecutionHistoryStatus.Paused });
     await history.save(paused);
-    await history.deleteByEndedAtBefore(new Date("2026-02-01T00:00:00.000Z"));
+    await history.deleteExpired(new Date("2026-02-01T00:00:00.000Z"));
     expect(await history.findAllByExecutionId("ended-later")).toHaveLength(1);
 
     await history.save(recordOf("ended-later"));
-    await history.deleteByEndedAtBefore(new Date("2026-02-01T00:00:00.000Z"));
+    await history.deleteExpired(new Date("2026-02-01T00:00:00.000Z"));
 
     expect(await history.findAllByExecutionId("ended-later")).toEqual([]);
   });
@@ -136,12 +136,23 @@ describe("PostgresExecutionHistoryRepository", () => {
       recordOf("page-next-day", { tenantId: "paged", startedAt: DAY.to.toISOString() }),
     );
 
-    const page = (offset: number, limit: number) =>
-      history.findAllByTenantIdAndStartedAtBetween("paged", DAY.from, DAY.to, { offset, limit });
+    const page = (cursor: string | undefined, limit: number) =>
+      history.findAllByTenantIdAndStartedAtBetween({
+        tenantId: "paged",
+        from: DAY.from,
+        to: DAY.to,
+        limit,
+        ...(cursor === undefined ? {} : { cursor }),
+      });
 
-    expect(idsOf(await page(0, 2))).toEqual(["page-1", "page-2"]);
-    expect(idsOf(await page(2, 2))).toEqual(["page-3"]);
-    expect(await page(3, 2)).toEqual([]);
+    const first = await page(undefined, 2);
+    expect(idsOf(first.items)).toEqual(["page-1", "page-2"]);
+    expect(first.nextCursor).toBe("2");
+    const last = await page(first.nextCursor, 2);
+    expect(idsOf(last.items)).toEqual(["page-3"]);
+    expect(last.nextCursor).toBeUndefined();
+    expect((await page("3", 2)).items).toEqual([]);
+    await expect(page("x", 2)).rejects.toThrow(RangeError);
   });
 
   it("a row that is not a history record is refused when read, never handed to the framework", async () => {
@@ -162,7 +173,6 @@ describe("PostgresExecutionHistoryRepository", () => {
 
   it("a lost connection rejects ping, the save, every read and the sweep", async () => {
     const down = historyOn("postgres://postgres:pw@127.0.0.1:1/postgres");
-    const page = { offset: 0, limit: 1 };
 
     await expect(down.ping()).rejects.toThrow();
     await expect(down.save(recordOf("down"))).rejects.toThrow();
@@ -170,9 +180,9 @@ describe("PostgresExecutionHistoryRepository", () => {
     await expect(down.findAllByExecutionId("down")).rejects.toThrow();
     await expect(down.findAllByTenantIdAndThreadId("acme", "t")).rejects.toThrow();
     await expect(
-      down.findAllByTenantIdAndStartedAtBetween("acme", DAY.from, DAY.to, page),
+      down.findAllByTenantIdAndStartedAtBetween({ tenantId: "acme", from: DAY.from, to: DAY.to }),
     ).rejects.toThrow();
-    await expect(down.findAllByStartedAtBetween(DAY.from, DAY.to, page)).rejects.toThrow();
-    await expect(down.deleteByEndedAtBefore(DAY.to)).rejects.toThrow();
+    await expect(down.findAllByStartedAtBetween({ from: DAY.from, to: DAY.to })).rejects.toThrow();
+    await expect(down.deleteExpired(DAY.to)).rejects.toThrow();
   });
 });

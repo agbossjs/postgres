@@ -2,7 +2,8 @@ import {
   A2ADirectMessageState,
   type A2ADirectMessageRecord,
   type A2ADirectMessageReply,
-} from "@agboss/core";
+} from "@agboss/core/stores";
+import { usd } from "@agboss/core/units";
 import { z } from "zod";
 import { unescapedJson } from "../nul-escape.js";
 
@@ -18,10 +19,12 @@ import { unescapedJson } from "../nul-escape.js";
 const Reply = z.strictObject({
   finish: z.string(),
   output: z.unknown(),
-  spentUsd: z.number().nonnegative(),
+  spentUsd: z.number().nonnegative().transform(usd),
+  spentTokens: z.number().int().nonnegative().optional(),
 });
 
 const DirectRow = z.object({
+  endpoint: z.string(),
   tenant_id: z.string(),
   owner_id: z.string(),
   message_id: z.string(),
@@ -58,6 +61,7 @@ function replyOf(row: Row): Pick<A2ADirectMessageRecord, "reply" | "completedAt"
     finish: parsed.finish,
     output: parsed.output,
     spentUsd: parsed.spentUsd,
+    ...(parsed.spentTokens === undefined ? {} : { spentTokens: parsed.spentTokens }),
   };
   return { reply, completedAt: row.completed_at };
 }
@@ -65,6 +69,7 @@ function replyOf(row: Row): Pick<A2ADirectMessageRecord, "reply" | "completedAt"
 export const directMessageOf = (row: unknown): A2ADirectMessageRecord => {
   const parsed = DirectRow.parse(row);
   return {
+    endpoint: parsed.endpoint,
     tenantId: parsed.tenant_id,
     ownerId: parsed.owner_id === "" ? undefined : parsed.owner_id,
     messageId: parsed.message_id,

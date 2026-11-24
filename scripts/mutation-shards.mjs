@@ -29,6 +29,9 @@ export const SHARDS = {
     timeoutMS: 120_000,
     mutate: [
       "src/stores/postgres-execution-lease.repository.ts",
+      "src/stores/postgres-lease-marks.repository.ts",
+      "src/stores/lease-marks.ts",
+      "src/stores/status-log.ts",
       "src/stores/fence.ts",
       "src/stores/cancel-fence.ts",
       "src/stores/outbound-calls/lease-state.ts",
@@ -46,6 +49,8 @@ export const SHARDS = {
     timeoutMS: 120_000,
     mutate: [
       "src/stores/postgres-fenced-effect.repository.ts",
+      "src/connection/ambient.ts",
+      "src/stores/outbound-calls/outbound-call-lookup.ts",
       "src/stores/key-entry.ts",
       "src/stores/postgres-outbound-call.repository.ts",
       "src/stores/outbound-calls/outbound-call-rows.ts",
@@ -76,6 +81,7 @@ export const SHARDS = {
       "src/stores/postgres-rate-limit.repository.ts",
       "src/stores/rate-limits/*.ts",
       "src/stores/postgres-child-execution-queue.repository.ts",
+      "src/stores/child-queue/*.ts",
     ],
     tests: [
       CONFORMANCE,
@@ -191,6 +197,9 @@ export const NON_SHARDED_SRC = new Set([
   "src/connection/postgres-connection.ts",
   "src/connection/settings.ts",
   "src/store-bundles.ts",
+  // the driver's options and the settings they resolve to, read once at start: wiring, no money-path decision
+  "src/driver.ts",
+  "src/connection/driver-settings.ts",
   "src/redaction.ts",
   // No compare-and-set, claim or once-only write in these two, so no guarantee of the bar to
   // mutate: the audit log is an append-only `INSERT` read back in the order of its time and its
@@ -200,6 +209,9 @@ export const NON_SHARDED_SRC = new Set([
   "src/stores/audit-log/audit-event-rows.ts",
   "src/stores/postgres-execution-history.repository.ts",
   "src/stores/history/history-rows.ts",
+  // the window of a paged listing (the cursor is a position the page gave): read by the history's
+  // paging tests, pure
+  "src/stores/listing-window.ts",
 ]);
 
 /** The shard `MUTATION_SHARD` names (default `fencing`); a name of none fails. */

@@ -9,6 +9,7 @@ import { describe, expect, it, vi } from "vitest";
 import { savedOrKept } from "../../src/stores/a2a-tasks/a2a-task-statements.js";
 
 const MESSAGE = {
+  endpoint: "ep-1",
   tenantId: "default",
   ownerId: "alice",
   messageId: "m-1",

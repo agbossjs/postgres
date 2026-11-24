@@ -86,6 +86,7 @@ describe("migratePostgres (AC5)", () => {
       "agboss_rate_limit_slots",
       "agboss_rate_limit_window_buckets",
       "agboss_schema_migrations",
+      "agboss_thread_status_transitions",
       "agboss_threads",
       "checkpoint_blobs",
       "checkpoint_migrations",

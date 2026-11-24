@@ -1,7 +1,6 @@
 import {
   A2ATaskRepository,
   A2ATaskSaveStatus,
-  Injectable,
   type A2AMessageKey,
   type A2AMessageRecord,
   type A2ATaskKey,
@@ -11,8 +10,8 @@ import {
   type A2ATaskSave,
   type A2ATaskStatus,
   type NewA2ATask,
-  type StoreDescriptor,
-} from "@agboss/core";
+} from "@agboss/core/stores";
+import { Injectable, type StoreDescriptor } from "@agboss/core";
 import { PostgresConnection } from "../connection/postgres-connection.js";
 import { changesOf, rowsOf } from "../connection/query.js";
 import { inPoolTransaction, inLongTransaction } from "../connection/transaction.js";
@@ -66,6 +65,7 @@ export class PostgresA2ATaskRepository extends A2ATaskRepository {
   saveIfAbsent(task: NewA2ATask): Promise<A2ATaskSave> {
     return inPoolTransaction(this.connection.pool, async (client): Promise<A2ATaskSave> => {
       const message: A2AMessageRecord = {
+        endpoint: task.endpoint,
         tenantId: task.tenantId,
         ownerId: task.ownerId,
         messageId: task.messageId,
@@ -147,20 +147,28 @@ export class PostgresA2ATaskRepository extends A2ATaskRepository {
     return pageOf(this.connection.pool, query);
   }
 
-  async deleteTerminalByStatusAtBefore(cutoff: Date): Promise<void> {
-    const gone = "t.state = ANY($1::text[]) AND t.status_at < $2";
-    await inLongTransaction(this.connection.pool, async (client) => {
-      await changesOf(
-        client,
-        `DELETE FROM agboss_a2a_messages m USING agboss_a2a_tasks t
-         WHERE t.tenant_id = m.tenant_id AND t.task_id = m.task_id AND ${gone}`,
-        [TERMINAL_STATES, cutoff],
-      );
-      await changesOf(client, `DELETE FROM agboss_a2a_tasks t WHERE ${gone}`, [
-        TERMINAL_STATES,
-        cutoff,
-      ]);
-      await sweptOrphanMessagesBefore(client, cutoff);
+  /**
+   * The recovery sweep, endpoint by endpoint, in one transaction (#807, #960, #1320): the endpoint's
+   * finished tasks whose status changed before its cutoff with their messages, then every message of
+   * the endpoint whose task is gone and whose `saved_at` is before it. A direct message's claim is
+   * never one. How many tasks went.
+   */
+  async deleteExpired(cutoffsByEndpoint: ReadonlyMap<string, Date>): Promise<number> {
+    const gone = "t.endpoint = $1 AND t.state = ANY($2::text[]) AND t.status_at < $3";
+    return inLongTransaction(this.connection.pool, async (client) => {
+      let removed = 0;
+      for (const [endpoint, cutoff] of cutoffsByEndpoint) {
+        const at = [endpoint, TERMINAL_STATES, cutoff];
+        await changesOf(
+          client,
+          `DELETE FROM agboss_a2a_messages m USING agboss_a2a_tasks t
+           WHERE t.tenant_id = m.tenant_id AND t.task_id = m.task_id AND ${gone}`,
+          at,
+        );
+        removed += await changesOf(client, `DELETE FROM agboss_a2a_tasks t WHERE ${gone}`, at);
+        await sweptOrphanMessagesBefore(client, endpoint, cutoff);
+      }
+      return removed;
     });
   }
 }

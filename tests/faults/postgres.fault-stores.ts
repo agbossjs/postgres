@@ -1,7 +1,6 @@
 import type { Secret } from "@agboss/core";
 import { secret } from "@agboss/core";
 import { FaultStoreTime, type FaultStoreSet } from "@agboss/core/testing/faults";
-import type { PoolClient } from "pg";
 import {
   PostgresA2ADirectMessageRepository,
   PostgresA2ATaskRepository,
@@ -17,14 +16,15 @@ import {
   PostgresFencedEffectRepository,
   PostgresOutboundCallRepository,
   PostgresPausedExecutionRepository,
+  requirePostgresTransaction,
 } from "../../src/index.js";
 
 /**
  * agbossjs/agboss#484 — the PostgreSQL store set under the core's fault suite: every pod imports
  * this module (outside vitest: types only from `@agboss/core/testing/faults`) and lists every store
  * of the package on the scenario's schema (`AGBOSS_FAULT_DATABASE_URL`, through the pod's proxy).
- * The fixture's charge writes its business row in the fenced effect's transaction, on the
- * effect's own `PoolClient`.
+ * The fixture's charge writes its business row in the fenced effect's transaction, in the
+ * effect's ambient transaction (`requirePostgresTransaction()`).
  */
 
 /** The environment the stores read: the database, a small pool per pod. */
@@ -36,7 +36,7 @@ export class PostgresFaultEnvironment {
 /** The table of the fixture's business rows, created by each scenario's reset. */
 export const FAULT_BUSINESS_ROWS_DDL = "CREATE TABLE fault_business_rows (row text NOT NULL)";
 
-export const faultStores: FaultStoreSet<PoolClient> = {
+export const faultStores: FaultStoreSet = {
   // agbossjs/agboss#799: the leases expire by the database's clock_timestamp(), at the real rate —
   // the fault suite reads the history on it, whatever the pods' timeScale
   storeTime: FaultStoreTime.Database,
@@ -61,8 +61,12 @@ export const faultStores: FaultStoreSet<PoolClient> = {
     values: { postgresUrl: secret("AGBOSS_FAULT_DATABASE_URL"), postgresPoolSize: 4 },
   },
   businessRows: {
-    insert: async (client, row) => {
-      await client.query("INSERT INTO fault_business_rows (row) VALUES ($1)", [row]);
+    // the effect's ambient transaction (#1317c)
+    insert: async (row) => {
+      await requirePostgresTransaction().query(
+        "INSERT INTO fault_business_rows (row) VALUES ($1)",
+        [row],
+      );
     },
     committed: async (app) => {
       const { rows } = await app

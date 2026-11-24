@@ -1,19 +1,17 @@
 import {
   ApplicationContext,
-  ExecutionLeaseRepository,
   Injectable,
   StoreClock,
   type ExecutionIdentity,
   type ExecutionLease,
   type StoreDescriptor,
 } from "@agboss/core";
-import type { ExecutionTree } from "@agboss/core/stores";
 import type { Milliseconds } from "@agboss/core/units";
 import { z } from "zod";
 import { PostgresConnection } from "../connection/postgres-connection.js";
 import { changesOf, firstRowOf, type Parameters } from "../connection/query.js";
 import { inPoolTransaction } from "../connection/transaction.js";
-import { markCancel } from "./cancel-fence.js";
+import { PostgresLeaseMarks } from "./postgres-lease-marks.repository.js";
 import { remainingSql, storeNow, storeNowOf } from "./store-time.js";
 
 /**
@@ -194,15 +192,15 @@ const TakenRow = z
  * `postgresUrl`; a lost connection rejects the call, and the core's holder hands the tree over.
  */
 @Injectable({ deps: [PostgresConnection, StoreClock, ApplicationContext] })
-export class PostgresExecutionLeaseRepository extends ExecutionLeaseRepository {
+export class PostgresExecutionLeaseRepository extends PostgresLeaseMarks {
   /** One transactional backend with the other PostgreSQL stores (agbossjs/agboss#526). */
   static override readonly store: StoreDescriptor = { backend: "postgres" };
   constructor(
-    private readonly connection: PostgresConnection,
-    private readonly clock: StoreClock,
+    connection: PostgresConnection,
+    clock: StoreClock,
     private readonly applicationContext: ApplicationContext,
   ) {
-    super();
+    super(connection, clock);
   }
 
   ping(): Promise<void> {
@@ -271,28 +269,6 @@ export class PostgresExecutionLeaseRepository extends ExecutionLeaseRepository {
       ...{ tenantId, rootExecutionId, holderInstanceId, token: row.token },
       ...{ expiresAt: row.expires_at, remaining: remainingOf(row.remaining) },
     };
-  }
-
-  requestCancel(tree: ExecutionTree): Promise<void> {
-    return inPoolTransaction(this.connection.pool, (client) =>
-      markCancel(client, tree, storeNowOf(this.clock)),
-    );
-  }
-
-  /**
-   * Whether the tree's cancel was requested (agbossjs/agboss#1152): `cancel_requested_at` of the tree's
-   * own lease row, tenant-scoped — a seed row counts, no row is not. One read, no lock: it changes no
-   * lease.
-   */
-  async isCancelRequested(tree: ExecutionTree): Promise<boolean> {
-    const row = await firstRowOf(
-      this.connection.pool,
-      `SELECT cancel_requested_at IS NOT NULL AS is_cancelled FROM agboss_execution_leases
-       WHERE tenant_id = $1 AND root_execution_id = $2`,
-      [tree.tenantId, tree.rootExecutionId],
-    );
-    // no row reads as `{}`: not requested
-    return Reflect.get(Object(row), "is_cancelled") === true;
   }
 
   /** `sql`'s first row, run after `lease`'s row is locked, in one transaction (review M1). */

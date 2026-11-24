@@ -13,6 +13,14 @@ import { PostgresSaver } from "@langchain/langgraph-checkpoint-postgres";
 import { latestByStepSql } from "../migrations/checkpoint-step-index.js";
 import { PostgresConnection } from "../connection/postgres-connection.js";
 import { once } from "../connection/once.js";
+import { changesOf, rowsOf } from "../connection/query.js";
+import { inPoolTransaction } from "../connection/transaction.js";
+import { z } from "zod";
+
+/** The configurable key naming a thread's tree: the root execution id, written with every row. */
+const ROOT_EXECUTION_ID_KEY = "root_execution_id";
+
+const ThreadRow = z.object({ thread_id: z.string() });
 
 /**
  * LangGraph's `BaseCheckpointSaver` on PostgreSQL (#265 AC7, #482): LangGraph's own `PostgresSaver`
@@ -82,7 +90,9 @@ export class PostgresCheckpointSaver extends BaseCheckpointSaver {
     newVersions: ChannelVersions,
   ): Promise<RunnableConfig> {
     // the versions LangGraph passes, as they are: the core's contract passes them too (#511)
-    return (await this.#saver()).put(config, checkpoint, metadata, newVersions);
+    const written = await (await this.#saver()).put(config, checkpoint, metadata, newVersions);
+    await this.#rooted(config, "checkpoints", written.configurable?.checkpoint_id);
+    return written;
   }
 
   async putWrites(
@@ -92,10 +102,53 @@ export class PostgresCheckpointSaver extends BaseCheckpointSaver {
     taskPath?: string,
   ): Promise<void> {
     await (await this.#saver()).putWrites(config, writes, taskId, taskPath);
+    await this.#rooted(config, "checkpoint_writes", config.configurable?.checkpoint_id);
   }
 
-  async deleteThread(threadId: string): Promise<void> {
-    await (await this.#saver()).deleteThread(threadId);
+  /**
+   * Deletes a tree's checkpoints (agbossjs/agboss#1321d): the thread `rootExecutionId` and every
+   * thread whose stored `root_id` is it — never a range or a prefix of thread ids, so no id can
+   * reach another tree's rows (`<id>x`, `<id>0/child/…` stay). The checkpoints, their pending
+   * writes and the blobs of their threads, in one transaction.
+   */
+  async deleteThread(rootExecutionId: string): Promise<void> {
+    await inPoolTransaction(this.connection.pool, async (client) => {
+      const threads = await rowsOf(
+        client,
+        `SELECT DISTINCT thread_id FROM (
+           SELECT thread_id FROM checkpoints WHERE root_id = $1 OR thread_id = $1
+           UNION SELECT thread_id FROM checkpoint_writes WHERE root_id = $1 OR thread_id = $1
+         ) found`,
+        [rootExecutionId],
+      );
+      const ids = threads.map((row) => ThreadRow.parse(row).thread_id);
+      await changesOf(client, "DELETE FROM checkpoint_blobs WHERE thread_id = ANY($1::text[])", [
+        ids,
+      ]);
+      await changesOf(
+        client,
+        "DELETE FROM checkpoint_writes WHERE root_id = $1 OR thread_id = $1",
+        [rootExecutionId],
+      );
+      await changesOf(client, "DELETE FROM checkpoints WHERE root_id = $1 OR thread_id = $1", [
+        rootExecutionId,
+      ]);
+    });
+  }
+
+  /** Stores the tree's root execution id on the row just written (its config names it). */
+  async #rooted(config: RunnableConfig, table: string, checkpointId: unknown): Promise<void> {
+    const configurable: Readonly<Record<string, unknown>> | undefined = config.configurable;
+    const root: unknown = configurable?.[ROOT_EXECUTION_ID_KEY];
+    const threadId: unknown = configurable?.thread_id;
+    if (typeof root !== "string" || root === "" || typeof threadId !== "string") return;
+    if (typeof checkpointId !== "string") return;
+    await changesOf(
+      this.connection.pool,
+      `UPDATE ${table} SET root_id = $1 WHERE thread_id = $2 AND checkpoint_ns = $3
+       AND checkpoint_id = $4`,
+      [root, threadId, configurable?.checkpoint_ns ?? "", checkpointId],
+    );
   }
 
   /**

@@ -12,17 +12,26 @@ import {
   type NewTurn,
   type PauseAnswerRecord,
   type Summary,
+  type ThreadStatusTransition,
   type Turn,
   type TurnOutcome,
   type VersionScore,
 } from "@agboss/core";
-import { idGeneratorNameOf } from "@agboss/core/stores";
+import {
+  idGeneratorNameOf,
+  type EndedTree,
+  type ExecutionRecordStatusQuery,
+  type Page,
+  type StatusContext,
+} from "@agboss/core/stores";
 import { PostgresConnection } from "../connection/postgres-connection.js";
 import { pauseAnswerOfJson } from "./framework-json.js";
-import * as memory from "./records/record-memory.js";
+import * as memories from "./records/record-memory.js";
 import * as reads from "./records/record-reads.js";
 import * as scores from "./records/record-scores.js";
 import * as writes from "./records/record-writes.js";
+import { deleteIdleThreads } from "./records/record-idle.js";
+import { forgottenStatus, historyOf } from "./status-log.js";
 
 /** How many minted ids a new thread tries before it gives up (agbossjs/agboss#550). */
 const MINTED_THREAD_TRIES = 100;
@@ -31,9 +40,8 @@ const MINTED_THREAD_TRIES = 100;
  * `ExecutionRecordRepository` on PostgreSQL (#265 S30, #482): threads with their owners, one
  * record per execution in the order appended (`seq`), scores, memory summaries, config snapshots
  * and the permanent log of resolved pauses — so recovery on any instance finds the roots a dead
- * one left `running`, and `--thread` reads earlier turns. Every write is one statement; the status
- * write that must not land late is a compare-and-set (`completeIfStatus`: `UPDATE … WHERE status =
- * $expected`). Times are the `Clock`'s, a new thread's id the `IdGenerator`'s (#313). Listed in
+ * one left `running`, and `--thread` reads earlier turns. A status write is one transaction with its
+ * thread's activity and history row; `completeIfStatus` is a compare-and-set. Times are the `Clock`'s, a new thread's id the `IdGenerator`'s (#313). Listed in
  * `@Application({ providers })` with `postgresUrl`; subclassed through public tokens only:
  * `deps: [PostgresConnection, Clock, ApplicationContext, IdGenerator]`.
  */
@@ -47,7 +55,6 @@ export class PostgresExecutionRecordRepository extends ExecutionRecordRepository
   ) {
     super();
   }
-
   ping(): Promise<void> {
     return this.connection.ping();
   }
@@ -60,14 +67,13 @@ export class PostgresExecutionRecordRepository extends ExecutionRecordRepository
    */
   async createThread(thread: NewThread): Promise<string> {
     if (thread.threadId !== undefined) {
-      await writes.createThread(this.connection.pool, thread, thread.threadId, this.clock.now());
+      await writes.createOwnThread(this.connection.pool, thread, thread.threadId, this.clock.now());
       return thread.threadId;
     }
     for (let tries = 0; tries < MINTED_THREAD_TRIES; tries += 1) {
       const id = this.idGenerator.newThreadId();
       if (await writes.createThread(this.connection.pool, thread, id, this.clock.now())) return id;
     }
-    // agbossjs/agboss#613: the core's typed refusal, naming the project's generator class
     throw new ThreadIdsExhaustedError({
       generator: idGeneratorNameOf(this.idGenerator),
       tries: MINTED_THREAD_TRIES,
@@ -80,21 +86,38 @@ export class PostgresExecutionRecordRepository extends ExecutionRecordRepository
     workflow: string,
     tenantId: string,
     threadId: string,
-  ): Promise<{ readonly owner: string | undefined } | undefined> {
+  ): Promise<{ readonly owner: string | undefined; readonly isSwept?: true } | undefined> {
     return writes.threadOwnerOf(this.connection.pool, workflow, tenantId, threadId);
   }
-  append(record: NewTurn): Promise<Turn> {
-    return writes.appendRecord(this.connection.pool, record, this.clock.now());
+  append(record: NewTurn, context?: StatusContext): Promise<Turn> {
+    return writes.appendRecord(this.connection.pool, record, { now: this.clock.now(), context });
   }
-  async complete(id: string, outcome: TurnOutcome): Promise<void> {
-    await writes.completeRecord(this.connection.pool, id, outcome);
+  async complete(id: string, outcome: TurnOutcome, context?: StatusContext): Promise<void> {
+    await writes.completeRecord(this.connection.pool, id, outcome, {
+      now: this.clock.now(),
+      context,
+    });
   }
   completeIfStatus(
     id: string,
     expected: ExecutionRecordStatus,
     outcome: TurnOutcome,
+    context?: StatusContext,
   ): Promise<boolean> {
-    return writes.completeRecord(this.connection.pool, id, outcome, expected);
+    return writes.completeRecord(this.connection.pool, id, outcome, {
+      now: this.clock.now(),
+      expected,
+      context,
+    });
+  }
+  statusHistory(tenantId: string, threadId: string): Promise<readonly ThreadStatusTransition[]> {
+    return historyOf(this.connection.pool, { tenantId, threadId });
+  }
+  forgetStatusHistory(tenantId: string, threadId: string): Promise<void> {
+    return forgottenStatus(this.connection.pool, { tenantId, threadId });
+  }
+  deleteIdleThreads(cutoffs: ReadonlyMap<string, Date>, isEnded: EndedTree): Promise<number> {
+    return deleteIdleThreads(this.connection.pool, cutoffs, isEnded);
   }
   lastTurns(tenantId: string, threadId: string, limit: number): Promise<Turn[]> {
     return reads.lastRecordsOf(this.connection.pool, tenantId, threadId, limit);
@@ -105,8 +128,8 @@ export class PostgresExecutionRecordRepository extends ExecutionRecordRepository
   byIds(ids: readonly string[]): Promise<Turn[]> {
     return reads.recordsByIds(this.connection.pool, ids);
   }
-  findByStatus(status: ExecutionRecordStatus, limit: number, after?: string): Promise<Turn[]> {
-    return reads.recordsByStatus(this.connection.pool, status, limit, after);
+  findByStatus(query: ExecutionRecordStatusQuery): Promise<Page<Turn>> {
+    return reads.statusPageOf(this.connection.pool, query);
   }
   byVersion(workflow: string, promptVersion: string, limit: number): Promise<Turn[]> {
     return reads.recordsByVersion(this.connection.pool, workflow, promptVersion, limit);
@@ -138,28 +161,28 @@ export class PostgresExecutionRecordRepository extends ExecutionRecordRepository
   recentOriginals(workflow: string, limit: number): Promise<Turn[]> {
     return reads.recentOriginalRecords(this.connection.pool, workflow, limit);
   }
-  uncovered(tenantId: string, threadId: string, compaction: string): Promise<Turn[]> {
-    return memory.uncoveredRecords(this.connection.pool, tenantId, threadId, compaction);
+  uncovered(tenantId: string, threadId: string, memory: string): Promise<Turn[]> {
+    return memories.uncoveredRecords(this.connection.pool, tenantId, threadId, memory);
   }
   before(tenantId: string, threadId: string, turnId: string, limit: number): Promise<Turn[]> {
-    return memory.recordsBefore(this.connection.pool, tenantId, threadId, turnId, limit);
+    return memories.recordsBefore(this.connection.pool, tenantId, threadId, turnId, limit);
   }
   turnNumber(tenantId: string, threadId: string, turnId: string): Promise<number> {
-    return memory.turnNumberOf(this.connection.pool, tenantId, threadId, turnId);
+    return memories.turnNumberOf(this.connection.pool, tenantId, threadId, turnId);
   }
   addSummary(summary: NewSummary): Promise<Summary> {
-    return memory.addSummary(this.connection.pool, summary, this.clock.now());
+    return memories.addSummary(this.connection.pool, summary, this.clock.now());
   }
   latestSummaries(
     tenantId: string,
     threadId: string,
-    compaction: string,
+    memory: string,
     limit: number,
   ): Promise<Summary[]> {
-    return memory.latestSummariesOf(this.connection.pool, tenantId, threadId, compaction, limit);
+    return memories.latestSummariesOf(this.connection.pool, tenantId, threadId, memory, limit);
   }
-  summaryCount(tenantId: string, threadId: string, compaction: string): Promise<number> {
-    return memory.summaryCountOf(this.connection.pool, tenantId, threadId, compaction);
+  summaryCount(tenantId: string, threadId: string, memory: string): Promise<number> {
+    return memories.summaryCountOf(this.connection.pool, tenantId, threadId, memory);
   }
   savePauseAnswer(
     tenantId: string,

@@ -1,6 +1,6 @@
 import { inspect } from "node:util";
 import { effectKeyForTesting } from "@agboss/core/testing/contracts";
-import { FencedEffectSettings, StoreClock, StoreTimeSource } from "@agboss/core";
+import { StoreClock, StoreTimeSource } from "@agboss/core";
 import { StoredNamesUnreadableError } from "@agboss/core/stores";
 import { VirtualClock } from "@agboss/core/testing";
 import { hours } from "@agboss/core/units";
@@ -33,7 +33,6 @@ describe.each(TEXTS)("a stored fenced effect result that is not JSON: %#", (text
     const effects = new PostgresFencedEffectRepository(
       connection,
       new StoreClock(StoreTimeSource.Test, clock),
-      new FencedEffectSettings(),
     );
     const leases = new PostgresExecutionLeaseRepository(
       connection,

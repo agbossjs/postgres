@@ -4,25 +4,27 @@
 
 ```ts
 
-import { A2ADirectMessageAttempt } from '@agboss/core';
-import { A2ADirectMessageKey } from '@agboss/core';
-import { A2ADirectMessageRecord } from '@agboss/core';
-import { A2ADirectMessageReply } from '@agboss/core';
-import { A2ADirectMessageRepository } from '@agboss/core';
-import { A2ADirectMessageSave } from '@agboss/core';
-import { A2AMessageKey } from '@agboss/core';
-import { A2AMessageRecord } from '@agboss/core';
-import { A2ATaskKey } from '@agboss/core';
-import { A2ATaskPage } from '@agboss/core';
-import { A2ATaskQuery } from '@agboss/core';
-import { A2ATaskRecord } from '@agboss/core';
-import { A2ATaskRepository } from '@agboss/core';
-import { A2ATaskSave } from '@agboss/core';
-import { A2ATaskStatus } from '@agboss/core';
+import { A2ADirectMessageAttempt } from '@agboss/core/stores';
+import { A2ADirectMessageKey } from '@agboss/core/stores';
+import { A2ADirectMessageRecord } from '@agboss/core/stores';
+import { A2ADirectMessageReply } from '@agboss/core/stores';
+import { A2ADirectMessageRepository } from '@agboss/core/stores';
+import { A2ADirectMessageSave } from '@agboss/core/stores';
+import { A2AMessageKey } from '@agboss/core/stores';
+import { A2AMessageRecord } from '@agboss/core/stores';
+import { A2ATaskKey } from '@agboss/core/stores';
+import { A2ATaskPage } from '@agboss/core/stores';
+import { A2ATaskQuery } from '@agboss/core/stores';
+import { A2ATaskRecord } from '@agboss/core/stores';
+import { A2ATaskRepository } from '@agboss/core/stores';
+import { A2ATaskSave } from '@agboss/core/stores';
+import { A2ATaskStatus } from '@agboss/core/stores';
 import { AGBossError } from '@agboss/core';
 import { ApplicationContext } from '@agboss/core';
 import { BaseCheckpointSaver } from '@langchain/langgraph-checkpoint';
 import { BudgetAccount } from '@agboss/core';
+import { BudgetLimit } from '@agboss/core';
+import { BudgetUsage } from '@agboss/core';
 import { ChannelVersions } from '@langchain/langgraph-checkpoint';
 import { Checkpoint } from '@langchain/langgraph-checkpoint';
 import { CheckpointListOptions } from '@langchain/langgraph-checkpoint';
@@ -33,38 +35,47 @@ import { ChildExecutionQueueCounts } from '@agboss/core';
 import { ChildExecutionQueueRepository } from '@agboss/core';
 import { ChildExecutionQueueWatch } from '@agboss/core';
 import { Clock } from '@agboss/core';
+import { ClusterLeaseMirror } from '@agboss/core/stores';
+import { ClusterLeaseSync } from '@agboss/core/stores';
 import { ConfigSnapshot } from '@agboss/core';
 import { CostCounter } from '@agboss/core';
 import { CostLedgerRepository } from '@agboss/core';
-import { EffectKey } from '@agboss/core';
-import { EffectKey as EffectKey_2 } from '@agboss/core/stores';
+import { DatabaseDriver } from '@agboss/core/stores';
+import { DriverTimeouts } from '@agboss/core/stores';
+import { EffectKey } from '@agboss/core/stores';
+import { EndedTree } from '@agboss/core/stores';
+import { EndedTree as EndedTree_2 } from '@agboss/core';
 import { ExecutionAuditEventRecord } from '@agboss/core';
 import { ExecutionAuditLogRepository } from '@agboss/core';
-import { ExecutionHistoryPage } from '@agboss/core';
+import type { ExecutionHistoryQuery } from '@agboss/core/stores';
 import { ExecutionHistoryRecord } from '@agboss/core';
 import { ExecutionHistoryRepository } from '@agboss/core';
 import { ExecutionIdentity } from '@agboss/core';
-import { ExecutionLease } from '@agboss/core';
-import { ExecutionLeaseRepository } from '@agboss/core';
+import { ExecutionLease } from '@agboss/core/stores';
+import { ExecutionLease as ExecutionLease_2 } from '@agboss/core';
+import { ExecutionLeaseRepository } from '@agboss/core/stores';
 import { ExecutionRecordRepository } from '@agboss/core';
 import { ExecutionRecordStatus } from '@agboss/core';
+import { ExecutionRecordStatusQuery } from '@agboss/core/stores';
 import { ExecutionTree } from '@agboss/core';
-import type { ExecutionTree as ExecutionTree_2 } from '@agboss/core/stores';
+import { ExecutionTree as ExecutionTree_2 } from '@agboss/core/stores';
 import { ExecutionTreeRepository } from '@agboss/core';
 import { ExecutionTreeValue } from '@agboss/core';
-import { FencedEffectOutcome } from '@agboss/core';
 import { FencedEffectRepository } from '@agboss/core';
-import { FencedEffectSettings } from '@agboss/core';
 import { FencedEffectWork } from '@agboss/core';
+import { IdempotencyRunOutcome } from '@agboss/core';
 import { IdGenerator } from '@agboss/core';
+import type { InterruptMode } from '@agboss/core';
 import { LedgerEntry } from '@agboss/core';
 import { Logger } from '@agboss/core';
 import { MeshRequestKey } from '@agboss/core';
 import { MeshRequestRecord } from '@agboss/core';
 import { MeshRequestRepository } from '@agboss/core';
 import type { Milliseconds } from '@agboss/core/units';
-import { NewA2ADirectMessage } from '@agboss/core';
-import { NewA2ATask } from '@agboss/core';
+import { MirroredLease } from '@agboss/core/stores';
+import { NewA2ADirectMessage } from '@agboss/core/stores';
+import { NewA2ATask } from '@agboss/core/stores';
+import type { NewStatusTransition } from '@agboss/core';
 import { NewSummary } from '@agboss/core';
 import { NewThread } from '@agboss/core';
 import { NewTurn } from '@agboss/core';
@@ -75,11 +86,11 @@ import { OutboundCallFailure } from '@agboss/core/stores';
 import { OutboundCallIntent } from '@agboss/core/stores';
 import { OutboundCallLease } from '@agboss/core/stores';
 import { OutboundCallLeaseState } from '@agboss/core/stores';
-import { OutboundCallPage } from '@agboss/core/stores';
 import { OutboundCallRecord } from '@agboss/core/stores';
 import { OutboundCallRepository } from '@agboss/core/stores';
 import { OutboundCallState } from '@agboss/core/stores';
 import { OutboundCallStatusQuery } from '@agboss/core/stores';
+import { Page } from '@agboss/core/stores';
 import { PauseAnswer } from '@agboss/core';
 import { PauseAnswerRecord } from '@agboss/core';
 import { PauseCancellation } from '@agboss/core';
@@ -88,6 +99,7 @@ import { PausedExecution } from '@agboss/core';
 import { PausedExecutionRepository } from '@agboss/core';
 import type { PauseExpiry } from '@agboss/core/stores';
 import type { PauseFilter } from '@agboss/core/stores';
+import type { PauseMarks } from '@agboss/core';
 import type { PauseNoticeClaim } from '@agboss/core/stores';
 import type { PauseNoticeCounts } from '@agboss/core/stores';
 import type { PauseNoticeFacts } from '@agboss/core/stores';
@@ -96,6 +108,7 @@ import type { PausePage } from '@agboss/core/stores';
 import type { PauseRecipients } from '@agboss/core/stores';
 import { PauseRecord } from '@agboss/core';
 import type { PauseReplacement } from '@agboss/core/stores';
+import type { PauseRequest } from '@agboss/core';
 import type { PauseScanAfter } from '@agboss/core/stores';
 import type { PauseUntakenResolution } from '@agboss/core/stores';
 import { PendingWrite } from '@langchain/langgraph-checkpoint';
@@ -104,16 +117,22 @@ import type { PoolClient } from 'pg';
 import { QueuedChildExecution } from '@agboss/core';
 import { RateLimitLease } from '@agboss/core';
 import { RateLimitRepository } from '@agboss/core';
+import { ResolvedSettings } from '@agboss/core/stores';
 import type { RunnableConfig } from '@langchain/core/runnables';
 import { SchemaSetup } from '@agboss/core/stores';
+import type { SecretRef } from '@agboss/core';
 import type { SetAsideMailbox } from '@agboss/core/stores';
+import { StatusContext } from '@agboss/core/stores';
+import type { StopMark } from '@agboss/core';
 import { StoreClock } from '@agboss/core';
 import { StoreDescriptor } from '@agboss/core';
 import { StoreDescriptor as StoreDescriptor_2 } from '@agboss/core/stores';
 import { Summary } from '@agboss/core';
+import type { TenantExecutionHistoryQuery } from '@agboss/core/stores';
+import { ThreadStatusTransition } from '@agboss/core';
+import type { TreeMarks } from '@agboss/core';
 import { Turn } from '@agboss/core';
 import { TurnOutcome } from '@agboss/core';
-import { Usd } from '@agboss/core/units';
 import { VersionScore } from '@agboss/core';
 
 // @public
@@ -185,8 +204,7 @@ export class PostgresA2ADirectMessageRepository extends A2ADirectMessageReposito
     constructor(connection: PostgresConnection);
     // (undocumented)
     completeIfInFlight(key: A2ADirectMessageKey, attemptId: string, reply: A2ADirectMessageReply, completedAt: Date): Promise<A2ADirectMessageRecord | undefined>;
-    // (undocumented)
-    deleteByCreatedAtBefore(cutoff: Date, limit: number): Promise<readonly A2ADirectMessageRecord[]>;
+    deleteExpired(cutoffsByEndpoint: ReadonlyMap<string, Date>, limit: number): Promise<number>;
     // (undocumented)
     deleteIfInFlight(key: A2ADirectMessageKey, attemptId: string): Promise<boolean>;
     // (undocumented)
@@ -208,8 +226,7 @@ export class PostgresA2ATaskRepository extends A2ATaskRepository {
     constructor(connection: PostgresConnection);
     // (undocumented)
     compareAndSetStatus(key: A2ATaskKey, expectedVersion: number, status: A2ATaskStatus, statusAt: Date): Promise<A2ATaskRecord | undefined>;
-    // (undocumented)
-    deleteTerminalByStatusAtBefore(cutoff: Date): Promise<void>;
+    deleteExpired(cutoffsByEndpoint: ReadonlyMap<string, Date>): Promise<number>;
     // (undocumented)
     findById(key: A2ATaskKey): Promise<A2ATaskRecord | undefined>;
     // (undocumented)
@@ -231,8 +248,7 @@ export class PostgresA2ATaskRepository extends A2ATaskRepository {
 // @public
 export class PostgresCheckpointSaver extends BaseCheckpointSaver {
     constructor(connection: PostgresConnection);
-    // (undocumented)
-    deleteThread(threadId: string): Promise<void>;
+    deleteThread(rootExecutionId: string): Promise<void>;
     getNextVersion(current: number | undefined): number;
     // (undocumented)
     getTuple(config: RunnableConfig): Promise<CheckpointTuple | undefined>;
@@ -251,6 +267,7 @@ export class PostgresChildExecutionQueueRepository extends ChildExecutionQueueRe
     constructor(connection: PostgresConnection, clock: Clock, applicationContext: ApplicationContext, logger: Logger);
     // (undocumented)
     claimFirstByStatusQueuedOrderByDepthDesc(): Promise<QueuedChildExecution | undefined>;
+    claimIsolatedWorkerByTenantIdAndExecutionId(tenantId: string, executionId: string): Promise<QueuedChildExecution | undefined>;
     // (undocumented)
     completeByTenantIdAndExecutionId(tenantId: string, executionId: string, end: ChildExecutionEnd): Promise<boolean>;
     // (undocumented)
@@ -259,20 +276,23 @@ export class PostgresChildExecutionQueueRepository extends ChildExecutionQueueRe
     deleteAllByTenantIdAndRootExecutionId(tenantId: string, rootExecutionId: string): Promise<void>;
     // (undocumented)
     findByTenantIdAndExecutionId(tenantId: string, executionId: string): Promise<QueuedChildExecution | undefined>;
+    findQueuedIsolatedWorkerChildren(limit: number): Promise<readonly QueuedChildExecution[]>;
     // (undocumented)
     ping(): Promise<void>;
     // (undocumented)
     saveIfAbsent(child: QueuedChildExecution): Promise<boolean>;
     watchQueued(onQueued: () => void): Promise<ChildExecutionQueueWatch>;
+    withdrawByTenantIdAndExecutionIdIfQueued(tenantId: string, executionId: string): Promise<boolean>;
 }
 
 // @public
 export class PostgresConnection implements OnInit, OnDestroy {
-    constructor(source: ApplicationContext | PostgresConnectionSettings);
+    constructor(source: ApplicationContext | PostgresConnectionSettings, resolved?: ResolvedSettings);
     onDestroy(): Promise<void>;
     onInit(): Promise<void>;
     ping(): Promise<void>;
     readonly pool: pg.Pool;
+    requireTransaction(): pg.PoolClient;
     schema(): Promise<string>;
 }
 
@@ -294,22 +314,33 @@ export class PostgresCostLedgerRepository extends CostLedgerRepository {
     // (undocumented)
     deleteByMadeAtBefore(cutoff: Date): Promise<void>;
     // (undocumented)
-    findMaxSpendByAccount(account: BudgetAccount): Promise<Usd | undefined>;
+    findLimitByAccount(account: BudgetAccount): Promise<BudgetLimit | undefined>;
     // (undocumented)
-    findSpentByCounter(counter: CostCounter): Promise<Usd>;
+    findUsageByCounter(counter: CostCounter): Promise<BudgetUsage>;
     // (undocumented)
     ping(): Promise<void>;
     // (undocumented)
     saveAll(counters: readonly CostCounter[], entries: readonly LedgerEntry[]): Promise<void>;
     // (undocumented)
-    saveMaxSpend(account: BudgetAccount, maxSpend: Usd): Promise<void>;
+    saveLimit(account: BudgetAccount, limit: BudgetLimit): Promise<void>;
 }
 
 // @public
+export function PostgresDriver(options: PostgresDriverOptions): DatabaseDriver;
+
+// @public
+export interface PostgresDriverOptions {
+    readonly poolSize?: number;
+    readonly schema?: string;
+    readonly schemaSetup?: SchemaSetup;
+    readonly timeouts?: DriverTimeouts;
+    readonly url: SecretRef;
+}
+
+// @public (undocumented)
 export class PostgresExecutionAuditLogRepository extends ExecutionAuditLogRepository {
     constructor(connection: PostgresConnection);
-    // (undocumented)
-    deleteByOccurredAtBefore(cutoff: Date): Promise<void>;
+    deleteExpired(cutoff: Date, isEnded: EndedTree_2): Promise<number>;
     // (undocumented)
     findAllByTenantIdAndRootExecutionIdOrderByOccurredAt(tenantId: string, rootExecutionId: string): Promise<readonly ExecutionAuditEventRecord[]>;
     // (undocumented)
@@ -321,14 +352,13 @@ export class PostgresExecutionAuditLogRepository extends ExecutionAuditLogReposi
 // @public
 export class PostgresExecutionHistoryRepository extends ExecutionHistoryRepository {
     constructor(connection: PostgresConnection);
-    // (undocumented)
-    deleteByEndedAtBefore(cutoff: Date): Promise<void>;
+    deleteExpired(cutoff: Date): Promise<number>;
     // (undocumented)
     findAllByExecutionId(executionId: string): Promise<ExecutionHistoryRecord[]>;
     // (undocumented)
-    findAllByStartedAtBetween(from: Date, to: Date, page: ExecutionHistoryPage): Promise<ExecutionHistoryRecord[]>;
+    findAllByStartedAtBetween(query: ExecutionHistoryQuery): Promise<Page<ExecutionHistoryRecord>>;
     // (undocumented)
-    findAllByTenantIdAndStartedAtBetween(tenantId: string, from: Date, to: Date, page: ExecutionHistoryPage): Promise<ExecutionHistoryRecord[]>;
+    findAllByTenantIdAndStartedAtBetween(query: TenantExecutionHistoryQuery): Promise<Page<ExecutionHistoryRecord>>;
     // (undocumented)
     findAllByTenantIdAndThreadId(tenantId: string, threadId: string): Promise<ExecutionHistoryRecord[]>;
     // (undocumented)
@@ -340,28 +370,25 @@ export class PostgresExecutionHistoryRepository extends ExecutionHistoryReposito
 }
 
 // @public
-export class PostgresExecutionLeaseRepository extends ExecutionLeaseRepository {
+export class PostgresExecutionLeaseRepository extends PostgresLeaseMarks {
     constructor(connection: PostgresConnection, clock: StoreClock, applicationContext: ApplicationContext);
     // (undocumented)
-    acquire(tenantId: string, rootExecutionId: string, duration: Milliseconds): Promise<ExecutionLease | undefined>;
+    acquire(tenantId: string, rootExecutionId: string, duration: Milliseconds): Promise<ExecutionLease_2 | undefined>;
     // (undocumented)
     claimExecutionId(identity: ExecutionIdentity): Promise<boolean>;
-    isCancelRequested(tree: ExecutionTree_2): Promise<boolean>;
     // (undocumented)
     ping(): Promise<void>;
     // (undocumented)
-    reclaim(held: ExecutionLease, duration: Milliseconds): Promise<ExecutionLease | undefined>;
+    reclaim(held: ExecutionLease_2, duration: Milliseconds): Promise<ExecutionLease_2 | undefined>;
     // (undocumented)
-    release(held: ExecutionLease): Promise<void>;
+    release(held: ExecutionLease_2): Promise<void>;
     // (undocumented)
-    renew(held: ExecutionLease, duration: Milliseconds): Promise<Milliseconds | undefined>;
+    renew(held: ExecutionLease_2, duration: Milliseconds): Promise<Milliseconds | undefined>;
     // (undocumented)
-    requestCancel(tree: ExecutionTree_2): Promise<void>;
-    // (undocumented)
-    retire(held: ExecutionLease): Promise<void>;
+    retire(held: ExecutionLease_2): Promise<void>;
     static readonly store: StoreDescriptor;
     // (undocumented)
-    yield(held: ExecutionLease): Promise<Milliseconds | undefined>;
+    yield(held: ExecutionLease_2): Promise<Milliseconds | undefined>;
 }
 
 // @public
@@ -370,7 +397,7 @@ export class PostgresExecutionRecordRepository extends ExecutionRecordRepository
     // (undocumented)
     addSummary(summary: NewSummary): Promise<Summary>;
     // (undocumented)
-    append(record: NewTurn): Promise<Turn>;
+    append(record: NewTurn, context?: StatusContext): Promise<Turn>;
     // (undocumented)
     before(tenantId: string, threadId: string, turnId: string, limit: number): Promise<Turn[]>;
     // (undocumented)
@@ -378,24 +405,28 @@ export class PostgresExecutionRecordRepository extends ExecutionRecordRepository
     // (undocumented)
     byVersion(workflow: string, promptVersion: string, limit: number): Promise<Turn[]>;
     // (undocumented)
-    complete(id: string, outcome: TurnOutcome): Promise<void>;
+    complete(id: string, outcome: TurnOutcome, context?: StatusContext): Promise<void>;
     // (undocumented)
-    completeIfStatus(id: string, expected: ExecutionRecordStatus, outcome: TurnOutcome): Promise<boolean>;
+    completeIfStatus(id: string, expected: ExecutionRecordStatus, outcome: TurnOutcome, context?: StatusContext): Promise<boolean>;
     // (undocumented)
     configSnapshots(workflow: string, version: string): Promise<ConfigSnapshot[]>;
     createThread(thread: NewThread): Promise<string>;
     // (undocumented)
-    findByStatus(status: ExecutionRecordStatus, limit: number, after?: string): Promise<Turn[]>;
+    deleteIdleThreads(cutoffs: ReadonlyMap<string, Date>, isEnded: EndedTree): Promise<number>;
+    // (undocumented)
+    findByStatus(query: ExecutionRecordStatusQuery): Promise<Page<Turn>>;
     // (undocumented)
     findByTenantIdAndRunId(tenantId: string, runId: string): Promise<Turn | undefined>;
     // (undocumented)
     findPauseAnswersByTenantIdAndRootExecutionId(tenantId: string, rootExecutionId: string): Promise<PauseAnswerRecord[]>;
     // (undocumented)
+    forgetStatusHistory(tenantId: string, threadId: string): Promise<void>;
+    // (undocumented)
     hasThread(workflow: string, tenantId: string, threadId: string): Promise<boolean>;
     // (undocumented)
     lastTurns(tenantId: string, threadId: string, limit: number): Promise<Turn[]>;
     // (undocumented)
-    latestSummaries(tenantId: string, threadId: string, compaction: string, limit: number): Promise<Summary[]>;
+    latestSummaries(tenantId: string, threadId: string, memory: string, limit: number): Promise<Summary[]>;
     // (undocumented)
     markPauseAnswerNotTaken(tenantId: string, rootExecutionId: string, answer: PauseAnswerRecord): Promise<void>;
     // (undocumented)
@@ -413,17 +444,20 @@ export class PostgresExecutionRecordRepository extends ExecutionRecordRepository
     // (undocumented)
     saveScore(recordId: string, judge: string, score: number): Promise<void>;
     // (undocumented)
+    statusHistory(tenantId: string, threadId: string): Promise<readonly ThreadStatusTransition[]>;
+    // (undocumented)
     summary(workflow: string): Promise<VersionScore[]>;
     // (undocumented)
-    summaryCount(tenantId: string, threadId: string, compaction: string): Promise<number>;
+    summaryCount(tenantId: string, threadId: string, memory: string): Promise<number>;
     // (undocumented)
     threadOwner(workflow: string, tenantId: string, threadId: string): Promise<{
         readonly owner: string | undefined;
+        readonly isSwept?: true;
     } | undefined>;
     // (undocumented)
     turnNumber(tenantId: string, threadId: string, turnId: string): Promise<number>;
     // (undocumented)
-    uncovered(tenantId: string, threadId: string, compaction: string): Promise<Turn[]>;
+    uncovered(tenantId: string, threadId: string, memory: string): Promise<Turn[]>;
     // (undocumented)
     unscored(workflow: string, promptVersion: string | undefined, limit: number): Promise<Turn[]>;
 }
@@ -442,15 +476,47 @@ export class PostgresExecutionTreeRepository extends ExecutionTreeRepository {
 }
 
 // @public
-export class PostgresFencedEffectRepository extends FencedEffectRepository<PoolClient> {
-    constructor(connection: PostgresConnection, clock: StoreClock, settings: FencedEffectSettings);
-    // (undocumented)
-    deleteByStoredAtBefore(cutoff: Date): Promise<void>;
+export class PostgresFencedEffectRepository extends FencedEffectRepository {
+    constructor(connection: PostgresConnection, clock: StoreClock);
+    deleteExpired(now: Date): Promise<number>;
     // (undocumented)
     ping(): Promise<void>;
     // (undocumented)
-    protected runInTransaction<TResult>(key: EffectKey, work: FencedEffectWork<PoolClient, TResult>): Promise<FencedEffectOutcome<TResult>>;
+    protected runInTransaction<TResult>(key: EffectKey, work: FencedEffectWork<TResult>): Promise<IdempotencyRunOutcome<TResult>>;
     static readonly store: StoreDescriptor;
+}
+
+// @public (undocumented)
+export abstract class PostgresLeaseMarks extends ExecutionLeaseRepository implements ClusterLeaseMirror {
+    constructor(connection: PostgresConnection, clock: StoreClock);
+    // (undocumented)
+    protected readonly clock: StoreClock;
+    // (undocumented)
+    protected readonly connection: PostgresConnection;
+    // (undocumented)
+    endClusterLease(lease: ExecutionLease, end: {
+        readonly isRetired: boolean;
+    }): Promise<void>;
+    // (undocumented)
+    isCancelRequested(tree: ExecutionTree_2): Promise<boolean>;
+    // (undocumented)
+    markedOf(tree: ExecutionTree_2): Promise<TreeMarks>;
+    // (undocumented)
+    mirroredLeaseOf(tree: ExecutionTree_2): Promise<MirroredLease | undefined>;
+    // (undocumented)
+    pauseOf(tree: ExecutionTree_2): Promise<PauseMarks>;
+    // (undocumented)
+    requestCancel(tree: ExecutionTree_2, transition?: NewStatusTransition): Promise<void>;
+    // (undocumented)
+    requestPause(tree: ExecutionTree_2, request: PauseRequest, transition?: NewStatusTransition): Promise<void>;
+    // (undocumented)
+    requestStop(tree: ExecutionTree_2, mode: InterruptMode, transition?: NewStatusTransition): Promise<void>;
+    // (undocumented)
+    stopOf(tree: ExecutionTree_2): Promise<StopMark | undefined>;
+    // (undocumented)
+    syncClusterLease(lease: ExecutionLease): Promise<ClusterLeaseSync>;
+    // (undocumented)
+    unpause(tree: ExecutionTree_2, transition?: NewStatusTransition): Promise<void>;
 }
 
 // @public
@@ -497,9 +563,8 @@ export interface PostgresLiveLeasesErrorOptions {
 export class PostgresMeshRequestRepository extends MeshRequestRepository {
     constructor(connection: PostgresConnection);
     // (undocumented)
-    deleteByCreatedAtBefore(cutoff: Date): Promise<void>;
-    // (undocumented)
     deleteByKey(key: MeshRequestKey): Promise<void>;
+    deleteExpired(cutoff: Date): Promise<number>;
     // (undocumented)
     findByKey(key: MeshRequestKey): Promise<MeshRequestRecord | undefined>;
     // (undocumented)
@@ -528,25 +593,24 @@ export class PostgresMigrationChangedError extends AGBossError {
 // @public
 export class PostgresOutboundCallRepository extends OutboundCallRepository {
     constructor(connection: PostgresConnection, clock: StoreClock);
-    // (undocumented)
-    deleteByEndedAtBefore(cutoff: Date): Promise<void>;
+    deleteExpired(now: Date): Promise<number>;
     // (undocumented)
     findAllByTenantIdAndRootExecutionId(tenantId: string, rootExecutionId: string): Promise<readonly OutboundCallRecord[]>;
-    findAllByTenantIdAndStatus(query: OutboundCallStatusQuery): Promise<OutboundCallPage>;
+    findAllByTenantIdAndStatus(query: OutboundCallStatusQuery): Promise<Page<OutboundCallRecord>>;
     // (undocumented)
-    findByKey(key: EffectKey_2): Promise<OutboundCallRecord | undefined>;
+    findByKey(key: EffectKey): Promise<OutboundCallRecord | undefined>;
     // (undocumented)
     leaseStateOf(lease: OutboundCallLease): Promise<OutboundCallLeaseState>;
     // (undocumented)
-    markCompleted(key: EffectKey_2, attemptOwner: string, result: string): Promise<boolean>;
+    markCompleted(key: EffectKey, attemptOwner: string, result: string, expiresAt: Date | null): Promise<boolean>;
     // (undocumented)
-    markFailed(key: EffectKey_2, attemptOwner: string, failure: OutboundCallFailure): Promise<boolean>;
+    markFailed(key: EffectKey, attemptOwner: string, failure: OutboundCallFailure, expiresAt: Date | null): Promise<boolean>;
     // (undocumented)
-    markPending(key: EffectKey_2, expected: OutboundCallState, claim: OutboundCallClaim): Promise<boolean>;
+    markPending(key: EffectKey, expected: OutboundCallState, claim: OutboundCallClaim): Promise<boolean>;
     // (undocumented)
     ping(): Promise<void>;
     // (undocumented)
-    saveIfAbsent(key: EffectKey_2, intent: OutboundCallIntent): Promise<boolean>;
+    saveIfAbsent(key: EffectKey, intent: OutboundCallIntent): Promise<boolean>;
     static readonly store: StoreDescriptor_2;
 }
 
@@ -723,6 +787,9 @@ export interface PostgresStepIndexErrorOptions {
     readonly report: MigrationReport;
 }
 
+// @public
+export function requirePostgresTransaction(): PoolClient;
+
 export { SchemaSetup }
 
 // @public
@@ -783,7 +850,6 @@ export type StepIndexResult = "built" | "present" | "skipped";
 // src/stores/postgres-a2a-direct-message.repository.ts - (ae-undocumented) Missing documentation for "retakeIfExpired".
 // src/stores/postgres-a2a-direct-message.repository.ts - (ae-undocumented) Missing documentation for "deleteIfInFlight".
 // src/stores/postgres-a2a-direct-message.repository.ts - (ae-undocumented) Missing documentation for "findAllInFlightByExpiresAtBefore".
-// src/stores/postgres-a2a-direct-message.repository.ts - (ae-undocumented) Missing documentation for "deleteByCreatedAtBefore".
 // src/stores/postgres-a2a-task.repository.ts - (ae-undocumented) Missing documentation for "store".
 // src/stores/postgres-a2a-task.repository.ts - (ae-undocumented) Missing documentation for "ping".
 // src/stores/postgres-a2a-task.repository.ts - (ae-undocumented) Missing documentation for "saveIfAbsent".
@@ -793,12 +859,10 @@ export type StepIndexResult = "built" | "present" | "skipped";
 // src/stores/postgres-a2a-task.repository.ts - (ae-undocumented) Missing documentation for "findByMessage".
 // src/stores/postgres-a2a-task.repository.ts - (ae-undocumented) Missing documentation for "compareAndSetStatus".
 // src/stores/postgres-a2a-task.repository.ts - (ae-undocumented) Missing documentation for "list".
-// src/stores/postgres-a2a-task.repository.ts - (ae-undocumented) Missing documentation for "deleteTerminalByStatusAtBefore".
 // src/stores/postgres-checkpoint-saver.ts - (ae-undocumented) Missing documentation for "getTuple".
 // src/stores/postgres-checkpoint-saver.ts - (ae-undocumented) Missing documentation for "list".
 // src/stores/postgres-checkpoint-saver.ts - (ae-undocumented) Missing documentation for "put".
 // src/stores/postgres-checkpoint-saver.ts - (ae-undocumented) Missing documentation for "putWrites".
-// src/stores/postgres-checkpoint-saver.ts - (ae-undocumented) Missing documentation for "deleteThread".
 // src/stores/postgres-child-execution-queue.repository.ts - (ae-undocumented) Missing documentation for "ping".
 // src/stores/postgres-child-execution-queue.repository.ts - (ae-undocumented) Missing documentation for "saveIfAbsent".
 // src/stores/postgres-child-execution-queue.repository.ts - (ae-undocumented) Missing documentation for "findByTenantIdAndExecutionId".
@@ -807,15 +871,15 @@ export type StepIndexResult = "built" | "present" | "skipped";
 // src/stores/postgres-child-execution-queue.repository.ts - (ae-undocumented) Missing documentation for "deleteAllByTenantIdAndRootExecutionId".
 // src/stores/postgres-child-execution-queue.repository.ts - (ae-undocumented) Missing documentation for "countByStatus".
 // src/stores/postgres-cost-ledger.repository.ts - (ae-undocumented) Missing documentation for "ping".
-// src/stores/postgres-cost-ledger.repository.ts - (ae-undocumented) Missing documentation for "findSpentByCounter".
+// src/stores/postgres-cost-ledger.repository.ts - (ae-undocumented) Missing documentation for "findUsageByCounter".
 // src/stores/postgres-cost-ledger.repository.ts - (ae-undocumented) Missing documentation for "saveAll".
 // src/stores/postgres-cost-ledger.repository.ts - (ae-undocumented) Missing documentation for "deleteByMadeAtBefore".
-// src/stores/postgres-cost-ledger.repository.ts - (ae-undocumented) Missing documentation for "findMaxSpendByAccount".
-// src/stores/postgres-cost-ledger.repository.ts - (ae-undocumented) Missing documentation for "saveMaxSpend".
+// src/stores/postgres-cost-ledger.repository.ts - (ae-undocumented) Missing documentation for "findLimitByAccount".
+// src/stores/postgres-cost-ledger.repository.ts - (ae-undocumented) Missing documentation for "saveLimit".
+// src/stores/postgres-execution-audit-log.repository.ts - (ae-undocumented) Missing documentation for "PostgresExecutionAuditLogRepository".
 // src/stores/postgres-execution-audit-log.repository.ts - (ae-undocumented) Missing documentation for "ping".
 // src/stores/postgres-execution-audit-log.repository.ts - (ae-undocumented) Missing documentation for "save".
 // src/stores/postgres-execution-audit-log.repository.ts - (ae-undocumented) Missing documentation for "findAllByTenantIdAndRootExecutionIdOrderByOccurredAt".
-// src/stores/postgres-execution-audit-log.repository.ts - (ae-undocumented) Missing documentation for "deleteByOccurredAtBefore".
 // src/stores/postgres-execution-history.repository.ts - (ae-undocumented) Missing documentation for "ping".
 // src/stores/postgres-execution-history.repository.ts - (ae-undocumented) Missing documentation for "save".
 // src/stores/postgres-execution-history.repository.ts - (ae-undocumented) Missing documentation for "findByTenantIdAndExecutionId".
@@ -823,7 +887,6 @@ export type StepIndexResult = "built" | "present" | "skipped";
 // src/stores/postgres-execution-history.repository.ts - (ae-undocumented) Missing documentation for "findAllByTenantIdAndThreadId".
 // src/stores/postgres-execution-history.repository.ts - (ae-undocumented) Missing documentation for "findAllByTenantIdAndStartedAtBetween".
 // src/stores/postgres-execution-history.repository.ts - (ae-undocumented) Missing documentation for "findAllByStartedAtBetween".
-// src/stores/postgres-execution-history.repository.ts - (ae-undocumented) Missing documentation for "deleteByEndedAtBefore".
 // src/stores/postgres-execution-lease.repository.ts - (ae-undocumented) Missing documentation for "ping".
 // src/stores/postgres-execution-lease.repository.ts - (ae-undocumented) Missing documentation for "claimExecutionId".
 // src/stores/postgres-execution-lease.repository.ts - (ae-undocumented) Missing documentation for "acquire".
@@ -832,13 +895,15 @@ export type StepIndexResult = "built" | "present" | "skipped";
 // src/stores/postgres-execution-lease.repository.ts - (ae-undocumented) Missing documentation for "retire".
 // src/stores/postgres-execution-lease.repository.ts - (ae-undocumented) Missing documentation for "yield".
 // src/stores/postgres-execution-lease.repository.ts - (ae-undocumented) Missing documentation for "reclaim".
-// src/stores/postgres-execution-lease.repository.ts - (ae-undocumented) Missing documentation for "requestCancel".
 // src/stores/postgres-execution-record.repository.ts - (ae-undocumented) Missing documentation for "ping".
 // src/stores/postgres-execution-record.repository.ts - (ae-undocumented) Missing documentation for "hasThread".
 // src/stores/postgres-execution-record.repository.ts - (ae-undocumented) Missing documentation for "threadOwner".
 // src/stores/postgres-execution-record.repository.ts - (ae-undocumented) Missing documentation for "append".
 // src/stores/postgres-execution-record.repository.ts - (ae-undocumented) Missing documentation for "complete".
 // src/stores/postgres-execution-record.repository.ts - (ae-undocumented) Missing documentation for "completeIfStatus".
+// src/stores/postgres-execution-record.repository.ts - (ae-undocumented) Missing documentation for "statusHistory".
+// src/stores/postgres-execution-record.repository.ts - (ae-undocumented) Missing documentation for "forgetStatusHistory".
+// src/stores/postgres-execution-record.repository.ts - (ae-undocumented) Missing documentation for "deleteIdleThreads".
 // src/stores/postgres-execution-record.repository.ts - (ae-undocumented) Missing documentation for "lastTurns".
 // src/stores/postgres-execution-record.repository.ts - (ae-undocumented) Missing documentation for "findByTenantIdAndRunId".
 // src/stores/postgres-execution-record.repository.ts - (ae-undocumented) Missing documentation for "byIds".
@@ -866,13 +931,25 @@ export type StepIndexResult = "built" | "present" | "skipped";
 // src/stores/postgres-execution-tree.repository.ts - (ae-undocumented) Missing documentation for "deleteAllInTree".
 // src/stores/postgres-fenced-effect.repository.ts - (ae-undocumented) Missing documentation for "ping".
 // src/stores/postgres-fenced-effect.repository.ts - (ae-undocumented) Missing documentation for "runInTransaction".
-// src/stores/postgres-fenced-effect.repository.ts - (ae-undocumented) Missing documentation for "deleteByStoredAtBefore".
+// src/stores/postgres-lease-marks.repository.ts - (ae-undocumented) Missing documentation for "PostgresLeaseMarks".
+// src/stores/postgres-lease-marks.repository.ts - (ae-undocumented) Missing documentation for "connection".
+// src/stores/postgres-lease-marks.repository.ts - (ae-undocumented) Missing documentation for "clock".
+// src/stores/postgres-lease-marks.repository.ts - (ae-undocumented) Missing documentation for "syncClusterLease".
+// src/stores/postgres-lease-marks.repository.ts - (ae-undocumented) Missing documentation for "endClusterLease".
+// src/stores/postgres-lease-marks.repository.ts - (ae-undocumented) Missing documentation for "mirroredLeaseOf".
+// src/stores/postgres-lease-marks.repository.ts - (ae-undocumented) Missing documentation for "requestCancel".
+// src/stores/postgres-lease-marks.repository.ts - (ae-undocumented) Missing documentation for "isCancelRequested".
+// src/stores/postgres-lease-marks.repository.ts - (ae-undocumented) Missing documentation for "requestStop".
+// src/stores/postgres-lease-marks.repository.ts - (ae-undocumented) Missing documentation for "stopOf".
+// src/stores/postgres-lease-marks.repository.ts - (ae-undocumented) Missing documentation for "markedOf".
+// src/stores/postgres-lease-marks.repository.ts - (ae-undocumented) Missing documentation for "requestPause".
+// src/stores/postgres-lease-marks.repository.ts - (ae-undocumented) Missing documentation for "unpause".
+// src/stores/postgres-lease-marks.repository.ts - (ae-undocumented) Missing documentation for "pauseOf".
 // src/stores/postgres-mesh-request.repository.ts - (ae-undocumented) Missing documentation for "ping".
 // src/stores/postgres-mesh-request.repository.ts - (ae-undocumented) Missing documentation for "saveIfAbsent".
 // src/stores/postgres-mesh-request.repository.ts - (ae-undocumented) Missing documentation for "findByKey".
 // src/stores/postgres-mesh-request.repository.ts - (ae-undocumented) Missing documentation for "saveResponse".
 // src/stores/postgres-mesh-request.repository.ts - (ae-undocumented) Missing documentation for "deleteByKey".
-// src/stores/postgres-mesh-request.repository.ts - (ae-undocumented) Missing documentation for "deleteByCreatedAtBefore".
 // src/stores/postgres-outbound-call.repository.ts - (ae-undocumented) Missing documentation for "ping".
 // src/stores/postgres-outbound-call.repository.ts - (ae-undocumented) Missing documentation for "findByKey".
 // src/stores/postgres-outbound-call.repository.ts - (ae-undocumented) Missing documentation for "saveIfAbsent".
@@ -880,7 +957,6 @@ export type StepIndexResult = "built" | "present" | "skipped";
 // src/stores/postgres-outbound-call.repository.ts - (ae-undocumented) Missing documentation for "markCompleted".
 // src/stores/postgres-outbound-call.repository.ts - (ae-undocumented) Missing documentation for "markFailed".
 // src/stores/postgres-outbound-call.repository.ts - (ae-undocumented) Missing documentation for "findAllByTenantIdAndRootExecutionId".
-// src/stores/postgres-outbound-call.repository.ts - (ae-undocumented) Missing documentation for "deleteByEndedAtBefore".
 // src/stores/postgres-outbound-call.repository.ts - (ae-undocumented) Missing documentation for "leaseStateOf".
 // src/stores/postgres-pause-queries.repository.ts - (ae-undocumented) Missing documentation for "findPendingByExpiresAtBefore".
 // src/stores/postgres-pause-queries.repository.ts - (ae-undocumented) Missing documentation for "findPendingByRemindAtBefore".

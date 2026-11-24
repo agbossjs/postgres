@@ -1,4 +1,5 @@
-import { ExecutionFencedError, type EffectKey } from "@agboss/core";
+import { fencedRefusalOf } from "@agboss/core";
+import type { EffectKey } from "@agboss/core/stores";
 import type { PoolClient } from "pg";
 import { z } from "zod";
 import { firstRowOf } from "../connection/query.js";
@@ -32,10 +33,18 @@ const LOCK_LEASE = `SELECT token, expires_at, released FROM agboss_execution_lea
 /** Every fenced write refreshes the mark's time: a retention keeps a scope in use. A constant of its own, so the mutation shard drops it (agbossjs/agboss#1327). */
 const REFRESHED = ", stored_at = EXCLUDED.stored_at";
 
-const RAISE_MARK = `INSERT INTO agboss_fenced_effect_marks AS mark (scope_key, highest_token, stored_at)
-  VALUES ($1, $2, ${storeNow(3)})
+/**
+ * The mark's expiry is the latest of every key's written under the scope: never (`NULL`) over any
+ * date, a later date over an earlier one — a short ttl never truncates the mark a longer one relies on.
+ */
+const LATEST_EXPIRY = `, expires_at = CASE
+    WHEN mark.expires_at IS NULL OR EXCLUDED.expires_at IS NULL THEN NULL
+    ELSE GREATEST(mark.expires_at, EXCLUDED.expires_at) END`;
+
+const RAISE_MARK = `INSERT INTO agboss_fenced_effect_marks AS mark (scope_key, highest_token, stored_at, expires_at)
+  VALUES ($1, $2, ${storeNow(3)}, $4)
   ON CONFLICT (scope_key) DO UPDATE SET
-    highest_token = GREATEST(mark.highest_token, EXCLUDED.highest_token) ${REFRESHED}
+    highest_token = GREATEST(mark.highest_token, EXCLUDED.highest_token) ${REFRESHED} ${LATEST_EXPIRY}
   RETURNING highest_token, ${storeNow(3)} AS now`;
 
 const LeaseRow = z.object({ token: z.number(), expires_at: z.date(), released: z.boolean() });
@@ -44,7 +53,7 @@ const MarkRow = z.object({ highest_token: z.number(), now: z.date() });
 /**
  * The key's lease is held at its token (not released, not expired at the store's time — `now`: the
  * database's when `null`, agbossjs/agboss#533) and no newer token wrote its scope — else
- * `ExecutionFencedError`; the mark is raised to the token. The lease row stays locked until the
+ * `ExecutionError.Fenced`; the mark is raised to the token. The lease row stays locked until the
  * caller's transaction ends. Answers the store's time it decided by (agbossjs/agboss#658: what an
  * outbound call's attempt starts and is read at).
  */
@@ -56,12 +65,14 @@ export async function checkFence(
   const { scopeKey, token } = key;
   const row = await firstRowOf(client, LOCK_LEASE, [key.tenantId, key.leaseExecutionId]);
   const lease = row === undefined ? undefined : LeaseRow.parse(row);
-  const refused = () => ExecutionFencedError.of({ scopeKey, token, observedToken: lease?.token });
+  const refused = () => fencedRefusalOf({ scopeKey, token, observedToken: lease?.token });
   if (lease === undefined || lease.released || lease.token !== token) throw refused();
-  const mark = MarkRow.parse(await firstRowOf(client, RAISE_MARK, [scopeKey, token, now]));
+  const mark = MarkRow.parse(
+    await firstRowOf(client, RAISE_MARK, [scopeKey, token, now, key.expiresAt]),
+  );
   // live while expires_at > now, by the store's time read after the lock (#534, #533)
   if (lease.expires_at.getTime() <= mark.now.getTime()) throw refused();
   if (mark.highest_token > token)
-    throw ExecutionFencedError.of({ scopeKey, token, observedToken: mark.highest_token });
+    throw fencedRefusalOf({ scopeKey, token, observedToken: mark.highest_token });
   return mark.now;
 }

@@ -2,12 +2,13 @@ import {
   A2ATaskState,
   InvalidA2APageTokenError,
   isTerminalA2ATaskState,
-  PauseKind,
   type A2AMessageKey,
   type A2AMessageRecord,
   type A2ATaskRecord,
   type A2ATaskStatus,
-} from "@agboss/core";
+} from "@agboss/core/stores";
+import { PauseKind } from "@agboss/core";
+import { usd } from "@agboss/core/units";
 import { z } from "zod";
 import { unescapedJson } from "../nul-escape.js";
 
@@ -47,11 +48,17 @@ const Status = z.looseObject({
   errorCode: z.string().optional(),
   // agbossjs/agboss#810: a mesh limit's facts (REJECTED), the execution's spend (COMPLETED)
   errorDetails: z.unknown().optional(),
-  spentUsd: z.number().nonnegative().optional(),
-  cancelRequestedAt: z.iso.datetime().optional(),
+  spentUsd: z.number().nonnegative().transform(usd).optional(),
+  spentTokens: z.number().int().nonnegative().optional(),
+  // read back as the Date it was written from (a status holds a Date, stored as its ISO text)
+  cancelRequestedAt: z.iso
+    .datetime()
+    .transform((text) => new Date(text))
+    .optional(),
 });
 
 const TaskRow = z.object({
+  endpoint: z.string(),
   tenant_id: z.string(),
   task_id: z.string(),
   owner_id: z.string(),
@@ -69,6 +76,7 @@ const TaskRow = z.object({
 
 /** `answered` tells a reply of JSON `null` from a message with none yet (SQL `NULL`). */
 const MessageRow = z.object({
+  endpoint: z.string(),
   tenant_id: z.string(),
   owner_id: z.string(),
   message_id: z.string(),
@@ -81,7 +89,7 @@ const MessageRow = z.object({
 
 /** The status of a row whose `state` column agrees with it (a compare-and-set reads the column). */
 function statusOf(row: z.infer<typeof TaskRow>): A2ATaskStatus {
-  const status: A2ATaskStatus = Status.parse(unescapedJson(row.status));
+  const status = Status.parse(unescapedJson(row.status));
   if (status.state !== row.state)
     throw new Error(
       `agboss_a2a_tasks row ${row.task_id}: its state column and its status disagree`,
@@ -92,6 +100,7 @@ function statusOf(row: z.infer<typeof TaskRow>): A2ATaskStatus {
 export const taskOf = (row: unknown): A2ATaskRecord => {
   const parsed = TaskRow.parse(row);
   return {
+    endpoint: parsed.endpoint,
     tenantId: parsed.tenant_id,
     taskId: parsed.task_id,
     ownerId: ownerOf(parsed.owner_id),
@@ -107,11 +116,12 @@ export const taskOf = (row: unknown): A2ATaskRecord => {
 };
 
 export const MESSAGE_COLUMNS =
-  "tenant_id, owner_id, message_id, request_hash, task_id, saved_at, reply, reply IS NOT NULL AS answered";
+  "tenant_id, owner_id, message_id, request_hash, task_id, saved_at, reply, endpoint, reply IS NOT NULL AS answered";
 
 export const messageOf = (row: unknown): A2AMessageRecord => {
   const parsed = MessageRow.parse(row);
   return {
+    endpoint: parsed.endpoint,
     tenantId: parsed.tenant_id,
     ownerId: ownerOf(parsed.owner_id),
     messageId: parsed.message_id,

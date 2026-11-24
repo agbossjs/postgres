@@ -1,4 +1,5 @@
-import { A2ATaskState, type A2ATaskStatus, type NewA2ATask } from "@agboss/core";
+import { usd } from "@agboss/core/units";
+import { A2ATaskState, type A2ATaskStatus, type NewA2ATask } from "@agboss/core/stores";
 import { describe, expect, it } from "vitest";
 import { migratePostgres, PostgresA2ATaskRepository } from "../../src/index.js";
 import { freshSchema, onSchema, testDatabase } from "../support/database.js";
@@ -19,6 +20,7 @@ const HASH = `sha256:${"ab".repeat(32)}`;
 const tasksOn = (url = database.url()) => new PostgresA2ATaskRepository(connectionTo(url));
 
 const newTask = (taskId: string, extra: Partial<NewA2ATask> = {}): NewA2ATask => ({
+  endpoint: "ep-1",
   tenantId: "acme",
   taskId,
   ownerId: "alice",
@@ -48,7 +50,7 @@ describe("agbossjs/agboss#810: the mesh's fields of an A2A task on PostgreSQL", 
       pendingPauses: [],
       finish: "charged-workflow-finish",
       output: { chargeId: "ch-1" },
-      spentUsd: 0.000123,
+      spentUsd: usd(0.000123),
     };
     await a.saveIfAbsent(
       newTask("trusted", { callerPeer: "orders-application", meshBodyHash: HASH }),
@@ -59,7 +61,12 @@ describe("agbossjs/agboss#810: the mesh's fields of an A2A task on PostgreSQL", 
     const trusted = await b.findById(keyOf("trusted"));
     expect(trusted).toMatchObject({ meshBodyHash: HASH, status: completed, version: 2 });
     expect((await b.findById(keyOf("refused")))?.status).toEqual(rejected);
-    const listed = await b.list({ tenantId: "acme", ownerId: "alice", pageSize: 10 });
+    const listed = await b.list({
+      endpoint: "ep-1",
+      tenantId: "acme",
+      ownerId: "alice",
+      pageSize: 10,
+    });
     expect(listed.tasks.find((task) => task.taskId === "trusted")?.meshBodyHash).toBe(HASH);
   });
 
@@ -68,9 +75,9 @@ describe("agbossjs/agboss#810: the mesh's fields of an A2A task on PostgreSQL", 
     await migratePostgres({ url });
     await onSchema(
       url,
-      `INSERT INTO agboss_a2a_tasks (tenant_id, task_id, owner_id, context_id, skill, state, status,
+      `INSERT INTO agboss_a2a_tasks (endpoint, tenant_id, task_id, owner_id, context_id, skill, state, status,
          version, accepted_at, status_at, caller_peer)
-       VALUES ('acme', 'old', 'alice', 'ctx-0', 'charge-workflow-start', 'TASK_STATE_COMPLETED',
+       VALUES ('ep-1', 'acme', 'old', 'alice', 'ctx-0', 'charge-workflow-start', 'TASK_STATE_COMPLETED',
          '{"state":"TASK_STATE_COMPLETED","pendingPauses":[],"spentUsd":1}', 1, $1, $1,
          'orders-application')`,
       [NINE],

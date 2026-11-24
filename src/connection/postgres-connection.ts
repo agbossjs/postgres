@@ -10,6 +10,7 @@ import { z } from "zod";
 import { migrationsIn } from "../migrations/files.js";
 import { PostgresConnectionClosedError } from "../errors.js";
 import { trackedClientOf } from "./tracked-client.js";
+import { requiredTransaction } from "./ambient.js";
 import { once } from "./once.js";
 import { PostgresListener, type PostgresListenerOptions } from "./listener.js";
 import { checkSchema } from "../migrations/schema-check.js";
@@ -22,7 +23,21 @@ import {
   settingsOfEnvironment,
   type PostgresConnectionSettings,
 } from "./settings.js";
-import { SchemaSetup } from "@agboss/core/stores";
+import { DATABASE_SETTINGS, SchemaSetup, type ResolvedSettings } from "@agboss/core/stores";
+import { settingsOfResolved } from "./driver-settings.js";
+
+/**
+ * The settings of a connection: the driver's resolved settings when the application names a
+ * `@DatabaseStorage` of `PostgresDriver` (agbossjs/agboss#1321), else the environment's fields (until
+ * they are removed), else the settings object a script or a test gave.
+ */
+function settingsOf(
+  source: ApplicationContext | PostgresConnectionSettings,
+  resolved: ResolvedSettings | undefined,
+): PostgresConnectionSettings {
+  if (resolved?.kind === "postgres") return settingsOfResolved(resolved);
+  return source instanceof ApplicationContext ? settingsOfEnvironment(source.environment) : source;
+}
 
 const SchemaRow = z.object({ schema: z.string().nullable() });
 
@@ -76,7 +91,7 @@ export function listenerOf(
  * of a PostgreSQL store names in its `deps`.
  */
 @Injectable({
-  deps: [ApplicationContext],
+  deps: [ApplicationContext, DATABASE_SETTINGS],
   // checked at the application's assembly (agbossjs/agboss#511): a contract without postgresUrl
   // fails with [environment.missing-field] before anything starts
   environmentFields: {
@@ -97,13 +112,14 @@ export class PostgresConnection implements OnInit, OnDestroy {
   /** The pool's clients, from their making to their end (even one still connecting): what `onDestroy` drops by force. */
   readonly #clients = new Set<() => void>();
 
-  constructor(source: ApplicationContext | PostgresConnectionSettings) {
+  constructor(
+    source: ApplicationContext | PostgresConnectionSettings,
+    resolved?: ResolvedSettings,
+  ) {
     // a copy: the caller changing its object after this line must not bypass the checks below, nor
     // change what the pool, the start and the watch read later (agbossjs/agboss#1129)
     this.#settings = Object.freeze({
-      ...(source instanceof ApplicationContext
-        ? settingsOfEnvironment(source.environment)
-        : source),
+      ...settingsOf(source, resolved),
     });
     checkedWatchLivenessOf(this.#settings.watchLivenessSeconds);
     SETTINGS.set(this, this.#settings);
@@ -127,6 +143,15 @@ export class PostgresConnection implements OnInit, OnDestroy {
    */
   schema(): Promise<string> {
     return this.#schema();
+  }
+
+  /**
+   * The transaction of the `runOnce` the caller is inside of (agbossjs/agboss#1317c): the effect's
+   * business rows are written through it and roll back with it on any uncaught error.
+   * `IdempotencyError.OutsideTransaction` outside one.
+   */
+  requireTransaction(): pg.PoolClient {
+    return requiredTransaction(this);
   }
 
   /** One `SELECT 1` (#300): every PostgreSQL store's `ping()`. Rejects when the database does not answer. */

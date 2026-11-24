@@ -1,10 +1,5 @@
 import { effectKeyForTesting } from "@agboss/core/testing/contracts";
-import {
-  FencedEffectSettings,
-  FencedEffectStatus,
-  StoreClock,
-  StoreTimeSource,
-} from "@agboss/core";
+import { StoreClock, StoreTimeSource, IdempotencyRunStatus } from "@agboss/core";
 import { VirtualClock } from "@agboss/core/testing";
 import { hours } from "@agboss/core/units";
 import { describe, expect, it } from "vitest";
@@ -31,7 +26,7 @@ function storesOn(): {
   const connection = connectionTo(database.url());
   const clock = new StoreClock(StoreTimeSource.Test, new VirtualClock());
   return {
-    effects: new PostgresFencedEffectRepository(connection, clock, new FencedEffectSettings()),
+    effects: new PostgresFencedEffectRepository(connection, clock),
     leases: new PostgresExecutionLeaseRepository(connection, clock, new TestApplicationContext({})),
   };
 }
@@ -58,8 +53,8 @@ describe("PostgresFencedEffectRepository: one business key", () => {
     const first = await effects.runOnce(keyOf("tenant-a", "charge"), () => ({ receipt: "a" }));
     const second = await effects.runOnce(keyOf("tenant-b", "charge"), () => ({ receipt: "b" }));
 
-    expect(first).toMatchObject({ status: FencedEffectStatus.Ran, result: { receipt: "a" } });
-    expect(second).toMatchObject({ status: FencedEffectStatus.Ran, result: { receipt: "b" } });
+    expect(first).toMatchObject({ status: IdempotencyRunStatus.Ran, result: { receipt: "a" } });
+    expect(second).toMatchObject({ status: IdempotencyRunStatus.Ran, result: { receipt: "b" } });
   });
 
   it("under two names is two effects: the second name's runs, it does not replay the first's", async () => {
@@ -69,7 +64,7 @@ describe("PostgresFencedEffectRepository: one business key", () => {
     const first = await effects.runOnce(keyOf("tenant-c", "charge"), () => ({ receipt: "c" }));
     const second = await effects.runOnce(keyOf("tenant-c", "refund"), () => ({ receipt: "r" }));
 
-    expect(first).toMatchObject({ status: FencedEffectStatus.Ran, result: { receipt: "c" } });
-    expect(second).toMatchObject({ status: FencedEffectStatus.Ran, result: { receipt: "r" } });
+    expect(first).toMatchObject({ status: IdempotencyRunStatus.Ran, result: { receipt: "c" } });
+    expect(second).toMatchObject({ status: IdempotencyRunStatus.Ran, result: { receipt: "r" } });
   });
 });

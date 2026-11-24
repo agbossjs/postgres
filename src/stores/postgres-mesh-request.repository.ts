@@ -96,8 +96,9 @@ export class PostgresMeshRequestRepository extends MeshRequestRepository {
     );
   }
 
-  async deleteByCreatedAtBefore(cutoff: Date): Promise<void> {
-    await inLongTransaction(this.connection.pool, (client) =>
+  /** Removes every request admitted before `cutoff`; how many went. */
+  deleteExpired(cutoff: Date): Promise<number> {
+    return inLongTransaction(this.connection.pool, (client) =>
       changesOf(client, "DELETE FROM agboss_mesh_requests WHERE created_at < $1", [cutoff]),
     );
   }

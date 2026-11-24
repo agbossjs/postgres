@@ -1,12 +1,13 @@
 import {
+  DIRECT_MESSAGE_CLAIM,
+  directMessageClaimOf,
   A2ADirectMessageSaveStatus,
   type A2ADirectMessageKey,
   type A2ADirectMessageRecord,
   type A2ADirectMessageSave,
   type A2AMessageRecord,
   type NewA2ADirectMessage,
-} from "@agboss/core";
-import { DIRECT_MESSAGE_CLAIM, directMessageClaimOf } from "@agboss/core/stores";
+} from "@agboss/core/stores";
 import { changesOf, firstRowOf, rowsOf, type Queryable } from "../../connection/query.js";
 import {
   MESSAGE_COLUMNS,
@@ -60,8 +61,8 @@ async function insertedDirect(
     database,
     `INSERT INTO agboss_a2a_direct_messages (tenant_id, owner_id, message_id, request_hash, skill,
        context_id, state, attempt_id, calls_model, created_at, started_at, expires_at, caller_peer,
-       mesh_body_hash)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+       mesh_body_hash, endpoint)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
      ON CONFLICT (tenant_id, owner_id, message_id) DO NOTHING`,
     [
       ...messageKeyOf(message),
@@ -76,6 +77,7 @@ async function insertedDirect(
       message.expiresAt,
       message.callerPeer ?? null,
       message.meshBodyHash ?? null,
+      message.endpoint,
     ],
   );
   return inserted === 1;
@@ -117,15 +119,22 @@ export async function savedDirectOnce(
  * transaction (bounded work): the claims locked `FOR UPDATE` first — a `saveIfAbsent` holding one is waited for —
  * then deleted by a second statement, whose snapshot sees every row those saves kept.
  */
-export async function freedClaims(database: Queryable, cutoff: Date, limit: number): Promise<void> {
-  const orphan = `m.task_id = $1 AND m.saved_at < $2 AND NOT EXISTS (
+export async function freedClaims(
+  database: Queryable,
+  endpoint: string,
+  cutoff: Date,
+  limit: number,
+): Promise<void> {
+  const orphan = (
+    endpointParameter: string,
+  ) => `m.task_id = $1 AND m.saved_at < $2 AND m.endpoint = ${endpointParameter} AND NOT EXISTS (
     SELECT 1 FROM agboss_a2a_direct_messages d WHERE d.tenant_id = m.tenant_id
       AND d.owner_id = m.owner_id AND d.message_id = m.message_id)`;
   const locked = await rowsOf(
     database,
-    `SELECT ${MESSAGE_COLUMNS} FROM agboss_a2a_messages m WHERE ${orphan}
+    `SELECT ${MESSAGE_COLUMNS} FROM agboss_a2a_messages m WHERE ${orphan("$4")}
      ORDER BY m.saved_at, m.tenant_id, m.owner_id, m.message_id LIMIT $3 FOR UPDATE OF m`,
-    [DIRECT_MESSAGE_CLAIM, cutoff, limit],
+    [DIRECT_MESSAGE_CLAIM, cutoff, limit, endpoint],
   );
   if (locked.length === 0) return;
   const keys = locked.map(messageOf);
@@ -134,13 +143,14 @@ export async function freedClaims(database: Queryable, cutoff: Date, limit: numb
     `DELETE FROM agboss_a2a_messages m
      USING unnest($3::text[], $4::text[], $5::text[]) AS k (tenant_id, owner_id, message_id)
      WHERE m.tenant_id = k.tenant_id AND m.owner_id = k.owner_id AND m.message_id = k.message_id
-       AND ${orphan}`,
+       AND ${orphan("$6")}`,
     [
       DIRECT_MESSAGE_CLAIM,
       cutoff,
       keys.map((key) => key.tenantId),
       keys.map((key) => messageKeyOf(key)[1]),
       keys.map((key) => key.messageId),
+      endpoint,
     ],
   );
 }

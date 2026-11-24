@@ -4,7 +4,7 @@ import {
   type A2AMessageRecord,
   type A2ATaskRecord,
   type NewA2ATask,
-} from "@agboss/core";
+} from "@agboss/core/stores";
 import { describe, expect, it, vi } from "vitest";
 import { PostgresA2ATaskRepository } from "../../src/index.js";
 import {
@@ -29,6 +29,7 @@ const NINE = new Date("2026-01-05T09:00:00.000Z");
 const at = (minutes: number): Date => new Date(NINE.getTime() + minutes * 60_000);
 
 const newTask = (taskId: string, messageId: string, acceptedAt: Date): NewA2ATask => ({
+  endpoint: "ep-1",
   tenantId: "default",
   taskId,
   ownerId: "alice",
@@ -49,6 +50,7 @@ describe("agbossjs/agboss#960: the PostgreSQL orphan sweep against a resend of t
     const tasks = new PostgresA2ATaskRepository(sweeping);
     for (let round = 0; round < ROUNDS; round += 1) {
       const orphan: A2AMessageRecord = {
+        endpoint: "ep-1",
         tenantId: "default",
         ownerId: "alice",
         messageId: `m-x${String(round)}`,
@@ -69,7 +71,7 @@ describe("agbossjs/agboss#960: the PostgreSQL orphan sweep against a resend of t
         const pid = (await client.query<{ pid: number }>("SELECT pg_backend_pid() AS pid")).rows[0]
           ?.pid;
         // sweep A: its statement reads the orphan and waits at its row
-        const sweepA = tasks.deleteTerminalByStatusAtBefore(at(10));
+        const sweepA = tasks.deleteExpired(new Map([["ep-1", at(10)]]));
         await vi.waitFor(async () => {
           const waiting = await client.query(
             "SELECT 1 FROM pg_stat_activity WHERE $1 = ANY(pg_blocking_pids(pid))",

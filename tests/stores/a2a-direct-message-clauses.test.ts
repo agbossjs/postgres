@@ -2,7 +2,7 @@ import {
   A2ADirectMessageSaveStatus,
   A2ADirectMessageState,
   type NewA2ADirectMessage,
-} from "@agboss/core";
+} from "@agboss/core/stores";
 import pg from "pg";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { PostgresA2ADirectMessageRepository } from "../../src/index.js";
@@ -27,6 +27,7 @@ const database = testDatabase({ migrated: false });
 const NINE = new Date("2026-01-05T09:00:00.000Z");
 
 const newMessage = (): NewA2ADirectMessage => ({
+  endpoint: "ep-1",
   tenantId: "acme",
   ownerId: "alice",
   messageId: "m-1",
@@ -43,6 +44,7 @@ const saved = () => ({ ...newMessage(), state: A2ADirectMessageState.InFlight })
 
 /** A row of `agboss_a2a_direct_messages` as the driver gives it. */
 const rowOf = (extra: Record<string, unknown> = {}): Record<string, unknown> => ({
+  endpoint: "ep-1",
   tenant_id: "acme",
   owner_id: "alice",
   message_id: "m-1",
@@ -190,7 +192,7 @@ describe("agbossjs/postgres#129: the sweep of orphaned claims", () => {
   it("locks the orphans and asks nothing more when there are none", async () => {
     const { client, statements } = scripted(() => ({ rows: [] }));
 
-    await freedClaims(client, NINE, 5);
+    await freedClaims(client, "ep-1", NINE, 5);
 
     expect(statements).toEqual(["SELECT tenant_id, owner_id,"]);
   });
@@ -201,6 +203,7 @@ describe("agbossjs/postgres#129: the sweep of orphaned claims", () => {
         ? {
             rows: [
               {
+                endpoint: "ep-1",
                 tenant_id: "acme",
                 owner_id: "alice",
                 message_id: "m-1",
@@ -215,7 +218,7 @@ describe("agbossjs/postgres#129: the sweep of orphaned claims", () => {
         : { rowCount: 1 },
     );
 
-    await freedClaims(client, NINE, 5);
+    await freedClaims(client, "ep-1", NINE, 5);
 
     expect(statements).toEqual(["SELECT tenant_id, owner_id,", "DELETE FROM agboss_a2a_messages"]);
   });

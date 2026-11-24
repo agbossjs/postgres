@@ -1,4 +1,5 @@
-import { OutboundCallStatus, type EffectKey, type OutboundCallRecord } from "@agboss/core";
+import { type EffectKey } from "@agboss/core/stores";
+import { OutboundCallStatus, type OutboundCallRecord } from "@agboss/core";
 import { z } from "zod";
 import { escapedJsonOf, escapedText, unescapedJson } from "../nul-escape.js";
 
@@ -52,7 +53,10 @@ export const storedJsonOf = (record: Partial<OutboundCallRecord>): string => esc
  * Where `key`'s row is, from parameter `$<from>` on: the condition and its parameters — by its
  * step (`business_key IS NULL`), or by its tenant, name and business key (#508).
  */
-export function whereOf(key: EffectKey, from: number): readonly [string, readonly string[]] {
+export function whereOf(
+  key: Pick<EffectKey, "businessKey" | "scopeKey" | "idempotencyKey" | "name" | "tenantId">,
+  from: number,
+): readonly [string, readonly string[]] {
   const [a, b, c] = [from, from + 1, from + 2].map((index) => `$${String(index)}`);
   if (key.businessKey === undefined)
     return [
@@ -70,7 +74,7 @@ export interface Change {
   readonly status: OutboundCallStatus;
   readonly attempt?: number;
   readonly attemptOwner?: string;
-  readonly endedAt?: string;
+  readonly expiresAt?: Date | null;
   readonly fields: Partial<OutboundCallRecord>;
 }
 

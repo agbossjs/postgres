@@ -1,16 +1,14 @@
 import { effectKeyForTesting } from "@agboss/core/testing/contracts";
 import {
-  FencedEffectSettings,
-  FencedEffectStatus,
-  InvalidBusinessKeyError,
   KeyTextRule,
   keyTextRuleOf,
   type ExecutionLease,
-  type EffectKey,
   StoreClock,
   StoreTimeSource,
+  IdempotencyError,
+  IdempotencyRunStatus,
 } from "@agboss/core";
-import { type OutboundCallIntent } from "@agboss/core/stores";
+import { type OutboundCallIntent, type EffectKey } from "@agboss/core/stores";
 import { VirtualClock } from "@agboss/core/testing";
 import { hours } from "@agboss/core/units";
 import fc from "fast-check";
@@ -124,7 +122,6 @@ function instanceOn(clock: VirtualClock, index: number) {
     effects: new PostgresFencedEffectRepository(
       connection,
       new StoreClock(StoreTimeSource.Test, clock),
-      new FencedEffectSettings(),
     ),
     leases: new PostgresExecutionLeaseRepository(
       connection,
@@ -230,7 +227,7 @@ const invisibleProperty = (first: Stores, second: Stores) =>
           () => undefined,
           (thrown: unknown) => thrown,
         );
-        expect(error).toBeInstanceOf(InvalidBusinessKeyError);
+        expect(error).toBeInstanceOf(IdempotencyError.InvalidKey);
         expect(error).toMatchObject({ rule: keyTextRuleOf(variant) });
       }
       expect(bytesOf((await second.calls.findByKey(keyed(key)))?.businessKey ?? "")).toEqual(
@@ -285,14 +282,14 @@ for (const seed of SEEDS)
             const ran = await first.effects.runOnce(keyed(businessKey), () => ({
               receipt: `r${String(index)}`,
             }));
-            expect(ran.status).toBe(FencedEffectStatus.Ran);
+            expect(ran.status).toBe(IdempotencyRunStatus.Ran);
           }
           for (const [index, businessKey] of keys.entries()) {
             const replayed = await second.effects.runOnce(keyed(businessKey), () => ({
               receipt: "never",
             }));
             expect(replayed).toMatchObject({
-              status: FencedEffectStatus.Replayed,
+              status: IdempotencyRunStatus.Replayed,
               result: { receipt: `r${String(index)}` },
             });
           }
@@ -314,7 +311,7 @@ for (const seed of SEEDS)
           const calls = [
             stores.calls.findByKey(key),
             stores.calls.saveIfAbsent(key, intentOf(key, 0)),
-            stores.calls.markCompleted(key, "owner-1", '"done"'),
+            stores.calls.markCompleted(key, "owner-1", '"done"', null),
             stores.effects.runOnce(key, () => ({ receipt: "r" })),
           ];
           for (const [entry, call] of calls.entries()) {
@@ -322,7 +319,7 @@ for (const seed of SEEDS)
               () => undefined,
               (thrown: unknown) => thrown,
             );
-            expect(error).toBeInstanceOf(InvalidBusinessKeyError);
+            expect(error).toBeInstanceOf(IdempotencyError.InvalidKey);
             expect(error).toMatchObject({ rule });
             const { message } = error as Error;
             // the effect's name is the round's own; everything else is the same for every text

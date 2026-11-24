@@ -1,10 +1,9 @@
 import { effectKeyForTesting } from "@agboss/core/testing/contracts";
 import {
   ExecutionCancelFencedError,
-  ExecutionFencedError,
-  FencedEffectSettings,
   StoreClock,
   StoreTimeSource,
+  ExecutionError,
 } from "@agboss/core";
 import { OutboundCallLeaseState } from "@agboss/core/stores";
 import { VirtualClock } from "@agboss/core/testing";
@@ -34,7 +33,7 @@ const clock = new StoreClock(StoreTimeSource.Test, virtual);
 function storesOn(url = database.url()) {
   const connection = connectionTo(url);
   return {
-    effects: new PostgresFencedEffectRepository(connection, clock, new FencedEffectSettings()),
+    effects: new PostgresFencedEffectRepository(connection, clock),
     leases: new PostgresExecutionLeaseRepository(connection, clock, new TestApplicationContext({})),
     calls: new PostgresOutboundCallRepository(connection, clock),
   };
@@ -62,7 +61,7 @@ describe("the fence of two trees that share a root id", () => {
       .runOnce(keyOf("tenant-a", "root-fence", own.token), () => ({ receipt: "r" }))
       .catch((error: unknown) => error);
 
-    expect(written).toBeInstanceOf(ExecutionFencedError);
+    expect(written).toBeInstanceOf(ExecutionError.Fenced);
   });
 
   it("reads its own tenant's cancel mark: another tenant's cancelled tree does not refuse it", async () => {

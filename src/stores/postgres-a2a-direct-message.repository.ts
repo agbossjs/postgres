@@ -1,16 +1,15 @@
+import { Injectable, type StoreDescriptor } from "@agboss/core";
 import {
+  DIRECT_MESSAGE_CLAIM,
   A2ADirectMessageRepository,
   A2ADirectMessageState,
-  Injectable,
   type A2ADirectMessageAttempt,
   type A2ADirectMessageKey,
   type A2ADirectMessageRecord,
   type A2ADirectMessageReply,
   type A2ADirectMessageSave,
   type NewA2ADirectMessage,
-  type StoreDescriptor,
-} from "@agboss/core";
-import { DIRECT_MESSAGE_CLAIM } from "@agboss/core/stores";
+} from "@agboss/core/stores";
 import { PostgresConnection } from "../connection/postgres-connection.js";
 import { changesOf, rowsOf } from "../connection/query.js";
 import { inPoolTransaction, inLongTransaction } from "../connection/transaction.js";
@@ -28,6 +27,7 @@ const SAVE_ATTEMPTS = 2;
 
 /** A message as `saveIfAbsent` keeps it: `InFlight`, its first attempt. */
 const savedOf = (message: NewA2ADirectMessage): A2ADirectMessageRecord => ({
+  endpoint: message.endpoint,
   tenantId: message.tenantId,
   ownerId: message.ownerId,
   messageId: message.messageId,
@@ -167,44 +167,53 @@ export class PostgresA2ADirectMessageRepository extends A2ADirectMessageReposito
     return rows.map(directMessageOf);
   }
 
-  async deleteByCreatedAtBefore(
-    cutoff: Date,
+  /**
+   * Per endpoint, in one transaction: at most `limit` completed messages whose reply was kept before
+   * the endpoint's cutoff — never one in flight —, the oldest first, with their ids' claims, then
+   * at most `limit` claims more left by messages of the endpoint removed before. How many
+   * messages went.
+   */
+  async deleteExpired(
+    cutoffsByEndpoint: ReadonlyMap<string, Date>,
     limit: number,
-  ): Promise<readonly A2ADirectMessageRecord[]> {
+  ): Promise<number> {
     const page = checkedLimit(limit);
     return inLongTransaction(this.connection.pool, async (client) => {
-      const rows = await rowsOf(
-        client,
-        `WITH gone AS (
-           DELETE FROM agboss_a2a_direct_messages d USING (
-             SELECT tenant_id, owner_id, message_id FROM agboss_a2a_direct_messages
-             WHERE state = $3 AND created_at < $1
-             ORDER BY created_at, tenant_id, owner_id, message_id LIMIT $2
-           ) oldest
-           WHERE d.tenant_id = oldest.tenant_id AND d.owner_id = oldest.owner_id
-             AND d.message_id = oldest.message_id
-           RETURNING d.*)
-         SELECT * FROM gone ORDER BY created_at, tenant_id, owner_id, message_id`,
-        [cutoff, page, A2ADirectMessageState.Completed],
-      );
-      // the claims of the removed, then at most `limit` of messages gone before (a failed attempt's)
-      const removed = rows.map(directMessageOf);
-      await changesOf(
-        client,
-        `DELETE FROM agboss_a2a_messages m
-         USING unnest($2::text[], $3::text[], $4::text[]) AS k (tenant_id, owner_id, message_id)
-         WHERE m.tenant_id = k.tenant_id AND m.owner_id = k.owner_id
-           AND m.message_id = k.message_id AND m.task_id = $1 AND NOT EXISTS (
-             SELECT 1 FROM agboss_a2a_direct_messages d WHERE d.tenant_id = m.tenant_id
-               AND d.owner_id = m.owner_id AND d.message_id = m.message_id)`,
-        [
-          DIRECT_MESSAGE_CLAIM,
-          removed.map((message) => message.tenantId),
-          removed.map((message) => message.ownerId ?? ""),
-          removed.map((message) => message.messageId),
-        ],
-      );
-      await freedClaims(client, cutoff, page);
+      let removed = 0;
+      for (const [endpoint, cutoff] of cutoffsByEndpoint) {
+        const rows = await rowsOf(
+          client,
+          `WITH gone AS (
+             DELETE FROM agboss_a2a_direct_messages d USING (
+               SELECT tenant_id, owner_id, message_id FROM agboss_a2a_direct_messages
+               WHERE endpoint = $4 AND state = $3 AND completed_at < $1
+               ORDER BY completed_at, tenant_id, owner_id, message_id LIMIT $2
+             ) oldest
+             WHERE d.tenant_id = oldest.tenant_id AND d.owner_id = oldest.owner_id
+               AND d.message_id = oldest.message_id
+             RETURNING d.*)
+           SELECT * FROM gone ORDER BY completed_at, tenant_id, owner_id, message_id`,
+          [cutoff, page, A2ADirectMessageState.Completed, endpoint],
+        );
+        const gone = rows.map(directMessageOf);
+        await changesOf(
+          client,
+          `DELETE FROM agboss_a2a_messages m
+           USING unnest($2::text[], $3::text[], $4::text[]) AS k (tenant_id, owner_id, message_id)
+           WHERE m.tenant_id = k.tenant_id AND m.owner_id = k.owner_id
+             AND m.message_id = k.message_id AND m.task_id = $1 AND NOT EXISTS (
+               SELECT 1 FROM agboss_a2a_direct_messages d WHERE d.tenant_id = m.tenant_id
+                 AND d.owner_id = m.owner_id AND d.message_id = m.message_id)`,
+          [
+            DIRECT_MESSAGE_CLAIM,
+            gone.map((message) => message.tenantId),
+            gone.map((message) => message.ownerId ?? ""),
+            gone.map((message) => message.messageId),
+          ],
+        );
+        await freedClaims(client, endpoint, cutoff, page);
+        removed += gone.length;
+      }
       return removed;
     });
   }

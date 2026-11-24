@@ -1,15 +1,14 @@
 import {
   StoreClock,
   FencedEffectRepository,
-  FencedEffectSettings,
-  FencedEffectStatus,
+  IdempotencyRunStatus,
   Injectable,
+  type IdempotencyRunOutcome,
   type StoreDescriptor,
-  type EffectKey,
-  type FencedEffectOutcome,
   type FencedEffectWork,
 } from "@agboss/core";
-import { replayedFromOf, storedKeyFactsOf } from "@agboss/core/stores";
+import { replayedFromOf, storedKeyFactsOf, type EffectKey } from "@agboss/core/stores";
+import { withAmbientTransaction } from "../connection/ambient.js";
 import type { PoolClient } from "pg";
 import { changesOf, firstRowOf } from "../connection/query.js";
 import { inPoolTransaction, inLongTransaction } from "../connection/transaction.js";
@@ -45,12 +44,18 @@ async function storedRowOf(client: PoolClient, key: EffectKey): Promise<unknown>
   await firstRowOf(client, LOCK_BUSINESS_KEY, [
     JSON.stringify([key.tenantId, key.name, key.businessKey]),
   ]);
-  return firstRowOf(
-    client,
-    `SELECT token, result, fingerprint, origin FROM agboss_fenced_effect_business_results
-     WHERE tenant_id = $1 AND name = $2 AND business_key = $3`,
-    [key.tenantId, key.name, key.businessKey],
-  );
+  const read = (businessKey: string) =>
+    firstRowOf(
+      client,
+      `SELECT token, result, fingerprint, origin FROM agboss_fenced_effect_business_results
+       WHERE tenant_id = $1 AND name = $2 AND business_key = $3`,
+      [key.tenantId, key.name, businessKey],
+    );
+  const found = await read(key.businessKey);
+  // after a rotation of the idempotency secret: the row of the previous digest (#1317d)
+  return found === undefined && key.previousBusinessKey !== undefined
+    ? read(key.previousBusinessKey)
+    : found;
 }
 
 /** Writes `key`'s result `text` under its token at `now`, in the table of its kind. */
@@ -64,8 +69,9 @@ async function insertRowOf(
     await changesOf(
       client,
       `INSERT INTO agboss_fenced_effect_results
-         (scope_key, idempotency_key, name, token, stored_at, result) VALUES ($1, $2, $3, $4, $5, $6)`,
-      [key.scopeKey, key.idempotencyKey, key.name, key.token, now, text],
+         (scope_key, idempotency_key, name, token, stored_at, result, expires_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [key.scopeKey, key.idempotencyKey, key.name, key.token, now, text, key.expiresAt],
     );
     return;
   }
@@ -73,8 +79,8 @@ async function insertRowOf(
   await changesOf(
     client,
     `INSERT INTO agboss_fenced_effect_business_results
-       (tenant_id, name, business_key, token, stored_at, result, fingerprint, origin)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb)`,
+       (tenant_id, name, business_key, token, stored_at, result, fingerprint, origin, expires_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9)`,
     [
       key.tenantId,
       key.name,
@@ -84,12 +90,13 @@ async function insertRowOf(
       text,
       fingerprint ?? null,
       origin === undefined ? null : escapedJsonOf(origin),
+      key.expiresAt,
     ],
   );
 }
 
 /** The replay of a stored row: its result, its token, the step it names (a business key's). */
-function replayOf<TResult>(key: EffectKey, row: unknown): FencedEffectOutcome<TResult> {
+function replayOf<TResult>(key: EffectKey, row: unknown): IdempotencyRunOutcome<TResult> {
   const { token, result } = ResultRow.parse(row);
   const facts = key.businessKey === undefined ? undefined : FactsRow.parse(row);
   const replayedFrom =
@@ -101,7 +108,7 @@ function replayOf<TResult>(key: EffectKey, row: unknown): FencedEffectOutcome<TR
           origin: unescapedJson(facts.origin),
         });
   return {
-    status: FencedEffectStatus.Replayed,
+    status: IdempotencyRunStatus.Replayed,
     // written by this store as the JSON of the work's result
     result: parsedOrUnreadable("fenced effect result", result, { name: key.name }) as TResult,
     token,
@@ -110,7 +117,7 @@ function replayOf<TResult>(key: EffectKey, row: unknown): FencedEffectOutcome<TR
 }
 
 /**
- * `FencedEffectRepository<PoolClient>` on PostgreSQL (#500, #482): each scope's mark and each
+ * `FencedEffectRepository` on PostgreSQL (#500, #482): each scope's mark and each
  * effect's result beside `agboss_execution_leases`. One transaction at `READ COMMITTED` per call,
  * in the order of #500: the key's name, its lease row `SELECT … FOR UPDATE` (held by its epoch, not
  * released, not expired — else `ExecutionFencedError`), the mark raised to the token (a higher one
@@ -123,17 +130,16 @@ function replayOf<TResult>(key: EffectKey, row: unknown): FencedEffectOutcome<TR
  * `await` its statements and a pool of one never deadlocks. Listed with
  * `PostgresExecutionLeaseRepository`, whose leases it reads.
  */
-@Injectable({ deps: [PostgresConnection, StoreClock, FencedEffectSettings] })
-export class PostgresFencedEffectRepository extends FencedEffectRepository<PoolClient> {
+@Injectable({ deps: [PostgresConnection, StoreClock] })
+export class PostgresFencedEffectRepository extends FencedEffectRepository {
   /** One transactional backend with the other PostgreSQL stores (agbossjs/agboss#526). */
   static override readonly store: StoreDescriptor = { backend: "postgres" };
 
   constructor(
     private readonly connection: PostgresConnection,
     private readonly clock: StoreClock,
-    settings: FencedEffectSettings,
   ) {
-    super(settings);
+    super();
   }
 
   ping(): Promise<void> {
@@ -142,39 +148,54 @@ export class PostgresFencedEffectRepository extends FencedEffectRepository<PoolC
 
   protected async runInTransaction<TResult>(
     key: EffectKey,
-    work: FencedEffectWork<PoolClient, TResult>,
-  ): Promise<FencedEffectOutcome<TResult>> {
+    work: FencedEffectWork<TResult>,
+  ): Promise<IdempotencyRunOutcome<TResult>> {
     // the key's name, business key and fingerprint decision (agbossjs/agboss#508, #538, #825)
     assertKeyAtEntry(key);
-    return inPoolTransaction(this.connection.pool, (client) => this.#effect(client, key, work));
+    return inPoolTransaction(this.connection.pool, (client) =>
+      // the work writes through `connection.requireTransaction()` — this transaction (#1317c)
+      withAmbientTransaction(this.connection, client, () => this.#effect(client, key, work)),
+    );
   }
 
-  async deleteByStoredAtBefore(cutoff: Date): Promise<void> {
-    await inLongTransaction(this.connection.pool, async (client) => {
+  /**
+   * Removes the results and marks whose `expires_at` has come (`<= now`); a row with none
+   * (`Ttl.Forever`) is never removed. A scope's mark keeps the latest expiry of its keys. How many went.
+   */
+  async deleteExpired(now: Date): Promise<number> {
+    return inLongTransaction(this.connection.pool, async (client) => {
+      let removed = 0;
       for (const table of [
         "agboss_fenced_effect_results",
         "agboss_fenced_effect_business_results",
         "agboss_fenced_effect_marks",
       ])
-        await changesOf(client, `DELETE FROM ${table} WHERE stored_at < $1`, [cutoff]);
+        removed += await changesOf(
+          client,
+          `DELETE FROM ${table} WHERE expires_at IS NOT NULL AND expires_at <= $1`,
+          [now],
+        );
+      return removed;
     });
   }
 
   async #effect<TResult>(
     client: PoolClient,
     key: EffectKey,
-    work: FencedEffectWork<PoolClient, TResult>,
-  ): Promise<FencedEffectOutcome<TResult>> {
+    work: FencedEffectWork<TResult>,
+  ): Promise<IdempotencyRunOutcome<TResult>> {
     const now = this.clock.now();
     await checkFence(client, key, storeNowOf(this.clock));
     const stored = await storedRowOf(client, key);
     if (stored !== undefined) return replayOf(key, stored);
     // agbossjs/agboss#909: no stored result — a new effect after a durable cancel is refused
     await checkCancel(client, key, storeNowOf(this.clock));
-    const text = this.storedResultOf(key, await work(client));
+    const text = this.storedResultOf(key, await work());
+    // the lease's time runs on while the work does: checked again before the row is written
+    await checkFence(client, key, storeNowOf(this.clock));
     await insertRowOf(client, key, now, text);
     return {
-      status: FencedEffectStatus.Ran,
+      status: IdempotencyRunStatus.Ran,
       // the result as a replay gives it: its JSON parsed
       result: JSON.parse(text) as TResult,
       token: key.token,

@@ -1,4 +1,5 @@
 import type { Turn, TurnOutcome } from "@agboss/core";
+import { usd } from "@agboss/core/units";
 import { z } from "zod";
 import { escapedJsonOf, escapedText, unescapedText } from "../nul-escape.js";
 
@@ -12,6 +13,8 @@ const STATUSES = [
   "answered",
   "guarded",
   "failed",
+  "stopped",
+  "cancelled",
   "paused",
   "queued",
   "written",
@@ -76,7 +79,7 @@ export function recordOf(row: unknown): Turn {
     runId: r.run_id,
     threadId: r.thread_id,
     tenantId: r.tenant_id,
-    bundle: r.workflow,
+    workflow: r.workflow,
     createdAt: r.created_at.toISOString(),
     task: r.task,
     replyWith: r.reply_with,
@@ -84,7 +87,7 @@ export function recordOf(row: unknown): Turn {
     stopReason: r.stop_reason,
     route: r.route,
     steps: r.steps,
-    costUsd: r.cost_usd,
+    costUsd: usd(r.cost_usd),
     promptVersion: r.prompt_version,
     modelVersion: r.model_version,
     replayOf: r.replay_of,

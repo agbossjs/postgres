@@ -1,12 +1,12 @@
 import {
   ExecutionAuditEventKind,
-  FencedEffectEventOutcome,
   HandOverReason,
   HandOverSite,
+  IdempotencyRunEventOutcome,
+  type IdempotencyRunRecord,
   LeaseTakeoverReason,
   OutboundCallEventOutcome,
   OutboundCallStatus,
-  type FencedEffectRecord,
   type OutboundCallEventRecord,
   type LeaseTakeoverRecord,
   type StepHandedOverRecord,
@@ -40,8 +40,8 @@ const takeover = (root: string, at: string): LeaseTakeoverRecord => ({
   reason: LeaseTakeoverReason.RemoteChild,
 });
 
-const fenced = (root: string): FencedEffectRecord => ({
-  kind: ExecutionAuditEventKind.FencedEffect,
+const fenced = (root: string): IdempotencyRunRecord => ({
+  kind: ExecutionAuditEventKind.IdempotencyRun,
   occurredAt: "2026-01-05T09:00:00.250Z",
   tenantId: "acme",
   rootExecutionId: root,
@@ -50,7 +50,7 @@ const fenced = (root: string): FencedEffectRecord => ({
   token: 3,
   holderInstanceId: "instance-2",
   name: "charge",
-  outcome: FencedEffectEventOutcome.Replayed,
+  outcome: IdempotencyRunEventOutcome.Replayed,
   step,
   writtenToken: 2,
 });
@@ -102,13 +102,13 @@ describe("PostgresExecutionAuditLogRepository", () => {
     ).toHaveLength(1);
   });
 
-  it("the sweep removes by time across every tree and tenant, and nothing at or after the cutoff", async () => {
+  it("the sweep removes by time across every ended tree and tenant, and nothing at or after the cutoff", async () => {
     const events = eventsOn();
     await events.save(takeover("root-old", "2026-01-05T08:59:59.999Z"));
     await events.save({ ...takeover("root-old", "2026-01-05T08:00:00.000Z"), tenantId: "other" });
     await events.save(takeover("root-kept", "2026-01-05T09:00:00.000Z"));
 
-    await events.deleteByOccurredAtBefore(new Date("2026-01-05T09:00:00.000Z"));
+    await events.deleteExpired(new Date("2026-01-05T09:00:00.000Z"), () => Promise.resolve(true));
 
     expect(
       await events.findAllByTenantIdAndRootExecutionIdOrderByOccurredAt("acme", "root-old"),
@@ -143,7 +143,7 @@ describe("PostgresExecutionAuditLogRepository", () => {
     await expect(
       down.findAllByTenantIdAndRootExecutionIdOrderByOccurredAt("acme", "root-down"),
     ).rejects.toThrow();
-    await expect(down.deleteByOccurredAtBefore(new Date())).rejects.toThrow();
+    await expect(down.deleteExpired(new Date(), () => Promise.resolve(true))).rejects.toThrow();
   });
 
   it("#508: the business key's and the superseded rows round-trip — replayedFrom, supersededBy, closedLease, the new outcomes", async () => {

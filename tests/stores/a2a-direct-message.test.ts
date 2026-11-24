@@ -1,10 +1,11 @@
+import { usd } from "@agboss/core/units";
 import {
   A2ADirectMessageSaveStatus,
   A2ADirectMessageState,
   A2ATaskSaveStatus,
   A2ATaskState,
   type NewA2ADirectMessage,
-} from "@agboss/core";
+} from "@agboss/core/stores";
 import { beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { PostgresA2ADirectMessageRepository, PostgresA2ATaskRepository } from "../../src/index.js";
@@ -24,6 +25,7 @@ const NINE = new Date("2026-01-05T09:00:00.000Z");
 const at = (seconds: number): Date => new Date(NINE.getTime() + seconds * 1000);
 
 const newMessage = (extra: Partial<NewA2ADirectMessage> = {}): NewA2ADirectMessage => ({
+  endpoint: "ep-1",
   tenantId: "acme",
   ownerId: "alice",
   messageId: "m-1",
@@ -78,14 +80,15 @@ describe("agbossjs/agboss#860: the direct messages on PostgreSQL", () => {
     });
     expect(save?.status).toBe(A2ADirectMessageSaveStatus.Saved);
 
-    const sweep = messagesOn().deleteByCreatedAtBefore(at(60), 10);
+    const sweep = messagesOn().deleteExpired(new Map([["ep-1", at(60)]]), 10);
     await untilWaitingOn(pidRow.rows[0]?.pid ?? -1);
     await client.query("COMMIT");
     client.release();
 
-    expect(await sweep).toEqual([]);
+    expect(await sweep).toBe(0);
     expect((await messages.findByKey(KEY))?.attemptId).toBe("run-2");
     const task = await new PostgresA2ATaskRepository(connectionTo(database.url())).saveIfAbsent({
+      endpoint: "ep-1",
       tenantId: "acme",
       taskId: "t-1",
       ownerId: "alice",
@@ -104,7 +107,12 @@ describe("agbossjs/agboss#860: the direct messages on PostgreSQL", () => {
     const ownerless = newMessage({ ownerId: undefined });
     const key = { tenantId: "acme", ownerId: undefined, messageId: "m-1" };
     await messages.saveIfAbsent(ownerless);
-    await messages.completeIfInFlight(key, "run-1", { finish: "f", output: 1, spentUsd: 0 }, at(5));
+    await messages.completeIfInFlight(
+      key,
+      "run-1",
+      { finish: "f", output: 1, spentUsd: usd(0) },
+      at(5),
+    );
     // the claim is younger than the cutoff: only the removed message's own sweep may free it,
     // not the one of the claims whose row is gone
     await onSchema(
@@ -116,9 +124,9 @@ describe("agbossjs/agboss#860: the direct messages on PostgreSQL", () => {
       onSchema(database.url(), "SELECT 1 FROM agboss_a2a_messages WHERE message_id = 'm-1'");
     expect((await claims()).rows).toHaveLength(1);
 
-    const removed = await messages.deleteByCreatedAtBefore(at(60), 10);
+    const removed = await messages.deleteExpired(new Map([["ep-1", at(60)]]), 10);
 
-    expect(removed.map((message) => message.messageId)).toEqual(["m-1"]);
+    expect(removed).toBe(1);
     expect((await claims()).rows).toHaveLength(0);
   });
 
@@ -129,7 +137,12 @@ describe("agbossjs/agboss#860: the direct messages on PostgreSQL", () => {
   ])("a reply with %s is refused, never read without it", async (_name, reply) => {
     const messages = messagesOn();
     await messages.saveIfAbsent(newMessage());
-    await messages.completeIfInFlight(KEY, "run-1", { finish: "f", output: 1, spentUsd: 0 }, at(5));
+    await messages.completeIfInFlight(
+      KEY,
+      "run-1",
+      { finish: "f", output: 1, spentUsd: usd(0) },
+      at(5),
+    );
     await onSchema(
       database.url(),
       "UPDATE agboss_a2a_direct_messages SET reply = $1::jsonb WHERE message_id = 'm-1'",

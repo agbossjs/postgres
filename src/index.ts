@@ -10,6 +10,8 @@
  * `migratePostgres({ url, schema })` — never the URL on a command line.
  */
 export { PostgresConnection } from "./connection/postgres-connection.js";
+export { PostgresDriver, type PostgresDriverOptions } from "./driver.js";
+export { requirePostgresTransaction } from "./connection/ambient.js";
 export { DEFAULT_CONNECT_TIMEOUT } from "./connection/connect-timeout.js";
 export {
   DEFAULT_COMMAND_TIMEOUT,
@@ -24,6 +26,8 @@ export {
 export { SchemaSetup } from "@agboss/core/stores";
 export { POSTGRES_DURABLE_STORES, POSTGRES_STORES } from "./store-bundles.js";
 export { PostgresExecutionLeaseRepository } from "./stores/postgres-execution-lease.repository.js";
+// the layer `PostgresExecutionLeaseRepository` is built on (its public type names it)
+export { PostgresLeaseMarks } from "./stores/postgres-lease-marks.repository.js";
 export { PostgresExecutionTreeRepository } from "./stores/postgres-execution-tree.repository.js";
 export {
   migratePostgres,

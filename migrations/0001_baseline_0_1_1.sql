@@ -6,6 +6,7 @@
 -- version runs (ADR-0034).
 
 CREATE TABLE IF NOT EXISTS agboss_a2a_direct_messages (
+    endpoint text NOT NULL,
     tenant_id text NOT NULL,
     owner_id text NOT NULL,
     message_id text NOT NULL,
@@ -26,10 +27,11 @@ CREATE TABLE IF NOT EXISTS agboss_a2a_direct_messages (
     CONSTRAINT agboss_a2a_direct_messages_state_check CHECK ((state = ANY (ARRAY['in-flight'::text, 'completed'::text]))),
     CONSTRAINT agboss_a2a_direct_messages_pkey PRIMARY KEY (tenant_id, owner_id, message_id)
 );
-CREATE INDEX IF NOT EXISTS agboss_a2a_direct_messages_by_age ON agboss_a2a_direct_messages (created_at);
+CREATE INDEX IF NOT EXISTS agboss_a2a_direct_messages_by_endpoint ON agboss_a2a_direct_messages (endpoint, completed_at);
 CREATE INDEX IF NOT EXISTS agboss_a2a_direct_messages_in_flight ON agboss_a2a_direct_messages (expires_at) WHERE (state = 'in-flight'::text);
 
 CREATE TABLE IF NOT EXISTS agboss_a2a_messages (
+    endpoint text NOT NULL,
     tenant_id text NOT NULL,
     owner_id text NOT NULL,
     message_id text NOT NULL,
@@ -40,9 +42,10 @@ CREATE TABLE IF NOT EXISTS agboss_a2a_messages (
     CONSTRAINT agboss_a2a_messages_pkey PRIMARY KEY (tenant_id, owner_id, message_id)
 );
 CREATE INDEX IF NOT EXISTS agboss_a2a_messages_by_task ON agboss_a2a_messages (tenant_id, task_id);
-CREATE INDEX IF NOT EXISTS agboss_a2a_messages_direct_claims ON agboss_a2a_messages (saved_at) WHERE (task_id = ''::text);
+CREATE INDEX IF NOT EXISTS agboss_a2a_messages_by_endpoint ON agboss_a2a_messages (endpoint, task_id, saved_at);
 
 CREATE TABLE IF NOT EXISTS agboss_a2a_tasks (
+    endpoint text NOT NULL,
     tenant_id text NOT NULL,
     task_id text NOT NULL COLLATE pg_catalog."C",
     owner_id text NOT NULL,
@@ -58,7 +61,7 @@ CREATE TABLE IF NOT EXISTS agboss_a2a_tasks (
     CONSTRAINT agboss_a2a_tasks_pkey PRIMARY KEY (tenant_id, task_id)
 );
 CREATE INDEX IF NOT EXISTS agboss_a2a_tasks_by_owner ON agboss_a2a_tasks (tenant_id, owner_id, status_at DESC, task_id DESC);
-CREATE INDEX IF NOT EXISTS agboss_a2a_tasks_finished ON agboss_a2a_tasks (status_at) WHERE (state = ANY (ARRAY['TASK_STATE_COMPLETED'::text, 'TASK_STATE_FAILED'::text, 'TASK_STATE_CANCELED'::text, 'TASK_STATE_REJECTED'::text]));
+CREATE INDEX IF NOT EXISTS agboss_a2a_tasks_by_endpoint ON agboss_a2a_tasks (endpoint, state, status_at);
 
 CREATE TABLE IF NOT EXISTS agboss_child_execution_queue (
     tenant_id text NOT NULL,
@@ -75,6 +78,8 @@ CREATE TABLE IF NOT EXISTS agboss_child_execution_queue (
     claimed_at timestamp with time zone,
     ended_at timestamp with time zone,
     failure text,
+    placement text,
+    exclude_instance_id text,
     CONSTRAINT agboss_child_execution_queue_pkey PRIMARY KEY (tenant_id, execution_id)
 );
 CREATE INDEX IF NOT EXISTS agboss_child_execution_queue_by_root ON agboss_child_execution_queue (tenant_id, root_execution_id);
@@ -95,6 +100,7 @@ CREATE TABLE IF NOT EXISTS agboss_cost_counters (
     scope_key text NOT NULL,
     period text NOT NULL,
     spent_usd double precision NOT NULL,
+    tokens bigint DEFAULT 0 NOT NULL,
     CONSTRAINT agboss_cost_counters_pkey PRIMARY KEY (budget, scope, scope_key, period)
 );
 
@@ -117,7 +123,8 @@ CREATE TABLE IF NOT EXISTS agboss_cost_max_spend (
     budget text NOT NULL,
     scope text NOT NULL,
     scope_key text NOT NULL,
-    max_spend_usd double precision NOT NULL,
+    max_spend_usd double precision,
+    max_tokens bigint,
     CONSTRAINT agboss_cost_max_spend_pkey PRIMARY KEY (budget, scope, scope_key)
 );
 
@@ -164,8 +171,32 @@ CREATE TABLE IF NOT EXISTS agboss_execution_leases (
     superseded boolean DEFAULT false NOT NULL,
     finished boolean DEFAULT false NOT NULL,
     cancel_requested_at timestamp with time zone,
+    stop_requested_at timestamp with time zone,
+    stop_mode text,
+    is_externally_paused boolean DEFAULT false NOT NULL,
+    external_pause_reason text,
+    external_pause_mode text,
+    fenced_through_token integer,
     CONSTRAINT agboss_execution_leases_token_check CHECK ((token >= 0)),
+    CONSTRAINT agboss_execution_leases_stop_mode_check CHECK ((stop_mode IS NULL OR stop_mode = ANY (ARRAY['after-step'::text, 'immediate'::text]))),
+    CONSTRAINT agboss_execution_leases_pause_mode_check CHECK ((external_pause_mode IS NULL OR external_pause_mode = ANY (ARRAY['after-step'::text, 'immediate'::text]))),
     CONSTRAINT agboss_execution_leases_pkey PRIMARY KEY (tenant_id, root_execution_id)
+);
+
+-- #1341d: the status history of a thread, one row per change, written in the transaction of the
+-- change (a lease's mark, a record's status write). `seq` is 1 for the thread's first change.
+CREATE TABLE IF NOT EXISTS agboss_thread_status_transitions (
+    tenant_id text NOT NULL,
+    thread_id text NOT NULL,
+    seq integer NOT NULL,
+    from_status text,
+    to_status text NOT NULL,
+    trigger text NOT NULL,
+    reason text,
+    actor text,
+    lease_token integer,
+    at timestamp with time zone NOT NULL,
+    CONSTRAINT agboss_thread_status_transitions_pkey PRIMARY KEY (tenant_id, thread_id, seq)
 );
 
 CREATE TABLE IF NOT EXISTS agboss_execution_tree_keys (
@@ -185,17 +216,19 @@ CREATE TABLE IF NOT EXISTS agboss_fenced_effect_business_results (
     result text NOT NULL,
     fingerprint text,
     origin jsonb,
+    expires_at timestamp with time zone,
     CONSTRAINT agboss_fenced_effect_business_results_pkey PRIMARY KEY (tenant_id, name, business_key)
 );
-CREATE INDEX IF NOT EXISTS agboss_fenced_effect_business_results_by_stored_at ON agboss_fenced_effect_business_results (stored_at);
+CREATE INDEX IF NOT EXISTS agboss_fenced_effect_business_results_by_expiry ON agboss_fenced_effect_business_results (expires_at) WHERE (expires_at IS NOT NULL);
 
 CREATE TABLE IF NOT EXISTS agboss_fenced_effect_marks (
     scope_key text NOT NULL,
     highest_token integer NOT NULL,
     stored_at timestamp with time zone NOT NULL,
+    expires_at timestamp with time zone,
     CONSTRAINT agboss_fenced_effect_marks_pkey PRIMARY KEY (scope_key)
 );
-CREATE INDEX IF NOT EXISTS agboss_fenced_effect_marks_by_stored_at ON agboss_fenced_effect_marks (stored_at);
+CREATE INDEX IF NOT EXISTS agboss_fenced_effect_marks_by_expiry ON agboss_fenced_effect_marks (expires_at) WHERE (expires_at IS NOT NULL);
 
 CREATE TABLE IF NOT EXISTS agboss_fenced_effect_results (
     scope_key text NOT NULL,
@@ -204,9 +237,10 @@ CREATE TABLE IF NOT EXISTS agboss_fenced_effect_results (
     token integer NOT NULL,
     stored_at timestamp with time zone NOT NULL,
     result text NOT NULL,
+    expires_at timestamp with time zone,
     CONSTRAINT agboss_fenced_effect_results_pkey PRIMARY KEY (scope_key, idempotency_key, name)
 );
-CREATE INDEX IF NOT EXISTS agboss_fenced_effect_results_by_stored_at ON agboss_fenced_effect_results (stored_at);
+CREATE INDEX IF NOT EXISTS agboss_fenced_effect_results_by_expiry ON agboss_fenced_effect_results (expires_at) WHERE (expires_at IS NOT NULL);
 
 CREATE TABLE IF NOT EXISTS agboss_mesh_requests (
     tenant_id text NOT NULL,
@@ -229,12 +263,12 @@ CREATE TABLE IF NOT EXISTS agboss_outbound_calls (
     status text NOT NULL,
     attempt integer NOT NULL,
     attempt_owner text NOT NULL,
-    ended_at timestamp with time zone,
+    expires_at timestamp with time zone,
     record jsonb NOT NULL,
     CONSTRAINT agboss_outbound_calls_pkey PRIMARY KEY (id)
 );
 CREATE UNIQUE INDEX IF NOT EXISTS agboss_outbound_calls_by_business_key ON agboss_outbound_calls (tenant_id, name, business_key) WHERE (business_key IS NOT NULL);
-CREATE INDEX IF NOT EXISTS agboss_outbound_calls_by_ended_at ON agboss_outbound_calls (ended_at) WHERE (ended_at IS NOT NULL);
+CREATE INDEX IF NOT EXISTS agboss_outbound_calls_by_expiry ON agboss_outbound_calls (expires_at) WHERE (expires_at IS NOT NULL);
 CREATE INDEX IF NOT EXISTS agboss_outbound_calls_by_status ON agboss_outbound_calls (tenant_id, status, id);
 CREATE UNIQUE INDEX IF NOT EXISTS agboss_outbound_calls_by_step ON agboss_outbound_calls (scope_key, idempotency_key, name) WHERE (business_key IS NULL);
 CREATE INDEX IF NOT EXISTS agboss_outbound_calls_by_tree ON agboss_outbound_calls (tenant_id, root_execution_id, id);
@@ -337,8 +371,11 @@ CREATE TABLE IF NOT EXISTS agboss_threads (
     workflow text NOT NULL,
     owner text,
     created_at timestamp with time zone NOT NULL,
+    last_active_at timestamp with time zone NOT NULL,
+    is_swept boolean DEFAULT false NOT NULL,
     CONSTRAINT agboss_threads_pkey PRIMARY KEY (tenant_id, id)
 );
+CREATE INDEX IF NOT EXISTS agboss_threads_idle ON agboss_threads (workflow, last_active_at) WHERE (NOT is_swept);
 
 CREATE TABLE IF NOT EXISTS agboss_execution_records (
     seq bigserial,
@@ -383,7 +420,7 @@ CREATE TABLE IF NOT EXISTS agboss_execution_summaries (
     tenant_id text NOT NULL,
     thread_id text NOT NULL,
     workflow text NOT NULL,
-    compaction text NOT NULL,
+    memory text NOT NULL,
     from_record_id text NOT NULL,
     to_record_id text NOT NULL,
     from_seq bigint NOT NULL,
@@ -395,7 +432,7 @@ CREATE TABLE IF NOT EXISTS agboss_execution_summaries (
     CONSTRAINT agboss_execution_summaries_pkey PRIMARY KEY (id),
     CONSTRAINT agboss_execution_summaries_tenant_id_thread_id_fkey FOREIGN KEY (tenant_id, thread_id) REFERENCES agboss_threads(tenant_id, id)
 );
-CREATE INDEX IF NOT EXISTS agboss_execution_summaries_by_compaction ON agboss_execution_summaries (tenant_id, thread_id, compaction, to_seq);
+CREATE INDEX IF NOT EXISTS agboss_execution_summaries_by_memory ON agboss_execution_summaries (tenant_id, thread_id, memory, to_seq);
 
 -- the pruning mark's seed row: `-infinity` means nothing has been pruned yet. A save reads this row
 -- FOR SHARE: without it a save finds no mark. Rerunnable.

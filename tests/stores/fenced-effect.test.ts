@@ -1,13 +1,10 @@
 import { effectKeyForTesting } from "@agboss/core/testing/contracts";
 import {
-  ExecutionFencedError,
-  FencedEffectSettings,
-  FencedEffectStatus,
-  FingerprintPolicy,
-  BusinessKeyConflictError,
-  InvalidFencedEffectNameError,
   StoreClock,
   StoreTimeSource,
+  ExecutionError,
+  IdempotencyError,
+  IdempotencyRunStatus,
 } from "@agboss/core";
 import { VirtualClock } from "@agboss/core/testing";
 import { hours, seconds } from "@agboss/core/units";
@@ -16,6 +13,7 @@ import {
   PostgresExecutionLeaseRepository,
   PostgresFencedEffectRepository,
   type PostgresConnection,
+  requirePostgresTransaction,
 } from "../../src/index.js";
 import { onSchema, testDatabase } from "../support/database.js";
 import { TestApplicationContext } from "../support/application-context.js";
@@ -33,7 +31,6 @@ function storesOn(connection: PostgresConnection, clock = new VirtualClock()) {
     effects: new PostgresFencedEffectRepository(
       connection,
       new StoreClock(StoreTimeSource.Test, clock),
-      new FencedEffectSettings(),
     ),
     leases: new PostgresExecutionLeaseRepository(
       connection,
@@ -58,18 +55,16 @@ describe("PostgresFencedEffectRepository", () => {
     const { effects, leases } = storesOn(connectionTo(database.url(), 1));
     const lease = await leases.acquire("default", "root-pool-1", hours(1));
 
-    const outcome = await effects.runOnce(
-      keyOf("root-pool-1", lease?.token ?? 0),
-      async (client) => {
-        await client.query("INSERT INTO charges VALUES ('c-1', 10)");
-        const { rows } = await client.query<{ total: number }>(
-          "SELECT sum(amount)::integer AS total FROM charges",
-        );
-        return { total: rows[0]?.total ?? 0 };
-      },
-    );
+    const outcome = await effects.runOnce(keyOf("root-pool-1", lease?.token ?? 0), async () => {
+      const client = requirePostgresTransaction();
+      await client.query("INSERT INTO charges VALUES ('c-1', 10)");
+      const { rows } = await client.query<{ total: number }>(
+        "SELECT sum(amount)::integer AS total FROM charges",
+      );
+      return { total: rows[0]?.total ?? 0 };
+    });
 
-    expect(outcome).toEqual({ status: FencedEffectStatus.Ran, result: { total: 10 }, token: 1 });
+    expect(outcome).toEqual({ status: IdempotencyRunStatus.Ran, result: { total: 10 }, token: 1 });
   });
 
   it("a connection lost inside the effect rejects it, nothing written, and the next call runs", async () => {
@@ -78,7 +73,8 @@ describe("PostgresFencedEffectRepository", () => {
     const lease = await leases.acquire("default", "root-lost", hours(1));
     const key = keyOf("root-lost", lease?.token ?? 0);
 
-    const lost = effects.runOnce(key, async (client) => {
+    const lost = effects.runOnce(key, async () => {
+      const client = requirePostgresTransaction();
       await client.query("INSERT INTO charges VALUES ('c-lost', 5)");
       await client.query("SELECT pg_terminate_backend(pg_backend_pid())");
       return { charged: true };
@@ -87,11 +83,11 @@ describe("PostgresFencedEffectRepository", () => {
     await expect(lost).rejects.toThrow();
     const { rows } = await onSchema(database.url(), "SELECT id FROM charges WHERE id = 'c-lost'");
     expect(rows).toEqual([]);
-    const again = await effects.runOnce(key, async (client) => {
-      await client.query("INSERT INTO charges VALUES ('c-lost', 5)");
+    const again = await effects.runOnce(key, async () => {
+      await requirePostgresTransaction().query("INSERT INTO charges VALUES ('c-lost', 5)");
       return { charged: true };
     });
-    expect(again.status).toBe(FencedEffectStatus.Ran);
+    expect(again.status).toBe(IdempotencyRunStatus.Ran);
   });
 
   it("an unreachable database rejects the effect: the step fails, nothing is written", async () => {
@@ -100,7 +96,7 @@ describe("PostgresFencedEffectRepository", () => {
     const call = effects.runOnce(keyOf("root-down", 1), () => ({ charged: true }));
 
     await expect(call).rejects.toThrow();
-    await expect(call).rejects.not.toBeInstanceOf(ExecutionFencedError);
+    await expect(call).rejects.not.toBeInstanceOf(ExecutionError.Fenced);
   });
 
   it("is listed with the lease store whose leases it reads", () => {
@@ -133,18 +129,20 @@ describe("PostgresFencedEffectRepository: business keys (agbossjs/agboss#508)", 
             effectKeyForTesting(businessKeyOf(root, 1), {
               businessKey: `order:race-${String(round)}`,
             }),
-            async (client) => {
+            async () => {
               runs += 1;
-              await client.query("INSERT INTO charges VALUES ($1, 1)", [`race-${String(round)}`]);
+              await requirePostgresTransaction().query("INSERT INTO charges VALUES ($1, 1)", [
+                `race-${String(round)}`,
+              ]);
               return { by: root };
             },
           ),
         ),
       );
 
-      expect(outcomes.filter((outcome) => outcome.status === FencedEffectStatus.Ran)).toHaveLength(
-        1,
-      );
+      expect(
+        outcomes.filter((outcome) => outcome.status === IdempotencyRunStatus.Ran),
+      ).toHaveLength(1);
       const results = new Set(outcomes.map((outcome) => JSON.stringify(outcome.result)));
       expect(results.size).toBe(1);
     }
@@ -169,17 +167,17 @@ describe("PostgresFencedEffectRepository: business keys (agbossjs/agboss#508)", 
       .catch((error: unknown) => error);
 
     expect(other).toEqual({
-      status: FencedEffectStatus.Replayed,
+      status: IdempotencyRunStatus.Replayed,
       result: { receipt: "r1" },
       token: 1,
       replayedFrom: { executionId: "bk-1", nodeId: "charge-action", visitNumber: 1 },
     });
     expect(same).toEqual({
-      status: FencedEffectStatus.Replayed,
+      status: IdempotencyRunStatus.Replayed,
       result: { receipt: "r1" },
       token: 1,
     });
-    expect(conflict).toBeInstanceOf(BusinessKeyConflictError);
+    expect(conflict).toBeInstanceOf(IdempotencyError.KeyConflict);
     expect(JSON.stringify(conflict) + String(conflict)).not.toContain("order:42");
   });
 
@@ -188,7 +186,7 @@ describe("PostgresFencedEffectRepository: business keys (agbossjs/agboss#508)", 
     await leases.acquire("default", "bk-bare", hours(1));
     const bare = effectKeyForTesting(keyOf("bk-bare", 1), {
       businessKey: "order:bare",
-      fingerprintPolicy: FingerprintPolicy.None,
+      withoutFingerprint: true,
     });
 
     await effects.runOnce(bare, () => ({ receipt: "r1" }));
@@ -198,7 +196,7 @@ describe("PostgresFencedEffectRepository: business keys (agbossjs/agboss#508)", 
     );
 
     expect(again).toEqual({
-      status: FencedEffectStatus.Replayed,
+      status: IdempotencyRunStatus.Replayed,
       result: { receipt: "r1" },
       token: 1,
     });
@@ -209,7 +207,7 @@ describe("PostgresFencedEffectRepository: business keys (agbossjs/agboss#508)", 
     expect(rows).toEqual([{ fingerprint: null, origin: null }]);
   });
 
-  it("an invalid name built by hand is refused before any statement: InvalidFencedEffectNameError", async () => {
+  it("an invalid name built by hand is refused before any statement: IdempotencyError.InvalidName", async () => {
     const { effects, leases } = storesOn(connectionTo(database.url()));
     await leases.acquire("default", "bad-name", hours(1));
 
@@ -218,31 +216,31 @@ describe("PostgresFencedEffectRepository: business keys (agbossjs/agboss#508)", 
         effects.runOnce(effectKeyForTesting(keyOf("bad-name", 1), { name }), () => ({
           ran: true,
         })),
-      ).rejects.toBeInstanceOf(InvalidFencedEffectNameError);
+      ).rejects.toBeInstanceOf(IdempotencyError.InvalidName);
   });
 
-  it("the sweep removes a business key's result stored before the cutoff, and keeps a later one", async () => {
+  it("the sweep removes a business key's result whose expiry has come, and keeps a later one and one that never expires", async () => {
     const clock = new VirtualClock();
     const { effects, leases } = storesOn(connectionTo(database.url()), clock);
     await leases.acquire("default", "sweep", hours(10));
-    await effects.runOnce(
-      effectKeyForTesting(businessKeyOf("sweep", 1), { businessKey: "sweep:old" }),
-      () => 1,
-    );
-    await clock.advance(seconds(10));
-    await effects.runOnce(
-      effectKeyForTesting(businessKeyOf("sweep", 1), { businessKey: "sweep:new" }),
-      () => 2,
-    );
+    const at = (offset: number) => new Date(clock.now().getTime() + offset);
+    const expiring = (businessKey: string, expiresAt: Date | null) =>
+      effectKeyForTesting(businessKeyOf("sweep", 1), { businessKey, expiresAt });
+    await effects.runOnce(expiring("sweep:old", at(seconds(5))), () => 1);
+    await effects.runOnce(expiring("sweep:new", at(seconds(50))), () => 2);
+    await effects.runOnce(expiring("sweep:forever", null), () => 3);
 
-    await effects.deleteByStoredAtBefore(new Date(clock.now().getTime() - seconds(5)));
+    const removed = await effects.deleteExpired(at(seconds(10)));
 
     const { rows } = await onSchema(
       database.url(),
-      "SELECT business_key FROM agboss_fenced_effect_business_results WHERE business_key LIKE 'sweep:%'",
+      "SELECT business_key FROM agboss_fenced_effect_business_results WHERE business_key LIKE 'sweep:%' ORDER BY 1",
     );
-    expect(rows).toEqual([{ business_key: "sweep:new" }]);
+    expect(rows).toEqual([{ business_key: "sweep:forever" }, { business_key: "sweep:new" }]);
+    // the result of `sweep:old` only: the scope's mark keeps the latest expiry, here never
+    expect(removed).toBe(1);
   });
+
   // agbossjs/agboss#1367: mutants a Stryker Timeout used to hide (the shard's run outlasted its limit)
   it("#1367: a replay by the step that wrote the row has no replayedFrom at all, not an undefined one", async () => {
     const { effects, leases } = storesOn(connectionTo(database.url()));
@@ -251,7 +249,7 @@ describe("PostgresFencedEffectRepository: business keys (agbossjs/agboss#508)", 
 
     const same = await effects.runOnce(businessKeyOf("bk-same", 1), () => ({ receipt: "r2" }));
 
-    expect(same.status).toBe(FencedEffectStatus.Replayed);
+    expect(same.status).toBe(IdempotencyRunStatus.Replayed);
     expect("replayedFrom" in same).toBe(false);
   });
 
@@ -286,12 +284,12 @@ describe("PostgresFencedEffectRepository: business keys (agbossjs/agboss#508)", 
         effectKeyForTesting(businessKeyOf("lock-fast", 1), { businessKey: "order:fast" }),
         () => ({ by: "fast" }),
       );
-      expect(other.status).toBe(FencedEffectStatus.Ran);
+      expect(other.status).toBe(IdempotencyRunStatus.Ran);
     } finally {
       release();
     }
 
-    expect((await held).status).toBe(FencedEffectStatus.Ran);
+    expect((await held).status).toBe(IdempotencyRunStatus.Ran);
   });
 
   it("#1367: the store's own entry refuses an invalid name, business key and missing fingerprint, whatever its base class checked", async () => {
@@ -303,12 +301,11 @@ describe("PostgresFencedEffectRepository: business keys (agbossjs/agboss#508)", 
     const probe = new Probe(
       connectionTo(database.url()),
       new StoreClock(StoreTimeSource.Test, new VirtualClock()),
-      new FencedEffectSettings(),
     );
 
     await expect(
       probe.enter(effectKeyForTesting(keyOf("entry", 1), { name: "charge:twice" })),
-    ).rejects.toBeInstanceOf(InvalidFencedEffectNameError);
+    ).rejects.toBeInstanceOf(IdempotencyError.InvalidName);
   });
 
   it("#1367: ping resolves on the connection's own ping", async () => {

@@ -1,4 +1,5 @@
-import { A2ATaskState, PauseKind, type NewA2ATask } from "@agboss/core";
+import { A2ATaskState, type NewA2ATask } from "@agboss/core/stores";
+import { PauseKind } from "@agboss/core";
 import { describe, expect, it } from "vitest";
 import { PostgresA2ATaskRepository } from "../../src/index.js";
 import { testDatabase } from "../support/database.js";
@@ -21,6 +22,7 @@ describe("agbossjs/agboss#960: an unknown key inside a pending pause (PostgreSQL
       futureTop: 1,
     };
     const task: NewA2ATask = {
+      endpoint: "ep-1",
       tenantId: "default",
       taskId: "t-p",
       ownerId: "alice",

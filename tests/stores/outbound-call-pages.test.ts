@@ -20,12 +20,12 @@ const callsOf = () =>
 describe("findAllByTenantIdAndStatus: the cursor", () => {
   it.each(["", "0", "01", "-1", "1.5", "abc", "1 ", "12345678901234567890"])(
     "%j is no cursor of this store: a RangeError naming what to pass",
-    async (after) => {
+    async (cursor) => {
       const page = callsOf().findAllByTenantIdAndStatus({
         tenantId: "default",
         status: OutboundCallStatus.Pending,
         limit: 10,
-        after,
+        cursor,
       });
 
       await expect(page).rejects.toThrow(
@@ -39,10 +39,10 @@ describe("findAllByTenantIdAndStatus: the cursor", () => {
       tenantId: "default",
       status: OutboundCallStatus.Pending,
       limit: 10,
-      after: "9223372036854775807",
+      cursor: "9223372036854775807",
     });
 
-    expect(page).toEqual({ calls: [] });
+    expect(page).toEqual({ items: [] });
   });
 
   it.each([0, 1.5, Number.NaN, -1])(

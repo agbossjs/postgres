@@ -1,10 +1,7 @@
+import type { ExecutionHistoryQuery, Page, TenantExecutionHistoryQuery } from "@agboss/core/stores";
+import { listingWindowOf, pageOfWindow, type ListingWindow } from "./listing-window.js";
 import { inLongTransaction } from "../connection/transaction.js";
-import {
-  ExecutionHistoryRepository,
-  Injectable,
-  type ExecutionHistoryPage,
-  type ExecutionHistoryRecord,
-} from "@agboss/core";
+import { ExecutionHistoryRepository, Injectable, type ExecutionHistoryRecord } from "@agboss/core";
 import { PostgresConnection } from "../connection/postgres-connection.js";
 import { changesOf, rowsOf, type Parameters } from "../connection/query.js";
 import { historyRecordOf } from "./history/history-rows.js";
@@ -83,29 +80,33 @@ export class PostgresExecutionHistoryRepository extends ExecutionHistoryReposito
     return this.#where("tenant_id = $1 AND thread_id = $2", [tenantId, threadId]);
   }
 
-  findAllByTenantIdAndStartedAtBetween(
-    tenantId: string,
-    from: Date,
-    to: Date,
-    page: ExecutionHistoryPage,
-  ): Promise<ExecutionHistoryRecord[]> {
-    return this.#where(
+  async findAllByTenantIdAndStartedAtBetween(
+    query: TenantExecutionHistoryQuery,
+  ): Promise<Page<ExecutionHistoryRecord>> {
+    const window = listingWindowOf(query);
+    const found = await this.#where(
       "tenant_id = $1 AND started_at >= $2 AND started_at < $3",
-      [tenantId, from, to],
-      page,
+      [query.tenantId, query.from, query.to],
+      window,
     );
+    return pageOfWindow(found, window);
   }
 
-  findAllByStartedAtBetween(
-    from: Date,
-    to: Date,
-    page: ExecutionHistoryPage,
-  ): Promise<ExecutionHistoryRecord[]> {
-    return this.#where("started_at >= $1 AND started_at < $2", [from, to], page);
+  async findAllByStartedAtBetween(
+    query: ExecutionHistoryQuery,
+  ): Promise<Page<ExecutionHistoryRecord>> {
+    const window = listingWindowOf(query);
+    const found = await this.#where(
+      "started_at >= $1 AND started_at < $2",
+      [query.from, query.to],
+      window,
+    );
+    return pageOfWindow(found, window);
   }
 
-  async deleteByEndedAtBefore(cutoff: Date): Promise<void> {
-    await inLongTransaction(this.connection.pool, (client) =>
+  /** Removes the ended records that ended before `cutoff`; how many went. */
+  deleteExpired(cutoff: Date): Promise<number> {
+    return inLongTransaction(this.connection.pool, (client) =>
       changesOf(
         client,
         "DELETE FROM agboss_execution_history WHERE ended_at IS NOT NULL AND ended_at < $1",
@@ -118,14 +119,14 @@ export class PostgresExecutionHistoryRepository extends ExecutionHistoryReposito
   async #where(
     condition: string,
     parameters: Parameters,
-    page?: ExecutionHistoryPage,
+    page?: ListingWindow,
   ): Promise<ExecutionHistoryRecord[]> {
     const next = parameters.length + 1;
     const paged = page === undefined ? "" : ` LIMIT $${String(next)} OFFSET $${String(next + 1)}`;
     const rows = await rowsOf(
       this.connection.pool,
       `${SELECT} WHERE ${condition} ${ORDER}${paged}`,
-      page === undefined ? parameters : [...parameters, page.limit, page.offset],
+      page === undefined ? parameters : [...parameters, page.limit + 1, page.offset],
     );
     return rows.map(historyRecordOf);
   }

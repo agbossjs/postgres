@@ -1,12 +1,12 @@
 import { RecordingLogger } from "../support/recording-logger.js";
-import { FencedEffectSettings, RandomIdGenerator } from "@agboss/core";
+import { RandomIdGenerator } from "@agboss/core";
 import {
   storeConformance,
   type FencedEffectTarget,
   StoreCapability,
 } from "@agboss/core/testing/contracts";
 import { minutes } from "@agboss/core/units";
-import type { PoolClient } from "pg";
+import type { BaseCheckpointSaver } from "@langchain/langgraph-checkpoint";
 import { beforeAll } from "vitest";
 import {
   PostgresA2ADirectMessageRepository,
@@ -49,22 +49,21 @@ beforeAll(async () => {
 /** The fenced-effect set: the effect and lease stores, and the work's business rows. */
 const fencedEffects = postgresStore(
   database,
-  async (connection, seam, onClose): Promise<FencedEffectTarget<PoolClient>> => {
+  async (connection, seam, onClose): Promise<FencedEffectTarget> => {
     // the reads of "another connection" on one already open: sent at once, when called
     const reader = await connection.pool.connect();
     onClose(() => {
       reader.release();
     });
     return {
-      effects: new PostgresFencedEffectRepository(
-        connection,
-        seam.storeClock,
-        new FencedEffectSettings(),
-      ),
+      effects: new PostgresFencedEffectRepository(connection, seam.storeClock),
       leases: new PostgresExecutionLeaseRepository(connection, seam.storeClock, seam.application),
       rows: {
-        insert: async (client, row) => {
-          await client.query("INSERT INTO contract_rows (row) VALUES ($1)", [row]);
+        // the effect's ambient transaction (#1317c)
+        insert: async (row) => {
+          await connection
+            .requireTransaction()
+            .query("INSERT INTO contract_rows (row) VALUES ($1)", [row]);
         },
         committed: async () => {
           const { rows } = await reader.query<{ row: string }>(
@@ -77,7 +76,7 @@ const fencedEffects = postgresStore(
   },
 );
 
-storeConformance<PoolClient>({
+storeConformance({
   name: "PostgreSQL",
   // agbossjs/agboss#533, #590: the interleaving explorer — every schedule of two instances 4 steps
   // deep, 50 seeded walks of three; a search out of its time limit fails with what it explored
@@ -96,7 +95,10 @@ storeConformance<PoolClient>({
     a2aTask: postgresStore(database, (connection) => new PostgresA2ATaskRepository(connection)),
     // agbossjs/agboss#962: `latestByStep` is one indexed read (agbossjs/postgres#88)
     checkpointSaver: {
-      ...postgresStore(database, (connection) => new PostgresCheckpointSaver(connection)),
+      ...postgresStore<BaseCheckpointSaver>(
+        database,
+        (connection) => new PostgresCheckpointSaver(connection),
+      ),
       capabilities: [StoreCapability.LatestByStep],
     },
     // agbossjs/agboss#831: the queue has a watch (LISTEN / a change stream / pub/sub): declared

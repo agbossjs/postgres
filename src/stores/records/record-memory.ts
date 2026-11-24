@@ -3,6 +3,7 @@ import { z } from "zod";
 import { changesOf, firstRowOf, rowsOf, type Queryable } from "../../connection/query.js";
 import { escapedText, unescapedText } from "../nul-escape.js";
 import { RECORD_COLUMNS, recordsOf } from "./record-rows.js";
+import { usd } from "@agboss/core/units";
 import type { NewSummary, Summary, Turn } from "@agboss/core";
 
 /**
@@ -16,7 +17,7 @@ const SummaryRow = z.object({
   tenant_id: z.string(),
   thread_id: z.string(),
   workflow: z.string(),
-  compaction: z.string(),
+  memory: z.string(),
   from_record_id: z.string(),
   to_record_id: z.string(),
   turns: z.number(),
@@ -33,13 +34,13 @@ const summaryOf = (row: unknown): Summary => {
     id: r.id,
     tenantId: r.tenant_id,
     threadId: r.thread_id,
-    bundle: r.workflow,
-    compaction: r.compaction,
+    workflow: r.workflow,
+    memory: r.memory,
     fromTurnId: r.from_record_id,
     toTurnId: r.to_record_id,
     turns: r.turns,
     text: r.text,
-    costUsd: r.cost_usd,
+    costUsd: usd(r.cost_usd),
     createdAt: r.created_at.toISOString(),
   };
 };
@@ -53,16 +54,16 @@ export async function uncoveredRecords(
   database: Queryable,
   tenantId: string,
   threadId: string,
-  compaction: string,
+  memory: string,
 ): Promise<Turn[]> {
   return recordsOf(
     await rowsOf(
       database,
       `SELECT ${RECORD_COLUMNS} FROM agboss_execution_records WHERE tenant_id = $1
        AND thread_id = $2 AND seq > COALESCE((SELECT max(to_seq) FROM agboss_execution_summaries
-         WHERE tenant_id = $1 AND thread_id = $2 AND compaction = $3), 0)
+         WHERE tenant_id = $1 AND thread_id = $2 AND memory = $3), 0)
        ORDER BY seq`,
-      [tenantId, threadId, compaction],
+      [tenantId, threadId, memory],
     ),
   );
 }
@@ -111,15 +112,15 @@ export async function addSummary(
   const stored: Summary = { ...summary, id: randomUUID(), createdAt: now.toISOString() };
   await changesOf(
     database,
-    `INSERT INTO agboss_execution_summaries (id, tenant_id, thread_id, workflow, compaction,
+    `INSERT INTO agboss_execution_summaries (id, tenant_id, thread_id, workflow, memory,
        from_record_id, to_record_id, from_seq, to_seq, turns, text, cost_usd, created_at)
      VALUES ($1, $2, $3, $4, $5, $6, $7, ${SEQ_OF("$6")}, ${SEQ_OF("$7")}, $8, $9, $10, $11)`,
     [
       stored.id,
       stored.tenantId,
       stored.threadId,
-      stored.bundle,
-      stored.compaction,
+      stored.workflow,
+      stored.memory,
       stored.fromTurnId,
       stored.toTurnId,
       stored.turns,
@@ -136,15 +137,15 @@ export async function latestSummariesOf(
   database: Queryable,
   tenantId: string,
   threadId: string,
-  compaction: string,
+  memory: string,
   limit: number,
 ): Promise<Summary[]> {
   const rows = await rowsOf(
     database,
     `SELECT * FROM (SELECT * FROM agboss_execution_summaries
-       WHERE tenant_id = $1 AND thread_id = $2 AND compaction = $3
+       WHERE tenant_id = $1 AND thread_id = $2 AND memory = $3
        ORDER BY to_seq DESC LIMIT $4) newest ORDER BY to_seq`,
-    [tenantId, threadId, compaction, limit],
+    [tenantId, threadId, memory, limit],
   );
   return rows.map(summaryOf);
 }
@@ -154,13 +155,13 @@ export async function summaryCountOf(
   database: Queryable,
   tenantId: string,
   threadId: string,
-  compaction: string,
+  memory: string,
 ): Promise<number> {
   const row = await firstRowOf(
     database,
     `SELECT count(*)::integer AS count FROM agboss_execution_summaries
-     WHERE tenant_id = $1 AND thread_id = $2 AND compaction = $3`,
-    [tenantId, threadId, compaction],
+     WHERE tenant_id = $1 AND thread_id = $2 AND memory = $3`,
+    [tenantId, threadId, memory],
   );
   return CountRow.parse(row).count;
 }

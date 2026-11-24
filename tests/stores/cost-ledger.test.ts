@@ -35,6 +35,7 @@ const call = (
   cacheWriteTokens: 0,
   costUsd: usd(costUsd),
   costSource: CostSource.Api,
+  provider: "test",
   ledgerId,
   madeAt,
 });
@@ -57,7 +58,7 @@ describe("PostgresCostLedgerRepository", () => {
 
     await ledger.saveAll([day("first-of-two")], [call(0.5, id), call(0.25, id)]);
 
-    expect(await ledger.findSpentByCounter(day("first-of-two"))).toBe(0.5);
+    expect((await ledger.findUsageByCounter(day("first-of-two"))).spent).toBe(0.5);
   });
 
   it("a counter given twice in one save counts twice; the calls' costs are summed", async () => {
@@ -65,7 +66,7 @@ describe("PostgresCostLedgerRepository", () => {
 
     await ledger.saveAll([day("twice"), day("twice")], [call(0.5), call(0.25)]);
 
-    expect(await ledger.findSpentByCounter(day("twice"))).toBe(1.5);
+    expect((await ledger.findUsageByCounter(day("twice"))).spent).toBe(1.5);
     expect(await rowsOfLedger("twice")).toBe(1);
   });
 
@@ -76,7 +77,7 @@ describe("PostgresCostLedgerRepository", () => {
     await ledger.saveAll([day("none")], []);
 
     expect(await rowsOfLedger("none")).toBe(0);
-    expect(await ledger.findSpentByCounter(day("none"))).toBe(0);
+    expect((await ledger.findUsageByCounter(day("none"))).spent).toBe(0);
   });
 
   it("the UTC day's rollover is a new counter: the next period starts from zero", async () => {
@@ -85,8 +86,8 @@ describe("PostgresCostLedgerRepository", () => {
 
     await ledger.saveAll([day("rollover", "2026-10-19")], [call(0.5)]);
 
-    expect(await ledger.findSpentByCounter(day("rollover", "2026-10-18"))).toBe(9.5);
-    expect(await ledger.findSpentByCounter(day("rollover", "2026-10-19"))).toBe(0.5);
+    expect((await ledger.findUsageByCounter(day("rollover", "2026-10-18"))).spent).toBe(9.5);
+    expect((await ledger.findUsageByCounter(day("rollover", "2026-10-19"))).spent).toBe(0.5);
   });
 
   it("two instances saving overlapping counters in opposite orders never deadlock, lose nothing", async () => {
@@ -101,19 +102,20 @@ describe("PostgresCostLedgerRepository", () => {
       ),
     );
 
-    for (const counter of [a, b, c]) expect(await first.findSpentByCounter(counter)).toBe(5);
+    for (const counter of [a, b, c])
+      expect((await first.findUsageByCounter(counter)).spent).toBe(5);
   });
 
   it("the last maxSpend() of an account replaces the one before", async () => {
     const ledger = ledgerOn();
     const account = { budget: "tenant-daily-budget", scope: BudgetScope.Tenant, key: "max" };
 
-    await ledger.saveMaxSpend(account, usd(10));
-    await ledger.saveMaxSpend(account, usd(12.5));
+    await ledger.saveLimit(account, { maxSpend: usd(10) });
+    await ledger.saveLimit(account, { maxSpend: usd(12.5) });
 
-    expect(await ledger.findMaxSpendByAccount(account)).toBe(12.5);
+    expect((await ledger.findLimitByAccount(account))?.maxSpend).toBe(12.5);
     expect(
-      await ledger.findMaxSpendByAccount({ ...account, scope: BudgetScope.Application }),
+      (await ledger.findLimitByAccount({ ...account, scope: BudgetScope.Application }))?.maxSpend,
     ).toBeUndefined();
   });
 
@@ -124,8 +126,35 @@ describe("PostgresCostLedgerRepository", () => {
     const odd: CostCounter = { ...day("odd"), ...scope };
 
     await expect(ledger.saveAll([odd], [call(1)])).rejects.toThrow();
-    await expect(ledger.findSpentByCounter(odd)).rejects.toThrow();
+    await expect(ledger.findUsageByCounter(odd)).rejects.toThrow();
     expect(await rowsOfLedger("odd")).toBe(0);
+  });
+
+  it("the tokens of every entry are counted with its cost, once per entry (agbossjs/agboss#1318)", async () => {
+    const ledger = ledgerOn();
+    const counter = day("tokens");
+    const entry = { ...call(1, "tokens:1"), inputTokens: 100, outputTokens: 20 };
+
+    await ledger.saveAll([counter], [entry]);
+    await ledger.saveAll([counter], [entry, { ...entry, ledgerId: "tokens:2" }]);
+
+    expect(await ledger.findUsageByCounter(counter)).toEqual({ spent: usd(2), tokens: 240 });
+    expect(await ledger.findUsageByCounter(day("never-written"))).toEqual({
+      spent: usd(0),
+      tokens: 0,
+    });
+  });
+
+  it("a limit has a spend, tokens, or both: what was not given is not read back", async () => {
+    const ledger = ledgerOn();
+    const account = { budget: "tenant-daily-budget", scope: BudgetScope.Tenant, key: "limits" };
+
+    await ledger.saveLimit(account, { maxTokens: 5000 });
+    expect(await ledger.findLimitByAccount(account)).toEqual({ maxTokens: 5000 });
+    await ledger.saveLimit(account, { maxSpend: usd(3), maxTokens: 7 });
+    expect(await ledger.findLimitByAccount(account)).toEqual({ maxSpend: usd(3), maxTokens: 7 });
+    await ledger.saveLimit(account, { maxSpend: usd(4) });
+    expect(await ledger.findLimitByAccount(account)).toEqual({ maxSpend: usd(4) });
   });
 
   it("a lost connection rejects ping, the reads and the writes", async () => {
@@ -133,10 +162,10 @@ describe("PostgresCostLedgerRepository", () => {
     const account = { budget: "b", scope: BudgetScope.Tenant, key: "down" };
 
     await expect(down.ping()).rejects.toThrow();
-    await expect(down.findSpentByCounter(day("down"))).rejects.toThrow();
+    await expect(down.findUsageByCounter(day("down"))).rejects.toThrow();
     await expect(down.saveAll([day("down")], [call(1)])).rejects.toThrow();
-    await expect(down.findMaxSpendByAccount(account)).rejects.toThrow();
-    await expect(down.saveMaxSpend(account, usd(1))).rejects.toThrow();
+    await expect(down.findLimitByAccount(account)).rejects.toThrow();
+    await expect(down.saveLimit(account, { maxSpend: usd(1) })).rejects.toThrow();
   });
 });
 
@@ -176,7 +205,7 @@ describe("PostgresCostLedgerRepository: pruning (agbossjs/agboss#771)", () => {
     for (const outcome of outcomes)
       if (outcome.status === "rejected")
         expect(outcome.reason).toMatchObject({ code: "cost-ledger.entry-expired" });
-    expect(await first.findSpentByCounter(day("race"))).toBe(5);
+    expect((await first.findUsageByCounter(day("race"))).spent).toBe(5);
     const held = await onSchema(url, "SELECT count(*)::int AS n FROM agboss_cost_entries");
     expect(held.rows).toEqual([{ n: 0 }]);
   });
@@ -209,7 +238,7 @@ describe("#1321c: the ledger on a schema made by the real migration runner", () 
     expect(mark.rows).toHaveLength(1);
     await ledger.saveAll([day("seeded")], [call(0.5)]);
     await ledger.saveAll([day("seeded")], [call(0.25)]);
-    expect(await ledger.findSpentByCounter(day("seeded"))).toBe(0.75);
+    expect((await ledger.findUsageByCounter(day("seeded"))).spent).toBe(0.75);
 
     await ledger.deleteByMadeAtBefore(new Date("2026-10-19T00:00:00.000Z"));
     const pruned = await onSchema(
@@ -222,6 +251,6 @@ describe("#1321c: the ledger on a schema made by the real migration runner", () 
     await expect(
       ledger.saveAll([day("seeded")], [call(1, "late:1", new Date("2026-10-18T08:00:00.000Z"))]),
     ).rejects.toThrow();
-    expect(await ledger.findSpentByCounter(day("seeded"))).toBe(0.75);
+    expect((await ledger.findUsageByCounter(day("seeded"))).spent).toBe(0.75);
   });
 });

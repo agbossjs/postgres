@@ -1,4 +1,8 @@
 import { randomUUID } from "node:crypto";
+import type pg from "pg";
+import type { StatusContext } from "@agboss/core/stores";
+import { inPoolTransaction } from "../../connection/transaction.js";
+import { appendRecordStatus } from "../status-log.js";
 import type {
   ExecutionRecordStatus,
   NewThread,
@@ -14,7 +18,7 @@ import { outcomeParameters } from "./record-rows.js";
 
 /** Threads, appended records, their completion (unconditional or compare-and-set) and the pause log. */
 
-const OwnerRow = z.object({ owner: z.string().nullable() });
+const OwnerRow = z.object({ owner: z.string().nullable(), is_swept: z.boolean() });
 const PauseAnswerRow = z.object({ record: z.string() });
 
 /**
@@ -29,11 +33,62 @@ export async function createThread(
 ): Promise<boolean> {
   const changes = await changesOf(
     database,
-    `INSERT INTO agboss_threads (tenant_id, id, workflow, owner, created_at)
-     VALUES ($1, $2, $3, $4, $5) ON CONFLICT (tenant_id, id) DO NOTHING`,
+    `INSERT INTO agboss_threads (tenant_id, id, workflow, owner, created_at, last_active_at)
+     VALUES ($1, $2, $3, $4, $5, $5) ON CONFLICT (tenant_id, id) DO NOTHING`,
     [thread.tenantId, id, thread.workflow, thread.ownerId ?? null, now],
   );
   return changes === 1;
+}
+
+/**
+ * A caller's own id the tenant already has: kept as it is — except a swept thread (#1303c), fail
+ * closed: a different caller, or one naming no owner, is refused; its owner restarts it (the one
+ * place the tombstone is cleared).
+ */
+export async function claimExisting(
+  pool: pg.Pool,
+  claim: {
+    readonly tenantId: string;
+    readonly threadId: string;
+    readonly ownerId?: string | undefined;
+  },
+  now: Date,
+): Promise<void> {
+  await inPoolTransaction(pool, async (client) => {
+    const row = await firstRowOf(
+      client,
+      `SELECT owner, is_swept FROM agboss_threads WHERE tenant_id = $1 AND id = $2 FOR UPDATE`,
+      [claim.tenantId, claim.threadId],
+    );
+    if (row === undefined) return;
+    const { owner, is_swept: isSwept } = OwnerRow.parse(row);
+    if (!isSwept) return;
+    if ((owner ?? undefined) !== claim.ownerId)
+      throw new Error("the thread belongs to another owner: it is not created again");
+    await changesOf(
+      client,
+      "UPDATE agboss_threads SET is_swept = false, last_active_at = $3 WHERE tenant_id = $1 AND id = $2",
+      [claim.tenantId, claim.threadId, now],
+    );
+  });
+}
+
+/**
+ * A caller's own thread id: created, or — the tenant has it already — kept as it is, except a swept
+ * one (#1303c), which only its owner restarts.
+ */
+export async function createOwnThread(
+  pool: pg.Pool,
+  thread: NewThread,
+  id: string,
+  now: Date,
+): Promise<void> {
+  if (await createThread(pool, thread, id, now)) return;
+  await claimExisting(
+    pool,
+    { tenantId: thread.tenantId, threadId: id, ownerId: thread.ownerId },
+    now,
+  );
 }
 
 /** The thread's owner (`owner: undefined`: created without one); `undefined` when there is no such thread. */
@@ -42,66 +97,98 @@ export async function threadOwnerOf(
   workflow: string,
   tenantId: string,
   threadId: string,
-): Promise<{ readonly owner: string | undefined } | undefined> {
+): Promise<{ readonly owner: string | undefined; readonly isSwept?: true } | undefined> {
   const row = await firstRowOf(
     database,
-    "SELECT owner FROM agboss_threads WHERE tenant_id = $1 AND id = $2 AND workflow = $3",
+    `SELECT owner, is_swept FROM agboss_threads WHERE tenant_id = $1 AND id = $2 AND workflow = $3`,
     [tenantId, threadId, workflow],
   );
   if (row === undefined) return undefined;
-  return { owner: OwnerRow.parse(row).owner ?? undefined };
+  const { owner, is_swept: isSwept } = OwnerRow.parse(row);
+  // a swept thread is the owner's emptied tombstone: only its owner may restart it
+  return { owner: owner ?? undefined, ...(isSwept ? { isSwept: true as const } : {}) };
 }
 
-/** Appends a record: a new id, the `Clock`'s time; its order is the table's sequence. */
-export async function appendRecord(database: Queryable, record: NewTurn, now: Date): Promise<Turn> {
+/** A write to a thread's record is its activity: what a memory's `ttl` counts from (#1303). */
+const TOUCH = `UPDATE agboss_threads SET last_active_at = $1
+  WHERE tenant_id = $2 AND id = $3 AND NOT is_swept`;
+
+/**
+ * Appends a record in one transaction with its thread's activity and its status-history row
+ * (#1341d): a new id, the `Clock`'s time; its order is the table's sequence. A swept thread (#1303c)
+ * takes no record until its owner creates it again.
+ */
+export async function appendRecord(
+  pool: pg.Pool,
+  record: NewTurn,
+  write: { readonly now: Date; readonly context?: StatusContext | undefined },
+): Promise<Turn> {
+  const { now } = write;
   const stored: Turn = { ...record, id: randomUUID(), createdAt: now.toISOString() };
-  await changesOf(
-    database,
-    `INSERT INTO agboss_execution_records (id, run_id, tenant_id, thread_id, workflow, created_at,
-       task, reply_with, status, stop_reason, route, steps, cost_usd, prompt_version,
-       model_version, replay_of, config_version, config_hash)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12::jsonb, $13, $14, $15, $16,
-       $17, $18)`,
-    [
-      stored.id,
-      stored.runId,
-      stored.tenantId,
-      stored.threadId,
-      stored.bundle,
-      now,
-      escapedText(stored.task),
-      escapedText(stored.replyWith),
-      stored.status,
-      escapedText(stored.stopReason),
-      escapedJsonOf(stored.route),
-      escapedJsonOf(stored.steps),
-      stored.costUsd,
-      stored.promptVersion,
-      stored.modelVersion,
-      stored.replayOf,
-      stored.configVersion,
-      stored.configHash,
-    ],
-  );
+  await inPoolTransaction(pool, async (client) => {
+    const touched = await changesOf(client, TOUCH, [now, stored.tenantId, stored.threadId]);
+    if (touched !== 1)
+      throw new Error("the thread was swept: its owner restarts it by creating it again");
+    await changesOf(client, INSERT, [
+      ...[stored.id, stored.runId, stored.tenantId, stored.threadId, stored.workflow, now],
+      ...[escapedText(stored.task), escapedText(stored.replyWith), stored.status],
+      ...[escapedText(stored.stopReason), escapedJsonOf(stored.route), escapedJsonOf(stored.steps)],
+      ...[stored.costUsd, stored.promptVersion, stored.modelVersion, stored.replayOf],
+      ...[stored.configVersion, stored.configHash],
+    ]);
+    await appendRecordStatus(client, stored, {
+      status: stored.status,
+      context: write.context,
+      at: now,
+    });
+  });
   return stored;
 }
+
+const INSERT = `INSERT INTO agboss_execution_records (id, run_id, tenant_id, thread_id, workflow,
+    created_at, task, reply_with, status, stop_reason, route, steps, cost_usd, prompt_version,
+    model_version, replay_of, config_version, config_hash)
+  VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12::jsonb, $13, $14, $15, $16,
+    $17, $18)`;
 
 const COMPLETE = `UPDATE agboss_execution_records SET reply_with = $1, status = $2,
   stop_reason = $3, route = $4::jsonb, steps = $5::jsonb, cost_usd = $6 WHERE id = $7`;
 
-/** Writes the outcome; with `expected`, only while the record's status is it — one statement, atomic. */
+const ThreadOf = z.object({ tenant_id: z.string(), thread_id: z.string() });
+
+/**
+ * Writes the outcome, the thread's activity and its status row in one transaction; with `expected`,
+ * only while the record's status is it — one compare-and-set statement, atomic.
+ */
 export async function completeRecord(
-  database: Queryable,
+  pool: pg.Pool,
   id: string,
   outcome: TurnOutcome,
-  expected?: ExecutionRecordStatus,
+  write: {
+    readonly now: Date;
+    readonly expected?: ExecutionRecordStatus | undefined;
+    readonly context?: StatusContext | undefined;
+  },
 ): Promise<boolean> {
-  const parameters = [...outcomeParameters(outcome), id];
-  const changed =
-    expected === undefined
-      ? await changesOf(database, COMPLETE, parameters)
-      : await changesOf(database, `${COMPLETE} AND status = $8`, [...parameters, expected]);
-  return changed === 1;
+  return inPoolTransaction(pool, async (client) => {
+    const parameters = [...outcomeParameters(outcome), id];
+    const guarded = write.expected === undefined ? "" : " AND status = $8";
+    const row = await firstRowOf(
+      client,
+      `${COMPLETE}${guarded} RETURNING tenant_id, thread_id`,
+      write.expected === undefined ? parameters : [...parameters, write.expected],
+    );
+    if (row === undefined) return false;
+    const thread = ThreadOf.parse(row);
+    const key = { tenantId: thread.tenant_id, threadId: thread.thread_id };
+    await changesOf(client, TOUCH, [write.now, key.tenantId, key.threadId]);
+    await appendRecordStatus(client, key, {
+      status: outcome.status,
+      context: write.context,
+      at: write.now,
+    });
+    return true;
+  });
 }
 
 /** Keeps a resolved pause once per tenant and step key (a second save is ignored). */

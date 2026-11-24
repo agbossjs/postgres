@@ -5,11 +5,13 @@ import {
   CostLedgerRepository,
   Injectable,
   type BudgetAccount,
+  type BudgetLimit,
+  type BudgetUsage,
   type CostCounter,
   type LedgerEntry,
 } from "@agboss/core";
 import { assertLedgerCutoff, assertLedgerEntries } from "@agboss/core/stores";
-import { usd, type Usd } from "@agboss/core/units";
+import { usd } from "@agboss/core/units";
 import { z } from "zod";
 import { PostgresConnection } from "../connection/postgres-connection.js";
 import { changesOf, firstRowOf } from "../connection/query.js";
@@ -64,8 +66,8 @@ const ENTRY_KEY = "(ledger_id)";
 const ADD = `WITH mark AS (
     SELECT pruned_before FROM agboss_cost_entries_pruned ${MARK_LOCK}
   ), given AS (
-    SELECT * FROM unnest($5::text[], $6::double precision[], $7::timestamptz[])
-      AS entry (ledger_id, cost, made_at)
+    SELECT * FROM unnest($5::text[], $6::double precision[], $7::timestamptz[], $8::double precision[])
+      AS entry (ledger_id, cost, made_at, tokens)
   ), expired AS (
     SELECT given.ledger_id FROM given, mark
       WHERE given.made_at < mark.pruned_before ${NOT_HELD}
@@ -76,19 +78,21 @@ const ADD = `WITH mark AS (
     ON CONFLICT ${ENTRY_KEY} DO NOTHING
     RETURNING ledger_id
   ), spent AS (
-    SELECT COALESCE(sum(given.cost), 0) AS usd
+    SELECT COALESCE(sum(given.cost), 0) AS usd, COALESCE(sum(given.tokens), 0) AS tokens
       FROM given WHERE given.ledger_id IN (SELECT ledger_id FROM inserted)
   ), counted AS (
     INSERT INTO agboss_cost_counters AS counter
-      (budget, scope, scope_key, period, spent_usd)
-    SELECT budget, scope, scope_key, period, count(*) * (SELECT usd FROM spent)
+      (budget, scope, scope_key, period, spent_usd, tokens)
+    SELECT budget, scope, scope_key, period, count(*) * (SELECT usd FROM spent),
+      (count(*) * (SELECT tokens FROM spent))::bigint
       FROM unnest($1::text[], $2::text[], $3::text[], $4::text[])
         AS counted (budget, scope, scope_key, period)
       WHERE EXISTS (SELECT 1 FROM mark) ${NONE_EXPIRED}
       GROUP BY budget, scope, scope_key, period
       ORDER BY budget, scope, scope_key, period
     ON CONFLICT (budget, scope, scope_key, period)
-      DO UPDATE SET spent_usd = counter.spent_usd + EXCLUDED.spent_usd
+      DO UPDATE SET spent_usd = counter.spent_usd + EXCLUDED.spent_usd,
+        tokens = counter.tokens + EXCLUDED.tokens
   )
   SELECT EXISTS (SELECT 1 FROM mark) AS marked,
     (SELECT array_agg(ledger_id) FROM expired) AS expired,
@@ -119,6 +123,7 @@ const ExpiredRow = z.object({ marked: z.boolean() }).and(
 function entriesOf(given: readonly LedgerEntry[]): {
   readonly ids: string[];
   readonly costs: number[];
+  readonly tokens: number[];
   readonly madeAt: Date[];
 } {
   const entries = new Map<string, LedgerEntry>();
@@ -127,13 +132,21 @@ function entriesOf(given: readonly LedgerEntry[]): {
   return {
     ids: [...entries.keys()],
     costs: kept.map((entry) => entry.costUsd),
+    // what a token budget counts: input and output tokens
+    tokens: kept.map((entry) => entry.inputTokens + entry.outputTokens),
     // to the millisecond, as made (a timestamptz keeps microseconds)
     madeAt: kept.map((entry) => entry.madeAt),
   };
 }
 
-const SpentRow = z.object({ spent_usd: z.number() });
-const MaxSpendRow = z.object({ max_spend_usd: z.number() });
+const UsageRow = z.object({ spent_usd: z.number(), tokens: z.coerce.number() });
+const LimitRow = z.object({
+  max_spend_usd: z.number().nullable(),
+  max_tokens: z.coerce.number().nullable(),
+});
+
+/** What a counter that was never written holds. */
+const NO_USAGE: BudgetUsage = { spent: usd(0), tokens: 0 };
 
 /** The scope as stored: one of `BudgetScope`'s values (anything else is refused). */
 const scopeOf = (account: BudgetAccount): string => z.enum(BudgetScope).parse(account.scope);
@@ -162,21 +175,23 @@ export class PostgresCostLedgerRepository extends CostLedgerRepository {
     return this.connection.ping();
   }
 
-  async findSpentByCounter(counter: CostCounter): Promise<Usd> {
+  async findUsageByCounter(counter: CostCounter): Promise<BudgetUsage> {
     const row = await firstRowOf(
       this.connection.pool,
-      `SELECT spent_usd FROM agboss_cost_counters
+      `SELECT spent_usd, tokens FROM agboss_cost_counters
        WHERE budget = $1 AND scope = $2 AND scope_key = $3 AND period = $4`,
       [counter.budget, scopeOf(counter), counter.key, counter.period],
     );
-    return usd(row === undefined ? 0 : SpentRow.parse(row).spent_usd);
+    if (row === undefined) return NO_USAGE;
+    const held = UsageRow.parse(row);
+    return { spent: usd(held.spent_usd), tokens: held.tokens };
   }
 
   async saveAll(counters: readonly CostCounter[], entries: readonly LedgerEntry[]): Promise<void> {
     // a JS caller's record without an identity is refused before anything (agbossjs/agboss#817)
     assertLedgerEntries(entries);
     if (counters.length === 0 || entries.length === 0) return;
-    const { ids, costs, madeAt } = entriesOf(entries);
+    const { ids, costs, madeAt, tokens } = entriesOf(entries);
     const row = await firstRowOf(this.connection.pool, ADD, [
       counters.map((counter) => counter.budget),
       counters.map(scopeOf),
@@ -185,6 +200,7 @@ export class PostgresCostLedgerRepository extends CostLedgerRepository {
       ids,
       costs,
       madeAt,
+      tokens,
     ]);
     const answer = ExpiredRow.parse(row);
     // without its mark the ledger cannot tell a pruned entry: nothing was added (agbossjs/agboss#771)
@@ -203,23 +219,35 @@ export class PostgresCostLedgerRepository extends CostLedgerRepository {
     await inLongTransaction(this.connection.pool, (client) => changesOf(client, PRUNE, [cutoff]));
   }
 
-  async findMaxSpendByAccount(account: BudgetAccount): Promise<Usd | undefined> {
+  async findLimitByAccount(account: BudgetAccount): Promise<BudgetLimit | undefined> {
     const row = await firstRowOf(
       this.connection.pool,
-      `SELECT max_spend_usd FROM agboss_cost_max_spend
+      `SELECT max_spend_usd, max_tokens FROM agboss_cost_max_spend
        WHERE budget = $1 AND scope = $2 AND scope_key = $3`,
       [account.budget, scopeOf(account), account.key],
     );
-    return row === undefined ? undefined : usd(MaxSpendRow.parse(row).max_spend_usd);
+    if (row === undefined) return undefined;
+    const held = LimitRow.parse(row);
+    return {
+      ...(held.max_spend_usd === null ? {} : { maxSpend: usd(held.max_spend_usd) }),
+      ...(held.max_tokens === null ? {} : { maxTokens: held.max_tokens }),
+    };
   }
 
-  async saveMaxSpend(account: BudgetAccount, maxSpend: Usd): Promise<void> {
+  async saveLimit(account: BudgetAccount, limit: BudgetLimit): Promise<void> {
     await changesOf(
       this.connection.pool,
-      `INSERT INTO agboss_cost_max_spend (budget, scope, scope_key, max_spend_usd)
-       VALUES ($1, $2, $3, $4)
-       ON CONFLICT (budget, scope, scope_key) DO UPDATE SET max_spend_usd = EXCLUDED.max_spend_usd`,
-      [account.budget, scopeOf(account), account.key, maxSpend],
+      `INSERT INTO agboss_cost_max_spend (budget, scope, scope_key, max_spend_usd, max_tokens)
+       VALUES ($1, $2, $3, $4, $5)
+       ON CONFLICT (budget, scope, scope_key) DO UPDATE SET
+         max_spend_usd = EXCLUDED.max_spend_usd, max_tokens = EXCLUDED.max_tokens`,
+      [
+        account.budget,
+        scopeOf(account),
+        account.key,
+        limit.maxSpend ?? null,
+        limit.maxTokens ?? null,
+      ],
     );
   }
 }

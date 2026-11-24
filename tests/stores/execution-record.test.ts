@@ -7,6 +7,7 @@ import {
   type PauseAnswerRecord,
 } from "@agboss/core";
 import { VirtualClock } from "@agboss/core/testing";
+import { usd } from "@agboss/core/units";
 import { describe, expect, it } from "vitest";
 import { onSchema, testDatabase } from "../support/database.js";
 import { outcomeOf, recordOf, recordsOn } from "../support/stores.js";
@@ -165,12 +166,19 @@ describe("PostgresExecutionRecordRepository", () => {
     const { ids } = await threadWith(records, [Paused]);
     const [id = ""] = ids;
 
-    await records.complete(id, outcomeOf(Answered, { costUsd: 0.5, route: ["start", "finish"] }));
+    await records.complete(
+      id,
+      outcomeOf(Answered, { costUsd: usd(0.5), route: ["start", "finish"] }),
+    );
     const late = await records.completeIfStatus(id, Paused, outcomeOf(Failed));
     const [stored] = await records.byIds([id]);
 
     expect(late).toBe(false);
-    expect(stored).toMatchObject({ status: "answered", costUsd: 0.5, route: ["start", "finish"] });
+    expect(stored).toMatchObject({
+      status: "answered",
+      costUsd: usd(0.5),
+      route: ["start", "finish"],
+    });
   });
 
   it("the paused -> running mark of an answer, written with no lease on two instances at once: exactly one lands", async () => {
@@ -180,8 +188,8 @@ describe("PostgresExecutionRecordRepository", () => {
       const [id = ""] = ids;
 
       const marks = await Promise.all([
-        first.completeIfStatus(id, Paused, outcomeOf(Running, { costUsd: 1 })),
-        second.completeIfStatus(id, Paused, outcomeOf(Running, { costUsd: 2 })),
+        first.completeIfStatus(id, Paused, outcomeOf(Running, { costUsd: usd(1) })),
+        second.completeIfStatus(id, Paused, outcomeOf(Running, { costUsd: usd(2) })),
       ]);
 
       expect(marks.filter(Boolean)).toHaveLength(1);
@@ -189,9 +197,9 @@ describe("PostgresExecutionRecordRepository", () => {
       expect(stored?.status).toBe("running");
       expect(stored?.costUsd).toBe(marks[0] ? 1 : 2);
       // the answer that lost finds the record already moved: a second mark from paused never lands
-      expect(await second.completeIfStatus(id, Paused, outcomeOf(Running, { costUsd: 3 }))).toBe(
-        false,
-      );
+      expect(
+        await second.completeIfStatus(id, Paused, outcomeOf(Running, { costUsd: usd(3) })),
+      ).toBe(false);
       expect((await first.byIds([id]))[0]?.costUsd).toBe(marks[0] ? 1 : 2);
     }
   });
@@ -220,18 +228,26 @@ describe("PostgresExecutionRecordRepository", () => {
     const records = recordsOn(database.url());
     const { ids } = await threadWith(records, [Failed, Running, Failed, Failed]);
 
-    const failed = await records.findByStatus(Failed, 10, ids[0]);
+    const failed = await records.findByStatus({
+      status: Failed,
+      limit: 10,
+      ...(ids[0] === undefined ? {} : { cursor: ids[0] }),
+    });
+    const paged = await records.findByStatus({ status: Failed, limit: 2 });
 
-    expect(failed.map((record) => record.id)).toEqual([ids[2], ids[3]]);
+    expect(failed.items.map((record) => record.id)).toEqual([ids[2], ids[3]]);
+    expect(failed.nextCursor).toBeUndefined();
+    expect(paged.items.map((record) => record.id)).toEqual([ids[0], ids[2]]);
+    expect(paged.nextCursor).toBe(ids[2]);
   });
 
   it("byVersion: originals of a prompt version, a running one and a replay left out", async () => {
     const records = recordsOn(database.url());
     const { ids } = await threadWith(records, [Answered, Running, Failed], {
-      bundle: "version-workflow",
+      workflow: "version-workflow",
     });
-    await threadWith(records, [Answered], { bundle: "version-workflow", replayOf: ids[0] });
-    await threadWith(records, [Answered], { bundle: "version-workflow", promptVersion: "p2" });
+    await threadWith(records, [Answered], { workflow: "version-workflow", replayOf: ids[0] });
+    await threadWith(records, [Answered], { workflow: "version-workflow", promptVersion: "p2" });
 
     const originals = await records.byVersion("version-workflow", "p1", 10);
 
@@ -242,9 +258,9 @@ describe("PostgresExecutionRecordRepository", () => {
   it("scores: unscored answered records, the mean of a set, the summary per prompt version", async () => {
     const records = recordsOn(database.url());
     const { ids } = await threadWith(records, [Answered, Answered, Failed, Running], {
-      bundle: "scored-workflow",
+      workflow: "scored-workflow",
     });
-    await threadWith(records, [Answered], { bundle: "scored-workflow", promptVersion: "p2" });
+    await threadWith(records, [Answered], { workflow: "scored-workflow", promptVersion: "p2" });
     const [first = "", second = ""] = ids;
 
     await records.saveScore(first, "judge", 0.8);
@@ -305,7 +321,7 @@ describe("PostgresExecutionRecordRepository", () => {
   it("recentOriginals: the newest original answered records, oldest first", async () => {
     const records = recordsOn(database.url());
     const { ids } = await threadWith(records, [Answered, Failed, Answered, Answered], {
-      bundle: "recent-workflow",
+      workflow: "recent-workflow",
     });
 
     const recent = await records.recentOriginals("recent-workflow", 2);
@@ -321,16 +337,16 @@ describe("PostgresExecutionRecordRepository", () => {
     const summary = await records.addSummary({
       tenantId: "default",
       threadId,
-      bundle: "desk-workflow",
-      compaction: "rolling",
+      workflow: "desk-workflow",
+      memory: "rolling",
       fromTurnId: one,
       toTurnId: two,
       turns: 2,
       text: "asked about order 7",
-      costUsd: 0.002,
+      costUsd: usd(0.002),
     });
 
-    expect(summary).toMatchObject({ id: expect.any(String), compaction: "rolling", turns: 2 });
+    expect(summary).toMatchObject({ id: expect.any(String), memory: "rolling", turns: 2 });
     expect((await records.uncovered("default", threadId, "rolling")).map((r) => r.id)).toEqual([
       three,
       four,
@@ -350,13 +366,13 @@ describe("PostgresExecutionRecordRepository", () => {
       records.addSummary({
         tenantId: "default",
         threadId,
-        bundle: "desk-workflow",
-        compaction,
+        workflow: "desk-workflow",
+        memory: compaction,
         fromTurnId: ids[from] ?? "",
         toTurnId: ids[to] ?? "",
         turns: to - from + 1,
         text: `turns ${String(from)}-${String(to)}`,
-        costUsd: 0.001,
+        costUsd: usd(0.001),
       });
     await summarise(0, 0);
     await summarise(1, 1);

@@ -96,23 +96,23 @@ import { AppEnvironment } from "./environments/app.environment.js";
 export class DeskApplication {}
 ```
 
-| Store                                   | Core contract                        | Tables                                                                                               |
-| --------------------------------------- | ------------------------------------ | ---------------------------------------------------------------------------------------------------- |
-| `PostgresExecutionLeaseRepository`      | `ExecutionLeaseRepository`           | `agboss_execution_leases`, `agboss_execution_cancel_requests` (`0032`, the cancel's fence)           |
-| `PostgresExecutionRecordRepository`     | `ExecutionRecordRepository`          | `agboss_threads`, `agboss_execution_records`, … (`0002`)                                             |
-| `PostgresExecutionTreeRepository`       | `ExecutionTreeRepository`            | `agboss_execution_tree_keys`                                                                         |
-| `PostgresPausedExecutionRepository`     | `PausedExecutionRepository`          | `agboss_paused_executions`, `agboss_pauses`, `agboss_pause_notices` (pause deadlines and notices)    |
-| `PostgresChildExecutionQueueRepository` | `ChildExecutionQueueRepository`      | `agboss_child_execution_queue`                                                                       |
-| `PostgresCheckpointSaver`               | LangGraph `BaseCheckpointSaver`      | `checkpoints`, `checkpoint_blobs`, `checkpoint_writes`                                               |
-| `PostgresFencedEffectRepository`        | `FencedEffectRepository<PoolClient>` | `agboss_fenced_effect_marks`, `…_results`, `…_business_results`                                      |
-| `PostgresOutboundCallRepository`        | `OutboundCallRepository`             | `agboss_outbound_calls` (and the leases' `superseded`, `0014`)                                       |
-| `PostgresExecutionAuditLogRepository`   | `ExecutionAuditLogRepository`        | `agboss_execution_lease_events`                                                                      |
-| `PostgresCostLedgerRepository`          | `CostLedgerRepository`               | `agboss_cost_counters`, `agboss_cost_max_spend`, `agboss_cost_entries`, `agboss_cost_entries_pruned` |
-| `PostgresExecutionHistoryRepository`    | `ExecutionHistoryRepository`         | `agboss_execution_history`                                                                           |
-| `PostgresRateLimitRepository`           | `RateLimitRepository`                | `agboss_rate_limit_keys`, `…_slots`, `…_window_buckets`, `…_pauses`                                  |
-| `PostgresMeshRequestRepository`         | `MeshRequestRepository`              | `agboss_mesh_requests`                                                                               |
-| `PostgresA2ATaskRepository`             | `A2ATaskRepository`                  | `agboss_a2a_tasks`, `agboss_a2a_messages` (`0026`, `0028`)                                           |
-| `PostgresA2ADirectMessageRepository`    | `A2ADirectMessageRepository`         | `agboss_a2a_direct_messages`, its ids claimed in `agboss_a2a_messages` (`0030`)                      |
+| Store                                   | Core contract                   | Tables                                                                                               |
+| --------------------------------------- | ------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `PostgresExecutionLeaseRepository`      | `ExecutionLeaseRepository`      | `agboss_execution_leases`, `agboss_execution_cancel_requests` (`0032`, the cancel's fence)           |
+| `PostgresExecutionRecordRepository`     | `ExecutionRecordRepository`     | `agboss_threads`, `agboss_execution_records`, … (`0002`)                                             |
+| `PostgresExecutionTreeRepository`       | `ExecutionTreeRepository`       | `agboss_execution_tree_keys`                                                                         |
+| `PostgresPausedExecutionRepository`     | `PausedExecutionRepository`     | `agboss_paused_executions`, `agboss_pauses`, `agboss_pause_notices` (pause deadlines and notices)    |
+| `PostgresChildExecutionQueueRepository` | `ChildExecutionQueueRepository` | `agboss_child_execution_queue`                                                                       |
+| `PostgresCheckpointSaver`               | LangGraph `BaseCheckpointSaver` | `checkpoints`, `checkpoint_blobs`, `checkpoint_writes`                                               |
+| `PostgresFencedEffectRepository`        | `FencedEffectRepository`        | `agboss_fenced_effect_marks`, `…_results`, `…_business_results`                                      |
+| `PostgresOutboundCallRepository`        | `OutboundCallRepository`        | `agboss_outbound_calls` (and the leases' `superseded`, `0014`)                                       |
+| `PostgresExecutionAuditLogRepository`   | `ExecutionAuditLogRepository`   | `agboss_execution_lease_events`                                                                      |
+| `PostgresCostLedgerRepository`          | `CostLedgerRepository`          | `agboss_cost_counters`, `agboss_cost_max_spend`, `agboss_cost_entries`, `agboss_cost_entries_pruned` |
+| `PostgresExecutionHistoryRepository`    | `ExecutionHistoryRepository`    | `agboss_execution_history`                                                                           |
+| `PostgresRateLimitRepository`           | `RateLimitRepository`           | `agboss_rate_limit_keys`, `…_slots`, `…_window_buckets`, `…_pauses`                                  |
+| `PostgresMeshRequestRepository`         | `MeshRequestRepository`         | `agboss_mesh_requests`                                                                               |
+| `PostgresA2ATaskRepository`             | `A2ATaskRepository`             | `agboss_a2a_tasks`, `agboss_a2a_messages` (`0026`, `0028`)                                           |
+| `PostgresA2ADirectMessageRepository`    | `A2ADirectMessageRepository`    | `agboss_a2a_direct_messages`, its ids claimed in `agboss_a2a_messages` (`0030`)                      |
 
 With all of them listed, nothing of the application is per pod: budgets sum every pod's spend, a
 provider's limits hold across pods, `agboss records export` on any pod lists every pod's
@@ -148,51 +148,53 @@ the child queue, the audit log and the other stores are not constrained. To writ
 own, on another database, see the Wiki's
 [Your own store](https://github.com/agbossjs/agboss/wiki/Your-own-store).
 
-A component injects the application's `FencedEffects` (agbossjs/agboss#890: never this store's
-class — the store is the application's, listed in its `providers`); a fenced effect's work gets the
-transaction's `PoolClient` and may `await` its statements:
+A component injects the application's `Idempotency` (agbossjs/agboss#1317: never this store's class
+— the store is the application's, listed in its `providers`). `runOnce`'s `execute` is handed no
+transaction: a repository writes through the connection's `requireTransaction()` — this
+transaction, rolled back with the effect on any uncaught error — and may `await` its statements:
 
 <!-- snippet-context
-import { effectKeyOf, type ExecutionContext, type FencedEffects } from "@agboss/core";
-import type { PoolClient } from "pg";
-declare const fencedEffects: FencedEffects;
-declare const executionContext: ExecutionContext;
+import { Idempotency } from "@agboss/core";
+import { hours } from "@agboss/core/units";
+import type { PostgresConnection } from "@agboss/postgres";
+declare const idempotency: Idempotency;
+declare const connection: PostgresConnection;
 declare const orderId: string;
 declare const amount: number;
 -->
 
 ```ts
-const outcome = await fencedEffects.runOnce(
-  effectKeyOf(executionContext, "charge"),
-  async (client: PoolClient) => {
-    await client.query("INSERT INTO charges (order_id, amount) VALUES ($1, $2)", [orderId, amount]);
+const outcome = await idempotency.runOnce({
+  name: "charge",
+  ttl: hours(24),
+  execute: async () => {
+    await connection
+      .requireTransaction()
+      .query("INSERT INTO charges (order_id, amount) VALUES ($1, $2)", [orderId, amount]);
     return { receipt: orderId };
   },
-);
+});
 ```
 
-With a business key (#508) the effect is one per tenant, name and key — whatever execution, visit or
-thread makes it — instead of one per step:
-`effectKeyOf(executionContext, "charge", { businessKey: "order:42", fingerprint: { amount } })`.
-A second execution's call replays the first one's result (`replayedFrom` names its step); the same
-key with another fingerprint is `BusinessKeyConflictError`, nothing run.
+`requirePostgresTransaction()` gives the same transaction to a repository that holds no connection
+of its own. With a business key the effect is one per tenant, name and key — whatever execution,
+visit or thread makes it — instead of one per step:
+`idempotency.runOnce({ name: "charge", key: "order:42", fingerprint: { amount }, ttl, execute })`. A
+second execution's call replays the first one's result (`replayedFrom` names its step); the same key
+with another fingerprint is `IdempotencyError.KeyConflict`, nothing run. Every result and every
+scope's mark carries the `expires_at` its `ttl` set (a scope's mark keeps the latest of its keys,
+never before a key that never expires); the recovery sweep's `deleteExpired(now)` removes what is due.
 
 ### Calls that leave the system
 
-`OutboundCalls.send` (#505) records an intent in `agboss_outbound_calls` before the request goes out
-and settles it after; an intent left pending — the pod died or froze mid-call — is reconciled with
-the other system (`reconcile`) by whichever pod runs the step next, never sent again blindly:
+`Idempotency.sendOnce` (agbossjs/agboss#505, #1317) records an intent in `agboss_outbound_calls`
+before the request goes out and settles it after; an intent left pending — the pod died or froze
+mid-call — is recovered by whichever pod runs the step next (`recovery`), never sent again blindly:
 
 <!-- snippet-context
-import {
-  effectKeyOf,
-  NotSentTrust,
-  OutboundCallReconciliation,
-  type ExecutionContext,
-  type OutboundCalls,
-} from "@agboss/core";
-declare const executionContext: ExecutionContext;
-declare const outboundCalls: OutboundCalls;
+import { Idempotency, OutboundRecovery, Reconciliation } from "@agboss/core";
+import { days, seconds } from "@agboss/core/units";
+declare const idempotency: Idempotency;
 declare const orderId: string;
 declare const amount: number;
 interface Charge {
@@ -205,20 +207,19 @@ declare const gateway: {
 -->
 
 ```ts
-const key = effectKeyOf(executionContext, "charge", { businessKey: `order:${orderId}` });
-const { result } = await outboundCalls.send(key, {
+const { result } = await idempotency.sendOnce({
+  name: "charge",
+  key: `order:${orderId}`,
   target: "payments",
-  operation: "charge",
   request: { orderId, amount },
+  timeout: seconds(20),
+  ttl: days(30),
   send: (call) => gateway.charge({ orderId, amount }, call.idempotencyKey, call.signal),
-  reconcile: async (lookup) => {
+  // the gateway's own record: a lookup that never expires is trusted at any age
+  recovery: OutboundRecovery.permanentLookup(async (lookup) => {
     const found = await gateway.find(lookup.idempotencyKey);
-    return found === undefined
-      ? OutboundCallReconciliation.notSent()
-      : OutboundCallReconciliation.completed(found);
-  },
-  // required (agbossjs/agboss#795): the gateway's own record — or a KeyReplay with its keyRetention
-  notSent: { trust: NotSentTrust.Lookup },
+    return found === undefined ? Reconciliation.notExecuted() : Reconciliation.completed(found);
+  }),
 });
 ```
 
@@ -253,6 +254,35 @@ const [takeover] = await app.auditLogOf({ tenantId: "default", rootExecutionId }
 // { kind: "takeover", reason: "recovered", holderInstanceId: "<B>",
 //   previousHolderInstanceId: "<A>", previousToken: 1, token: 2, … }
 ```
+
+### Or by the driver (agbossjs/agboss#1321)
+
+An application that names its storage lists the driver, not the stores: `PostgresDriver` brings
+`PostgresConnection` and every store, its options read once when the application starts (the URL a
+`secret(…)`, never printed; every duration a `Milliseconds`). The environment's `postgres…` fields
+below are read only by an application without a `@DatabaseStorage`.
+
+```ts
+import { DatabaseStorage, secret } from "@agboss/core";
+import { minutes, seconds } from "@agboss/core/units";
+import { PostgresDriver } from "@agboss/postgres";
+
+@DatabaseStorage({
+  driver: PostgresDriver({
+    url: secret("POSTGRES_URL"),
+    schema: "desk",
+    poolSize: 20,
+    timeouts: { commandTimeout: seconds(10), watchLiveness: seconds(20) },
+  }),
+  auditLogTtl: minutes(60 * 24 * 30),
+  ledgerEntriesTtl: minutes(60 * 24 * 90),
+})
+export class DeskDatabase {}
+```
+
+`agboss migrate db` migrates the schema of the application's driver (`PostgresDriver`'s `migrate`):
+it refuses with `StoreError.LiveLeases` while a lease is live, unless the command says
+`--allow-live-leases`.
 
 ## 2. The environment
 

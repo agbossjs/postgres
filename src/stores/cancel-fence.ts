@@ -1,6 +1,14 @@
+import {
+  ExecutionPauseFencedError,
+  ExecutionStopFencedError,
+  InterruptMode,
+  type NewStatusTransition,
+} from "@agboss/core";
 import { ExecutionCancelFencedError, cancelTreeOf, type EffectKey } from "@agboss/core/stores";
+import { z } from "zod";
 import type { PoolClient } from "pg";
 import { changesOf, firstRowOf } from "../connection/query.js";
+import { appendStatus } from "./status-log.js";
 import { storeNow } from "./store-time.js";
 
 /**
@@ -45,34 +53,66 @@ const SEED = `INSERT INTO agboss_execution_leases
  */
 const SHARE_LOCK = "FOR SHARE";
 
-const FIND = `SELECT cancel_requested_at IS NOT NULL AS is_cancelled FROM agboss_execution_leases
+const FIND = `SELECT cancel_requested_at IS NOT NULL AS is_cancelled, stop_mode,
+    fenced_through_token, token FROM agboss_execution_leases
   WHERE tenant_id = $1 AND root_execution_id = $2 ${SHARE_LOCK}`;
 
 /** Marks the tree's cancel in the caller's transaction: once — a repeat changes nothing. */
 export async function markCancel(
   client: PoolClient,
   tree: { readonly tenantId: string; readonly rootExecutionId: string },
-  now: Date | null,
+  write: {
+    readonly now: Date | null;
+    readonly at: Date;
+    readonly transition?: NewStatusTransition | undefined;
+  },
 ): Promise<void> {
-  await changesOf(client, MARK, [tree.tenantId, tree.rootExecutionId, now]);
+  const wasMarked = await firstRowOf(
+    client,
+    `SELECT 1 FROM agboss_execution_leases WHERE tenant_id = $1 AND root_execution_id = $2
+     AND cancel_requested_at IS NOT NULL FOR UPDATE`,
+    [tree.tenantId, tree.rootExecutionId],
+  );
+  await changesOf(client, MARK, [tree.tenantId, tree.rootExecutionId, write.now]);
+  // the mark and its history row are one transaction (#1341d), written only when this call set it
+  if (write.transition !== undefined && wasMarked === undefined)
+    await appendStatus(client, write.transition, write.at);
 }
 
+const FenceRow = z.object({
+  is_cancelled: z.boolean(),
+  stop_mode: z.string().nullable(),
+  fenced_through_token: z.number().nullable(),
+  token: z.number(),
+});
+
 /**
- * The cancel check of a fenced write, in its transaction, after the lease and the mark and — for an
- * effect — the key's lookup: the key's tree has a cancel request and the key is not an undo's →
- * `ExecutionCancelFencedError`, nothing written or sent.
+ * The tree's fences of a fenced write, in its transaction, after the lease and the mark and — for
+ * an effect — the key's lookup, all on the tree's ROOT row (locked `FOR SHARE`, so a child's key is
+ * checked against its root): a pause fenced the root lease through a token (#1341c) — a write of the
+ * root's lease at or below it is stale, and so is a child's while the root's current token is the
+ * fenced one → `ExecutionPauseFencedError`; an `Immediate` stop with no cancel (#1341b) →
+ * `ExecutionStopFencedError`; a cancel request and a key that is not an undo's →
+ * `ExecutionCancelFencedError`. Nothing written or sent.
  */
 export async function checkCancel(
   client: PoolClient,
   key: EffectKey,
   now: Date | null,
 ): Promise<void> {
-  if (key.isCompensation === true) return;
   const tree = cancelTreeOf(key);
   // a child's check may find no row of its root yet: one is seeded, so there is a row to lock (the
   // root's own key finds its lease row, locked by the fence: the seed changes nothing)
   await changesOf(client, SEED, [tree.tenantId, tree.rootExecutionId, now]);
-  const row = await firstRowOf(client, FIND, [tree.tenantId, tree.rootExecutionId]);
-  const isCancelled = Reflect.get(Object(row), "is_cancelled") === true;
-  if (isCancelled) throw ExecutionCancelFencedError.of(key);
+  const row = FenceRow.parse(await firstRowOf(client, FIND, [tree.tenantId, tree.rootExecutionId]));
+  const fenced = row.fenced_through_token;
+  if (fenced !== null) {
+    const isStale =
+      key.leaseExecutionId === tree.rootExecutionId ? key.token <= fenced : fenced >= row.token;
+    if (isStale) throw ExecutionPauseFencedError.of(key);
+  }
+  if (!row.is_cancelled && row.stop_mode === InterruptMode.Immediate)
+    throw ExecutionStopFencedError.of(key);
+  if (key.isCompensation === true) return;
+  if (row.is_cancelled) throw ExecutionCancelFencedError.of(key);
 }

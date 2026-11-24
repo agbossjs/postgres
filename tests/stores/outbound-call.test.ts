@@ -1,15 +1,18 @@
 import { effectKeyForTesting } from "@agboss/core/testing/contracts";
 import {
-  ExecutionFencedError,
-  FingerprintRequiredError,
   OutboundCallStatus,
   type ExecutionLease,
-  type EffectKey,
-  type EffectKeyFields,
   StoreClock,
   StoreTimeSource,
+  ExecutionError,
+  IdempotencyError,
 } from "@agboss/core";
-import { OutboundCallLeaseState, type OutboundCallIntent } from "@agboss/core/stores";
+import {
+  OutboundCallLeaseState,
+  type OutboundCallIntent,
+  type EffectKey,
+  type EffectKeyFields,
+} from "@agboss/core/stores";
 import { VirtualClock } from "@agboss/core/testing";
 import { hours, seconds } from "@agboss/core/units";
 import { describe, expect, it } from "vitest";
@@ -145,7 +148,12 @@ describe("PostgresOutboundCallRepository: many connections racing", () => {
                 attempt: 2,
                 attemptOwner: `owner-${String(index)}`,
               })
-            : stores.calls.markCompleted(keyAt(index, round), "owner-1", `"by-${String(index)}"`),
+            : stores.calls.markCompleted(
+                keyAt(index, round),
+                "owner-1",
+                `"by-${String(index)}"`,
+                null,
+              ),
         ),
       );
 
@@ -234,7 +242,7 @@ describe("PostgresOutboundCallRepository: edges", () => {
     );
 
     expect(isMoved).toBe(true);
-    expect(await stores.calls.markCompleted(key, "owner\u0000b", '"done"')).toBe(true);
+    expect(await stores.calls.markCompleted(key, "owner\u0000b", '"done"', null)).toBe(true);
     expect(await stores.calls.findByKey(key)).toMatchObject({
       idempotencyKey: "nul:\u0000step:1:charge",
       attemptOwner: "owner\u0000b",
@@ -265,7 +273,7 @@ describe("PostgresOutboundCallRepository: edges", () => {
     await stores.calls.saveIfAbsent(key, intentOf(key));
     const calls = await Promise.all([
       stores.calls.findByKey(key),
-      stores.calls.markFailed(key, "owner-1", { name: "E", code: "E", message: "no" }),
+      stores.calls.markFailed(key, "owner-1", { name: "E", code: "E", message: "no" }, null),
       stores.calls.leaseStateOf({ tenantId: "default", leaseExecutionId: "pool-one", token: 1 }),
     ]);
 
@@ -307,7 +315,7 @@ describe("PostgresOutboundCallRepository: edges", () => {
     ).rejects.toThrow(/attempt/);
   });
 
-  it("a lease row of the key missing: refused, ExecutionFencedError with no observed token", async () => {
+  it("a lease row of the key missing: refused, ExecutionError.Fenced with no observed token", async () => {
     const stores = instanceOn(new VirtualClock(), 0);
     const key = keyOf({
       tenantId: "default",
@@ -322,7 +330,7 @@ describe("PostgresOutboundCallRepository: edges", () => {
       .saveIfAbsent(key, intentOf(key))
       .catch((error: unknown) => error);
 
-    expect(refused).toBeInstanceOf(ExecutionFencedError);
+    expect(refused).toBeInstanceOf(ExecutionError.Fenced);
     expect(refused).toMatchObject({ token: 1, observedToken: undefined });
   });
 
@@ -333,7 +341,7 @@ describe("PostgresOutboundCallRepository: edges", () => {
     const key = keyOf(lease, { businessKey: "order:825" });
 
     await expect(stores.calls.saveIfAbsent(key, intentOf(key))).rejects.toBeInstanceOf(
-      FingerprintRequiredError,
+      IdempotencyError.FingerprintRequired,
     );
     expect(
       await stores.calls.findAllByTenantIdAndRootExecutionId("default", "unfingerprinted"),
@@ -364,7 +372,7 @@ describe("PostgresOutboundCallRepository: edges", () => {
         limit: 10,
       }),
     ).rejects.toThrow();
-    await expect(calls.deleteByEndedAtBefore(new Date())).rejects.toThrow();
+    await expect(calls.deleteExpired(new Date())).rejects.toThrow();
     await expect(
       calls.leaseStateOf({ tenantId: "default", leaseExecutionId: "x", token: 1 }),
     ).rejects.toThrow();
