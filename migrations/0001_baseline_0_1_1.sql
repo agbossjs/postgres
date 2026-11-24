@@ -397,3 +397,6 @@ CREATE TABLE IF NOT EXISTS agboss_execution_summaries (
 );
 CREATE INDEX IF NOT EXISTS agboss_execution_summaries_by_compaction ON agboss_execution_summaries (tenant_id, thread_id, compaction, to_seq);
 
+-- the pruning mark's seed row: `-infinity` means nothing has been pruned yet. A save reads this row
+-- FOR SHARE: without it a save finds no mark. Rerunnable.
+INSERT INTO agboss_cost_entries_pruned (id, pruned_before) VALUES (true, '-infinity') ON CONFLICT (id) DO NOTHING;

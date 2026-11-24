@@ -198,3 +198,30 @@ describe("PostgresCostLedgerRepository: pruning (agbossjs/agboss#771)", () => {
     await ledger.deleteByMadeAtBefore(new Date("2026-10-18T09:00:00.000Z"));
   });
 });
+
+describe("#1321c: the ledger on a schema made by the real migration runner", () => {
+  it("the baseline seeds the pruning mark: saveAll adds to the budget counters, and a prune moves the mark", async () => {
+    const url = await freshSchema();
+    await migratePostgres({ url });
+    const ledger = ledgerOn(url);
+
+    const mark = await onSchema(url, "SELECT pruned_before FROM agboss_cost_entries_pruned");
+    expect(mark.rows).toHaveLength(1);
+    await ledger.saveAll([day("seeded")], [call(0.5)]);
+    await ledger.saveAll([day("seeded")], [call(0.25)]);
+    expect(await ledger.findSpentByCounter(day("seeded"))).toBe(0.75);
+
+    await ledger.deleteByMadeAtBefore(new Date("2026-10-19T00:00:00.000Z"));
+    const pruned = await onSchema(
+      url,
+      "SELECT pruned_before > '2026-10-18T12:00:00Z' AS moved FROM agboss_cost_entries_pruned",
+    );
+    expect(pruned.rows).toEqual([{ moved: true }]);
+    expect((await onSchema(url, "SELECT 1 FROM agboss_cost_entries")).rowCount).toBe(0);
+    // an entry made before the mark that the table does not hold is refused, never counted
+    await expect(
+      ledger.saveAll([day("seeded")], [call(1, "late:1", new Date("2026-10-18T08:00:00.000Z"))]),
+    ).rejects.toThrow();
+    expect(await ledger.findSpentByCounter(day("seeded"))).toBe(0.75);
+  });
+});
