@@ -17,67 +17,31 @@ describe("the package's migration files", () => {
       "0001_suffixed.sql.bak": "SELECT 1;",
       "001_three_digits.sql": "SELECT 1;",
       "00001_five_digits.sql": "SELECT 1;",
-      "0036_Upper_case.sql": "SELECT 1;",
-      "0036_.sql": "SELECT 1;",
-      "0036-dash.sql": "SELECT 1;",
-      "0036_dotted.txt": "SELECT 1;",
+      "0002_Upper_case.sql": "SELECT 1;",
+      "0002_.sql": "SELECT 1;",
+      "0002-dash.sql": "SELECT 1;",
+      "0002_dotted.txt": "SELECT 1;",
     });
 
     const files = migrationsIn(folder);
 
     expect(files.map((file) => `${String(file.version)}:${file.name}`)).toEqual([
-      "1:execution_leases",
-      "2:execution_records",
-      "3:execution_trees",
-      "4:paused_executions",
-      "5:child_execution_queue",
-      "6:fenced_effects",
-      "7:execution_lease_events",
-      "8:execution_lease_yield",
-      "9:cost_ledger",
-      "10:execution_history",
-      "11:rate_limits",
-      "12:mesh_requests",
-      "13:nul_escape",
-      "14:execution_lease_superseded",
-      "15:fenced_effect_business_keys",
-      "16:outbound_calls",
-      "17:execution_lease_finished",
-      "18:execution_ids",
-      "19:execution_ids_from_outbound_calls",
-      "20:pauses_by_tree",
-      "21:pause_answers_by_tree",
-      "22:cost_ledger_entries",
-      "23:cost_entries_pruned",
-      "24:pause_kind",
-      "25:records_by_run",
-      "26:a2a_tasks",
-      "27:outbound_call_outcome_names",
-      "28:a2a_task_mesh_body_hash",
-      "29:execution_lease_token",
-      "30:a2a_direct_messages",
-      "31:pause_deadlines_and_notices",
-      "32:execution_cancel_requests",
-      "33:pause_channel_generated",
-      "34:cancel_mark_on_lease_row",
-      "35:pause_reassignment",
+      "1:baseline_0_1_1",
     ]);
-    expect(newestVersionOf(files)).toBe(35);
+    expect(newestVersionOf(files)).toBe(1);
     expect(files.every((file) => file.checksum === checksumOf(file.sql))).toBe(true);
   });
 
   it("a gap in the versions fails before anything is applied", () => {
-    const folder = migrationsFolder({ "0003_execution_trees.sql": null });
+    const folder = migrationsFolder({ "0003_skips_two.sql": "SELECT 1;" });
 
-    expect(() => migrationsIn(folder)).toThrow(
-      /migration paused_executions has version 4, expected 3/,
-    );
+    expect(() => migrationsIn(folder)).toThrow(/migration skips_two has version 3, expected 2/);
   });
 
   it("a repeated version fails too", () => {
-    const folder = migrationsFolder({ "0002_again.sql": "SELECT 1;" });
+    const folder = migrationsFolder({ "0001_again.sql": "SELECT 1;" });
 
-    expect(() => migrationsIn(folder)).toThrow(/expected 3/);
+    expect(() => migrationsIn(folder)).toThrow(/expected 2/);
   });
 
   it("an empty folder has no migrations: newest version 0", () => {
@@ -96,16 +60,15 @@ describe("the package's migration files", () => {
   });
 
   it("pending: the files after the newest applied one", () => {
-    const files = migrationsIn();
+    const files = migrationsIn(
+      migrationsFolder({ "0002_second.sql": "SELECT 1;", "0003_third.sql": "SELECT 1;" }),
+    );
     const applied = files
-      .slice(0, 4)
+      .slice(0, 1)
       .map(({ version, name, checksum }) => ({ version, name, checksum }));
 
-    expect(pendingMigrations(files, applied).map((file) => file.version)).toEqual([
-      5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29,
-      30, 31, 32, 33, 34, 35,
-    ]);
-    expect(pendingMigrations(files, [])).toHaveLength(35);
+    expect(pendingMigrations(files, applied).map((file) => file.version)).toEqual([2, 3]);
+    expect(pendingMigrations(files, [])).toHaveLength(3);
   });
 
   it("pending: an applied version the package has no file for (0) is a changed history", () => {

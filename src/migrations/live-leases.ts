@@ -19,23 +19,13 @@ const LiveRow = z.object({
   remaining: z.coerce.number(),
 });
 
-/** The migrations that added the lease columns the guard reads: `superseded` (0014), `finished` (0017). */
-const SUPERSEDED_FROM = 14;
-const FINISHED_FROM = 17;
+/** The leases that are live: not released, finished or superseded, and not yet expired on the database's clock. */
+const LIVE = "NOT released AND NOT finished AND NOT superseded AND expires_at > clock_timestamp()";
 
-/** Which leases are live in a schema at migration `applied` (a column not added yet closes nothing). */
-const liveOf = (applied: number): string =>
-  [
-    "NOT released",
-    ...(applied >= FINISHED_FROM ? ["NOT finished"] : []),
-    ...(applied >= SUPERSEDED_FROM ? ["NOT superseded"] : []),
-    "expires_at > clock_timestamp()",
-  ].join(" AND ");
-
-/** The live leases of the schema at migration `applied`: how many, up to five holders, the longest time left. */
-async function liveLeasesOf(client: ClientBase, applied: number): Promise<z.infer<typeof LiveRow>> {
+/** The live leases of the schema: how many, up to five holders, the longest time left. */
+async function liveLeasesOf(client: ClientBase): Promise<z.infer<typeof LiveRow>> {
   const { rows } = await client.query(
-    `WITH live AS (SELECT holder_instance_id, expires_at FROM agboss_execution_leases WHERE ${liveOf(applied)})
+    `WITH live AS (SELECT holder_instance_id, expires_at FROM agboss_execution_leases WHERE ${LIVE})
      SELECT (SELECT count(*) FROM live) AS count,
        COALESCE((SELECT array_agg(holder) FROM (
          SELECT DISTINCT holder_instance_id AS holder FROM live ORDER BY holder LIMIT $1
@@ -46,12 +36,9 @@ async function liveLeasesOf(client: ClientBase, applied: number): Promise<z.infe
   return LiveRow.parse(rows[0]);
 }
 
-/**
- * Throws `PostgresLiveLeasesError` when an execution lease is live: `applied` is the schema's newest
- * migration (at least 1: the lease table exists).
- */
-export async function refuseLiveLeases(client: ClientBase, applied: number): Promise<void> {
-  const { count, holders } = await liveLeasesOf(client, applied);
+/** Throws `PostgresLiveLeasesError` when an execution lease is live (the baseline's lease table exists). */
+export async function refuseLiveLeases(client: ClientBase): Promise<void> {
+  const { count, holders } = await liveLeasesOf(client);
   if (count > 0) throw new PostgresLiveLeasesError({ count, holders });
 }
 
@@ -89,18 +76,14 @@ export const leaseWaitFor = (remainingMs: number, wait: LeaseWait): number =>
  * on, one still live at the end fails it with `PostgresLiveLeasesError` (the old instances are not
  * stopped: stop them first). The attempts are counted, not timed: no host clock decides.
  */
-export async function waitForLeasesToLapse(
-  client: ClientBase,
-  applied: number,
-  wait: LeaseWait,
-): Promise<void> {
-  const first = await liveLeasesOf(client, applied);
+export async function waitForLeasesToLapse(client: ClientBase, wait: LeaseWait): Promise<void> {
+  const first = await liveLeasesOf(client);
   if (first.count === 0) return;
   const attempts = Math.max(1, Math.ceil(leaseWaitFor(first.remaining, wait) / wait.pollMs));
   for (let attempt = 1; ; attempt += 1) {
     // the database waits (`pg_sleep`): no host clock, no timer of the process
     await client.query("SELECT pg_sleep($1)", [wait.pollMs / 1000]);
-    const live = await liveLeasesOf(client, applied);
+    const live = await liveLeasesOf(client);
     if (live.count === 0) return;
     if (attempt >= attempts)
       throw new PostgresLiveLeasesError({ count: live.count, holders: live.holders });

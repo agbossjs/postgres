@@ -208,7 +208,7 @@ async function migrateLocked(run: MigrationRun): Promise<MigrationReport> {
   // a database migrated before (a newest applied migration) is an upgrade: its leases are guarded
   const newest = done.at(-1);
   if (pending.length > 0 && newest !== undefined && run.allowLiveLeases !== true)
-    await refuseLiveLeases(client, newest.version);
+    await refuseLiveLeases(client);
   const applied: AppliedMigrationReport[] = [];
   for (const file of pending) {
     signal?.throwIfAborted();

@@ -24,7 +24,7 @@ describe("agboss-postgres migrate: the checkpoint index line (#1038)", () => {
 
     expect(first.lines.at(-1)).toMatch(/^built index checkpoints_latest_by_step \(t_\w+\)$/);
     expect(second.lines).toEqual([
-      expect.stringMatching(/^nothing to apply: t_\w+ is at migration 35$/),
+      expect.stringMatching(/^nothing to apply: t_\w+ is at migration 1$/),
       expect.stringMatching(/^index checkpoints_latest_by_step \(t_\w+\) is ready$/),
     ]);
   });

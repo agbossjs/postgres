@@ -118,7 +118,7 @@ describe("agbossjs/agboss#891 AC3: one schema per application on one database", 
   });
 
   it("AC3: an edited migration file still fails a run on the schema — PostgresMigrationChangedError", async () => {
-    const changed = migrationsFolder({ "0001_execution_leases.sql": "SELECT 1;" });
+    const changed = migrationsFolder({ "0001_baseline_0_1_1.sql": "SELECT 1;" });
 
     await expect(
       migrateWith({ url: serverUrl(), schema: appA }, migrationsIn(changed)),

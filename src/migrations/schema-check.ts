@@ -38,7 +38,7 @@ export async function checkSchema(check: SchemaCheck): Promise<void> {
   // no rolling upgrade across a schema change (ADR-0034): with migrations pending on a migrated
   // schema the start waits for live leases to lapse and refuses while one is live; the migration
   // checks again under its lock (a lease taken meanwhile fails it too)
-  if (applied > 0 && !allowLiveLeases) await leasesLapsed(check, applied);
+  if (applied > 0 && !allowLiveLeases) await leasesLapsed(check);
   await migrateWith(
     { url: check.url, schema: check.schema, allowLiveLeases },
     check.files,
@@ -48,9 +48,9 @@ export async function checkSchema(check: SchemaCheck): Promise<void> {
 }
 
 /** `waitForLeasesToLapse` on a connection of the pool. */
-const leasesLapsed = (check: SchemaCheck, applied: number): Promise<void> =>
+const leasesLapsed = (check: SchemaCheck): Promise<void> =>
   onClientOf(check.pool, (client) =>
-    waitForLeasesToLapse(client, applied, check.leaseWait ?? DEFAULT_LEASE_WAIT),
+    waitForLeasesToLapse(client, check.leaseWait ?? DEFAULT_LEASE_WAIT),
   );
 
 /**

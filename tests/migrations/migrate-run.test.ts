@@ -83,11 +83,11 @@ describe("createSchema: the schema a run is given", () => {
       });
       await creator.query("COMMIT");
 
-      expect((await run).applied).toHaveLength(35);
+      expect((await run).applied).toHaveLength(1);
     } finally {
       await creator.end();
     }
-    expect(await historyOf(urlOnSchema(serverUrl(), schema))).toHaveLength(35);
+    expect(await historyOf(urlOnSchema(serverUrl(), schema))).toHaveLength(1);
   });
 });
 
@@ -115,7 +115,7 @@ describe("migrateWith: one run", () => {
     const report = await migrateWith({ url }, migrationsIn(), true);
 
     expect(Object.keys(report)).not.toContain("stepIndex");
-    expect(report.applied).toHaveLength(35);
+    expect(report.applied).toHaveLength(1);
     await until(async () => (await validityOf(url)) === true);
   });
 
@@ -138,7 +138,7 @@ describe("migrateWith: one run", () => {
     );
 
     expect(error).toBeInstanceOf(PostgresStepIndexError);
-    expect(error).toMatchObject({ report: { applied: [], version: 35 }, invalidIndexLeft: false });
+    expect(error).toMatchObject({ report: { applied: [], version: 1 }, invalidIndexLeft: false });
     expect(error instanceof Error ? error.cause : undefined).toBe(stopped);
   });
 

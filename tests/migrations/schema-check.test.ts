@@ -44,20 +44,18 @@ function poolOf(url: string): pg.Pool {
   return pool;
 }
 
-const ALL = migrationsIn();
+/** Two later releases' migrations: the baseline is 0001, so the next ones are 0002 and 0003. */
+const LATER = {
+  "0002_second_release.sql": "CREATE TABLE second_release (id integer);",
+  "0003_third_release.sql": "CREATE TABLE third_release (id integer);",
+};
 
-/** The package's migrations up to `version`. */
+/** The package's baseline and the two later migrations. */
+const ALL = migrationsIn(migrationsFolder(LATER));
+
+/** The migrations up to `version` (1 to 3). */
 const upTo = (version: number): readonly MigrationFile[] =>
-  migrationsIn(
-    migrationsFolder(
-      Object.fromEntries(
-        ALL.filter((file) => file.version > version).map((file) => [
-          `${String(file.version).padStart(4, "0")}_${file.name}.sql`,
-          null,
-        ]),
-      ),
-    ),
-  );
+  ALL.filter((file) => file.version <= version);
 
 const rejectionOf = async (call: Promise<unknown>): Promise<unknown> =>
   call.then(
@@ -97,7 +95,7 @@ describe("checkSchema: the versions", () => {
     }
   });
 
-  it("no history: PostgresSchemaMissingError, applied 0 of 35", async () => {
+  it("no history: PostgresSchemaMissingError, applied 0 of 3", async () => {
     const { url } = await fresh();
 
     const error = await rejectionOf(
@@ -105,33 +103,33 @@ describe("checkSchema: the versions", () => {
     );
 
     expect(error).toBeInstanceOf(PostgresSchemaMissingError);
-    expect(error).toMatchObject({ applied: 0, expected: 35 });
+    expect(error).toMatchObject({ applied: 0, expected: 3 });
     expect(await tablesOf(url)).toEqual([]);
   });
 
   it("an older schema: PostgresSchemaMissingError with both versions, nothing migrated", async () => {
     const { url } = await fresh();
-    await migrateWith({ url }, upTo(19));
+    await migrateWith({ url }, upTo(2));
 
     const error = await rejectionOf(
       checkSchema({ url, pool: poolOf(url), schemaSetup: SchemaSetup.Check, files: ALL }),
     );
 
     expect(error).toBeInstanceOf(PostgresSchemaMissingError);
-    expect(error).toMatchObject({ applied: 19, expected: 35 });
-    expect(await historyOf(url)).toHaveLength(19);
+    expect(error).toMatchObject({ applied: 2, expected: 3 });
+    expect(await historyOf(url)).toHaveLength(2);
   });
 
   it("a schema one migration newer: PostgresSchemaTooNewError under either setup", async () => {
     const { url } = await fresh();
-    await migratePostgres({ url });
+    await migrateWith({ url }, ALL);
 
     for (const schemaSetup of [SchemaSetup.Check, SchemaSetup.MigrateOnStart]) {
       const error = await rejectionOf(
-        checkSchema({ url, pool: poolOf(url), schemaSetup, files: upTo(34) }),
+        checkSchema({ url, pool: poolOf(url), schemaSetup, files: upTo(2) }),
       );
       expect(error).toBeInstanceOf(PostgresSchemaTooNewError);
-      expect(error).toMatchObject({ applied: 35, expected: 34 });
+      expect(error).toMatchObject({ applied: 3, expected: 2 });
     }
   });
 
@@ -153,7 +151,7 @@ describe("checkSchema: the versions", () => {
 describe("checkSchema: SchemaSetup.MigrateOnStart", () => {
   it("migrates the schema it is given, not the URL's search_path; allowLiveLeases: over a live lease", async () => {
     const target = await fresh();
-    await migrateWith({ url: target.url }, upTo(32));
+    await migrateWith({ url: target.url }, upTo(1));
     await liveLease(target.url);
 
     await checkSchema({
@@ -166,12 +164,12 @@ describe("checkSchema: SchemaSetup.MigrateOnStart", () => {
       allowLiveLeases: true,
     });
 
-    expect(await historyOf(target.url)).toHaveLength(35);
+    expect(await historyOf(target.url)).toHaveLength(3);
   });
 
   it("with no schema given, migrates the URL's search_path; allowLiveLeases: over a live lease", async () => {
     const { url } = await fresh();
-    await migrateWith({ url }, upTo(32));
+    await migrateWith({ url }, upTo(1));
     await liveLease(url);
 
     await checkSchema({
@@ -182,12 +180,12 @@ describe("checkSchema: SchemaSetup.MigrateOnStart", () => {
       allowLiveLeases: true,
     });
 
-    expect(await historyOf(url)).toHaveLength(35);
+    expect(await historyOf(url)).toHaveLength(3);
   });
 
   it("does not wait for the checkpoint index: the start passes while its build waits (agbossjs/agboss#962)", async () => {
     const { url } = await fresh();
-    await migrateWith({ url }, upTo(34));
+    await migrateWith({ url }, upTo(2));
     await onSchema(url, "DROP INDEX checkpoints_latest_by_step");
     // an old snapshot open: a CREATE INDEX CONCURRENTLY waits for it
     await holdSnapshot(url);
@@ -205,7 +203,7 @@ describe("checkSchema: SchemaSetup.MigrateOnStart", () => {
     );
 
     expect(await Promise.race([started.then(() => "passed" as const), held])).toBe("passed");
-    expect(await historyOf(url)).toHaveLength(35);
+    expect(await historyOf(url)).toHaveLength(3);
     await closeHolders();
     await until(async () => (await validityOf(url)) === true);
   });

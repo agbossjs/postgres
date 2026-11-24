@@ -1,10 +1,7 @@
 import { A2ATaskState, type A2ATaskStatus, type NewA2ATask } from "@agboss/core";
 import { describe, expect, it } from "vitest";
 import { migratePostgres, PostgresA2ATaskRepository } from "../../src/index.js";
-import { migrationsIn } from "../../src/migrations/files.js";
-import { migrateWith } from "../../src/migrations/migrate.js";
 import { freshSchema, onSchema, testDatabase } from "../support/database.js";
-import { migrationsFolder } from "../support/migration-folders.js";
 import { connectionTo } from "../support/stores.js";
 
 /**
@@ -66,23 +63,9 @@ describe("agbossjs/agboss#810: the mesh's fields of an A2A task on PostgreSQL", 
     expect(listed.tasks.find((task) => task.taskId === "trusted")?.meshBodyHash).toBe(HASH);
   });
 
-  it("a task of before migration 0028 reads with no body hash: untrusted, no run report", async () => {
+  it("a task stored with no body hash reads untrusted, with no run report", async () => {
     const url = await freshSchema();
-    await migrateWith(
-      { url },
-      migrationsIn(
-        migrationsFolder({
-          "0028_a2a_task_mesh_body_hash.sql": null,
-          "0029_execution_lease_token.sql": null,
-          "0030_a2a_direct_messages.sql": null,
-          "0031_pause_deadlines_and_notices.sql": null,
-          "0032_execution_cancel_requests.sql": null,
-          "0033_pause_channel_generated.sql": null,
-          "0034_cancel_mark_on_lease_row.sql": null,
-          "0035_pause_reassignment.sql": null,
-        }),
-      ),
-    );
+    await migratePostgres({ url });
     await onSchema(
       url,
       `INSERT INTO agboss_a2a_tasks (tenant_id, task_id, owner_id, context_id, skill, state, status,
@@ -92,10 +75,6 @@ describe("agbossjs/agboss#810: the mesh's fields of an A2A task on PostgreSQL", 
          'orders-application')`,
       [NINE],
     );
-
-    expect((await migratePostgres({ url })).applied.map((file) => file.version)).toEqual([
-      28, 29, 30, 31, 32, 33, 34, 35,
-    ]);
 
     const old = await tasksOn(url).findById(keyOf("old"));
     expect(old).toMatchObject({ callerPeer: "orders-application", status: { spentUsd: 1 } });

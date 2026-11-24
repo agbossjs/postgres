@@ -11,12 +11,6 @@ import {
 } from "../support/database.js";
 import { migrationsFolder } from "../support/migration-folders.js";
 
-const BEFORE_0033 = {
-  "0033_pause_channel_generated.sql": null,
-  "0034_cancel_mark_on_lease_row.sql": null,
-  "0035_pause_reassignment.sql": null,
-};
-
 /** A command's io: the environment given, its lines kept. */
 function ioOf(
   env: CommandIo["env"] = {},
@@ -35,46 +29,12 @@ describe("agboss-postgres migrate", () => {
     expect(await runCommand(["migrate", "--url", url], first)).toBe(ExitCode.Ok);
     expect(await runCommand(["migrate", "--url", url], second)).toBe(ExitCode.Ok);
 
-    expect(first.lines.slice(0, 35)).toEqual([
-      expect.stringMatching(/^applied 0001_execution_leases \(t_/),
-      expect.stringMatching(/^applied 0002_execution_records/),
-      expect.stringMatching(/^applied 0003_execution_trees/),
-      expect.stringMatching(/^applied 0004_paused_executions/),
-      expect.stringMatching(/^applied 0005_child_execution_queue/),
-      expect.stringMatching(/^applied 0006_fenced_effects/),
-      expect.stringMatching(/^applied 0007_execution_lease_events/),
-      expect.stringMatching(/^applied 0008_execution_lease_yield/),
-      expect.stringMatching(/^applied 0009_cost_ledger/),
-      expect.stringMatching(/^applied 0010_execution_history/),
-      expect.stringMatching(/^applied 0011_rate_limits/),
-      expect.stringMatching(/^applied 0012_mesh_requests/),
-      expect.stringMatching(/^applied 0013_nul_escape/),
-      expect.stringMatching(/^applied 0014_execution_lease_superseded/),
-      expect.stringMatching(/^applied 0015_fenced_effect_business_keys/),
-      expect.stringMatching(/^applied 0016_outbound_calls/),
-      expect.stringMatching(/^applied 0017_execution_lease_finished/),
-      expect.stringMatching(/^applied 0018_execution_ids/),
-      expect.stringMatching(/^applied 0019_execution_ids_from_outbound_calls/),
-      expect.stringMatching(/^applied 0020_pauses_by_tree/),
-      expect.stringMatching(/^applied 0021_pause_answers_by_tree/),
-      expect.stringMatching(/^applied 0022_cost_ledger_entries/),
-      expect.stringMatching(/^applied 0023_cost_entries_pruned/),
-      expect.stringMatching(/^applied 0024_pause_kind/),
-      expect.stringMatching(/^applied 0025_records_by_run/),
-      expect.stringMatching(/^applied 0026_a2a_tasks/),
-      expect.stringMatching(/^applied 0027_outbound_call_outcome_names/),
-      expect.stringMatching(/^applied 0028_a2a_task_mesh_body_hash/),
-      expect.stringMatching(/^applied 0029_execution_lease_token/),
-      expect.stringMatching(/^applied 0030_a2a_direct_messages/),
-      expect.stringMatching(/^applied 0031_pause_deadlines_and_notices/),
-      expect.stringMatching(/^applied 0032_execution_cancel_requests/),
-      expect.stringMatching(/^applied 0033_pause_channel_generated/),
-      expect.stringMatching(/^applied 0034_cancel_mark_on_lease_row/),
-      expect.stringMatching(/^applied 0035_pause_reassignment/),
+    expect(first.lines.slice(0, 1)).toEqual([
+      expect.stringMatching(/^applied 0001_baseline_0_1_1 \(t_/),
     ]);
-    expect(first.lines[35]).toMatch(/^applied \d+ LangGraph checkpoint migration\(s\)$/);
+    expect(first.lines[1]).toMatch(/^applied \d+ LangGraph checkpoint migration\(s\)$/);
     expect(second.lines).toEqual([
-      expect.stringMatching(/^nothing to apply: t_\w+ is at migration 35$/),
+      expect.stringMatching(/^nothing to apply: t_\w+ is at migration 1$/),
       expect.stringMatching(/^index checkpoints_latest_by_step \(t_\w+\) is ready$/),
     ]);
     expect([...first.errors, ...second.errors]).toEqual([]);
@@ -85,7 +45,7 @@ describe("agboss-postgres migrate", () => {
     const io = ioOf({ POSTGRES_URL: url });
 
     expect(await runCommand(["migrate"], io)).toBe(ExitCode.Ok);
-    expect(io.lines).toHaveLength(37);
+    expect(io.lines).toHaveLength(3);
   });
 
   it("agbossjs/agboss#891: DATABASE_URL is still read for one release, when POSTGRES_URL is unset", async () => {
@@ -93,7 +53,7 @@ describe("agboss-postgres migrate", () => {
     const io = ioOf({ DATABASE_URL: url });
 
     expect(await runCommand(["migrate"], io)).toBe(ExitCode.Ok);
-    expect(io.lines).toHaveLength(37);
+    expect(io.lines).toHaveLength(3);
     expect(USAGE).toContain("DATABASE_URL is still read when POSTGRES_URL is unset");
   });
 
@@ -111,7 +71,7 @@ describe("agboss-postgres migrate", () => {
     const io = ioOf({ POSTGRES_URL: serverUrl() });
     try {
       expect(await runCommand(["migrate", "--schema", schema], io)).toBe(ExitCode.Ok);
-      expect(io.lines[0]).toBe(`applied 0001_execution_leases (${schema})`);
+      expect(io.lines[0]).toBe(`applied 0001_baseline_0_1_1 (${schema})`);
     } finally {
       await dropSchema(schema);
     }
@@ -127,8 +87,8 @@ describe("agboss-postgres migrate", () => {
       expect(await runCommand(["migrate", `--schema=${equals}`, "--url", serverUrl()], io)).toBe(
         ExitCode.Ok,
       );
-      expect(io.lines).toContain(`applied 0001_execution_leases (${spaced})`);
-      expect(io.lines).toContain(`applied 0001_execution_leases (${equals})`);
+      expect(io.lines).toContain(`applied 0001_baseline_0_1_1 (${spaced})`);
+      expect(io.lines).toContain(`applied 0001_baseline_0_1_1 (${equals})`);
       expect(io.errors).toEqual([]);
     } finally {
       await dropSchema(spaced);
@@ -192,26 +152,24 @@ describe("agboss-postgres migrate", () => {
     }
   });
 
-  it("#1104: live leases and pending migrations: exit 1, nothing applied; --allow-live-leases migrates", async () => {
+  it("#1104: a live lease with nothing pending: exit 0; --allow-live-leases is accepted", async () => {
     const url = await freshSchema();
-    await migrateWith({ url }, migrationsIn(migrationsFolder(BEFORE_0033)));
+    await migrateWith({ url }, migrationsIn());
     await onSchema(
       url,
       `INSERT INTO agboss_execution_leases
          (tenant_id, root_execution_id, holder_instance_id, token, expires_at, released)
        VALUES ('default', 'run-1', 'pod-a', 1, clock_timestamp() + interval '1 hour', false)`,
     );
-    const refused = ioOf();
+    const plain = ioOf();
     const allowed = ioOf();
 
-    expect(await runCommand(["migrate", "--url", url], refused)).toBe(ExitCode.Failed);
-    expect(refused.lines).toEqual([]);
-    expect(refused.errors[0]).toContain("1 live execution lease(s) held by pod-a");
+    expect(await runCommand(["migrate", "--url", url], plain)).toBe(ExitCode.Ok);
     expect(await runCommand(["migrate", "--url", url, "--allow-live-leases"], allowed)).toBe(
       ExitCode.Ok,
     );
-    expect(allowed.lines[0]).toMatch(/^applied 0033_pause_channel_generated/);
-    expect(await runCommand(["migrate", "--url", url], ioOf())).toBe(ExitCode.Ok);
+    expect(plain.lines[0]).toMatch(/^nothing to apply: /);
+    expect(allowed.lines[0]).toMatch(/^nothing to apply: /);
   });
 
   it.each([
@@ -227,13 +185,13 @@ describe("agboss-postgres migrate", () => {
     const url = await freshSchema();
     await migrateWith(
       { url },
-      migrationsIn(migrationsFolder({ "0036_later.sql": "CREATE TABLE later (id integer);" })),
+      migrationsIn(migrationsFolder({ "0002_later.sql": "CREATE TABLE later (id integer);" })),
     );
     const io = ioOf();
 
     expect(await runCommand(["migrate", "--url", url], io)).toBe(ExitCode.Failed);
     expect(io.errors[0]).toMatch(
-      /^agboss-postgres: the migration failed — the PostgreSQL schema is at migration 36/,
+      /^agboss-postgres: the migration failed — the PostgreSQL schema is at migration 2/,
     );
   });
 

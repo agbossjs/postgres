@@ -407,12 +407,7 @@ npx agboss-postgres migrate --schema desk   # the database: POSTGRES_URL from th
 ```
 
 ```text
-applied 0001_execution_leases (public)
-…
-applied 0018_execution_ids (public)
-applied 0019_execution_ids_from_outbound_calls (public)
-applied 0020_pauses_by_tree (public)
-applied 0021_pause_answers_by_tree (public)
+applied 0001_baseline_0_1_1 (public)
 applied 6 LangGraph checkpoint migration(s)
 ```
 
@@ -435,7 +430,7 @@ The command's last line says what the index step did: `built index checkpoints_l
 `index checkpoints_latest_by_step (public) is ready` (found valid) or, when another run holds the
 build's lock, `skipped index checkpoints_latest_by_step (public): another run holds its build lock; run
 migrate again when it ends` (`migratePostgres` returns the same as `MigrationReport.stepIndex`). A
-second run prints `nothing to apply: public is at migration 21` and the ready line.
+second run prints `nothing to apply: public is at migration 1` and the ready line.
 
 Exit codes: `0` done, `1` the run failed (the reason on stderr, any password in it masked), `2` a
 usage error. Exit `1` has two readings, and the output tells them apart.
@@ -596,33 +591,10 @@ Job, so a pod never waits on another's migration at start and needs no right to 
 - `agboss_schema_migrations (version, name, checksum, applied_at)` records what ran; an applied
   migration whose file changed fails the run (`PostgresMigrationChangedError`).
 
-| Migration                                | Tables                                                                                                                                                                                                                                                                |
-| ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `0001_execution_leases`                  | `agboss_execution_leases`                                                                                                                                                                                                                                             |
-| `0002_execution_records`                 | `agboss_threads`, `agboss_execution_records`, `agboss_execution_scores`, `agboss_execution_summaries`, `agboss_config_versions`, `agboss_pause_answers`                                                                                                               |
-| `0003_execution_trees`                   | `agboss_execution_tree_keys`                                                                                                                                                                                                                                          |
-| `0004_paused_executions`                 | `agboss_paused_executions`, `agboss_pauses`                                                                                                                                                                                                                           |
-| `0005_child_execution_queue`             | `agboss_child_execution_queue`                                                                                                                                                                                                                                        |
-| `0006_fenced_effects`                    | `agboss_fenced_effect_marks`, `agboss_fenced_effect_results`                                                                                                                                                                                                          |
-| `0007_execution_lease_events`            | `agboss_execution_lease_events`                                                                                                                                                                                                                                       |
-| `0008_execution_lease_yield`             | `agboss_execution_leases.yielded` (agbossjs/agboss#516)                                                                                                                                                                                                               |
-| `0009_cost_ledger`                       | `agboss_cost_counters`, `agboss_cost_max_spend`                                                                                                                                                                                                                       |
-| `0010_execution_history`                 | `agboss_execution_history`                                                                                                                                                                                                                                            |
-| `0011_rate_limits`                       | `agboss_rate_limit_keys`, `agboss_rate_limit_slots`, `agboss_rate_limit_window_buckets`, `agboss_rate_limit_pauses`                                                                                                                                                   |
-| `0012_mesh_requests`                     | `agboss_mesh_requests`                                                                                                                                                                                                                                                |
-| `0013_nul_escape`                        | none: doubles U+E000 in the columns the stores now escape (agbossjs/agboss#521)                                                                                                                                                                                       |
-| `0014_execution_lease_superseded`        | `agboss_execution_leases.superseded`: a lease an outbound call's check closed (agbossjs/agboss#508)                                                                                                                                                                   |
-| `0015_fenced_effect_business_keys`       | `agboss_fenced_effect_business_results` (agbossjs/agboss#508)                                                                                                                                                                                                         |
-| `0016_outbound_calls`                    | `agboss_outbound_calls` (agbossjs/agboss#505, #508)                                                                                                                                                                                                                   |
-| `0017_execution_lease_finished`          | `agboss_execution_leases.finished`: a lease its holder finished, never taken again (agbossjs/agboss#520)                                                                                                                                                              |
-| `0018_execution_ids`                     | `agboss_execution_ids`: every execution id handed out, the leases' of before (agbossjs/agboss#591)                                                                                                                                                                    |
-| `0019_execution_ids_from_outbound_calls` | none: the ids of before of every execution that made an outbound call (agbossjs/agboss#638)                                                                                                                                                                           |
-| `0020_pauses_by_tree`                    | `agboss_pauses` unique per tree and step key; the ids of before of every execution that paused, and its tree (agbossjs/agboss#663)                                                                                                                                    |
-| `0021_pause_answers_by_tree`             | `agboss_pause_answers` keyed per tree and step key: another tree's answer under the same step key is kept (agbossjs/agboss#676)                                                                                                                                       |
-| `0022_cost_ledger_entries`               | `agboss_cost_entries`: each tallied spend's `ledgerId` — the id of the pass that made it — so a write retried after a lost answer counts once (agbossjs/agboss#727; its header's "a step run again saves under the same ids" is corrected by 0023)                    |
-| `0023_cost_entries_pruned`               | `agboss_cost_entries.made_at` and `agboss_cost_entries_pruned`, the pruning mark: entries made longer ago than `retention.costLedgerEntries` are pruned by the sweep, a save of one it may have pruned refused (agbossjs/agboss#771; entries of before dated "never") |
-| `0031_pause_deadlines_and_notices`       | `agboss_pauses.expires_at`, `remind_at`, `channel` and their partial indexes; `agboss_pause_notices`: one ordered mailbox per pause and receiver (agbossjs/agboss#936)                                                                                                |
-| LangGraph                                | `checkpoints`, `checkpoint_blobs`, `checkpoint_writes`, `checkpoint_migrations`                                                                                                                                                                                       |
+| Migration             | Tables                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `0001_baseline_0_1_1` | the whole 0.1.1 schema (agbossjs/agboss#1321c): the leases, records, trees, pauses and notices, queue, fenced effects, outbound calls, audit log, cost ledger, history, rate limits, mesh requests, A2A tasks and direct messages, execution ids and the Turn tables — 0.1.0's migrations 0001-0035 squashed; no 0.1.0 database is migrated. Each store train that changes a table adds the next numbered file, when the train is cut. |
+| LangGraph             | `checkpoints`, `checkpoint_blobs`, `checkpoint_writes`, `checkpoint_migrations`                                                                                                                                                                                                                                                                                                                                                        |
 
 ## Text with a NUL character
 
