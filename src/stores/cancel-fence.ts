@@ -47,6 +47,19 @@ const SEED = `INSERT INTO agboss_execution_leases
   ON CONFLICT ${ROOT_KEY} DO NOTHING`;
 
 /**
+ * Seeds the tree's row when there is none (token 0, released, never held), so the locking read that
+ * follows always locks a row: `FOR UPDATE` of a row that does not exist yet locks nothing, and two
+ * concurrent first writes would both read "no mark" (agbossjs/agboss#1341b, a TOCTOU).
+ */
+export async function seedTreeRow(
+  client: PoolClient,
+  tree: { readonly tenantId: string; readonly rootExecutionId: string },
+  now: Date | null,
+): Promise<void> {
+  await changesOf(client, SEED, [tree.tenantId, tree.rootExecutionId, now]);
+}
+
+/**
  * The read's lock on the root's row: for a child's key the only lock its write holds on that row
  * (its fence locks the child's own row), so without it a cancel could answer while the write is
  * open (agbossjs/agboss#1302). A constant of its own, so the mutation shard drops it.
@@ -67,6 +80,8 @@ export async function markCancel(
     readonly transition?: NewStatusTransition | undefined;
   },
 ): Promise<void> {
+  // seeded first: the lock below always finds a row, so two concurrent cancels never both see "not marked"
+  await seedTreeRow(client, tree, write.now);
   const wasMarked = await firstRowOf(
     client,
     `SELECT 1 FROM agboss_execution_leases WHERE tenant_id = $1 AND root_execution_id = $2
@@ -103,7 +118,7 @@ export async function checkCancel(
   const tree = cancelTreeOf(key);
   // a child's check may find no row of its root yet: one is seeded, so there is a row to lock (the
   // root's own key finds its lease row, locked by the fence: the seed changes nothing)
-  await changesOf(client, SEED, [tree.tenantId, tree.rootExecutionId, now]);
+  await seedTreeRow(client, tree, now);
   const row = FenceRow.parse(await firstRowOf(client, FIND, [tree.tenantId, tree.rootExecutionId]));
   const fenced = row.fenced_through_token;
   if (fenced !== null) {

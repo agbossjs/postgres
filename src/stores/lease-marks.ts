@@ -11,6 +11,7 @@ import type { PoolClient } from "pg";
 import { z } from "zod";
 import { changesOf, firstRowOf } from "../connection/query.js";
 import { escapedText, unescapedText } from "./nul-escape.js";
+import { seedTreeRow } from "./cancel-fence.js";
 import { appendStatus } from "./status-log.js";
 import { storeNow } from "./store-time.js";
 
@@ -19,8 +20,10 @@ import { storeNow } from "./store-time.js";
  * tree's own lease row (`stop_requested_at`, `stop_mode`, `is_externally_paused`,
  * `external_pause_reason`, `external_pause_mode`, `fenced_through_token`), written with the
  * thread's history row in ONE transaction (the DB row is the authority). A tree with no row gets a
- * seed row (token 0, released, never held). `fenced_through_token` only rises (`GREATEST`) and is
- * never cleared.
+ * seed row (token 0, released, never held), written BEFORE the locking read so `FOR UPDATE` always
+ * locks a row. Every upsert is monotonic in the SQL itself: a stop and a pause mode only escalate to
+ * `immediate`, `fenced_through_token` only rises (`GREATEST`) and is never cleared, the cancel is
+ * never cleared, a request's time keeps the first (`COALESCE`).
  */
 
 type Tree = Pick<ExecutionTree, "tenantId" | "rootExecutionId">;
@@ -117,11 +120,13 @@ const logged = async (client: PoolClient, write: Write): Promise<void> => {
 const SEED = `INSERT INTO agboss_execution_leases AS lease (tenant_id, root_execution_id,
   holder_instance_id, token, expires_at, released`;
 
-const STOP = `${SEED}, stop_requested_at, stop_mode)
+/** The stop's upsert: `stop_mode` only escalates, decided in the statement itself, whatever was read before. */
+export const STOP = `${SEED}, stop_requested_at, stop_mode)
   VALUES ($1, $2, '', 0, ${NOW}, true, ${NOW}, $4)
   ON CONFLICT (tenant_id, root_execution_id) DO UPDATE SET
     stop_requested_at = COALESCE(lease.stop_requested_at, EXCLUDED.stop_requested_at),
-    stop_mode = EXCLUDED.stop_mode`;
+    stop_mode = CASE WHEN lease.stop_mode = 'immediate' THEN 'immediate'
+      ELSE EXCLUDED.stop_mode END`;
 
 /**
  * Marks the stop in the caller's transaction: once, escalated from `after-step` to `immediate`,
@@ -132,6 +137,8 @@ export async function markStop(
   tree: Tree,
   stop: Write & { readonly mode: InterruptMode },
 ): Promise<void> {
+  // seeded, then locked: the read below always locks a row (a missing row locks nothing)
+  await seedTreeRow(client, tree, stop.now);
   const before = (await readMarks(client, tree, ROW_LOCK))?.stop_mode ?? undefined;
   const isEscalated = before === InterruptMode.AfterStep && stop.mode === InterruptMode.Immediate;
   if (before !== undefined && !isEscalated) return;
@@ -139,7 +146,8 @@ export async function markStop(
   await logged(client, stop);
 }
 
-const PAUSE = `${SEED}, is_externally_paused, external_pause_reason,
+/** The pause's upsert: `external_pause_mode` only escalates and `fenced_through_token` only rises (`GREATEST`). */
+export const PAUSE = `${SEED}, is_externally_paused, external_pause_reason,
   fenced_through_token, external_pause_mode)
   VALUES ($1, $2, '', 0, ${NOW}, true, true, $4, $5, $6)
   ON CONFLICT (tenant_id, root_execution_id) DO UPDATE SET
@@ -157,6 +165,7 @@ export async function markPause(
   tree: Tree,
   pause: Write & { readonly request: PauseRequest },
 ): Promise<void> {
+  await seedTreeRow(client, tree, pause.now);
   const wasPaused = (await readMarks(client, tree, ROW_LOCK))?.is_externally_paused === true;
   const isImmediate = pause.request.mode === InterruptMode.Immediate;
   const { reason, mode } = pause.request;
