@@ -21,6 +21,11 @@ const NoticeRow = z.object({
   closedAt: z.string().optional(),
   expiresAt: z.string().optional(),
   previousExpiresAt: z.string().optional(),
+  assignees: z.array(z.string()).optional(),
+  previousAssignees: z.array(z.string()).optional(),
+  previousTarget: z.string().optional(),
+  previousChannel: z.string().optional(),
+  previousExternalRef: z.string().optional(),
   launch: z.string().optional(),
   errorCode: z.string().optional(),
 });

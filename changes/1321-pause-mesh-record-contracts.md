@@ -1,0 +1,6 @@
+---
+section: Breaking
+issue: 1321
+---
+
+**The pause, mesh and record stores follow the core's `main` contracts** (agbossjs/agboss#1307, #1310, #1319, #1341b): a pause is found by its `target` (`PauseFilter.target`; the `agboss_pauses.target` column is generated from the record, no `channel` filter), is reassigned in place or to a replacement through `PauseReassignmentChange` (a pool of `assignees`, a `reassigned` chain-of-custody entry, `seen`, `due`, `timeout`, `to`, `maxReassignments` / `maxExtensions`, each checked in the transaction of the write) and extended with a `timeout-changed` entry under `maxExtensions`; `markSent…` takes the channel's `externalRef`; a `reassigned` notice carries what moved. A mesh request keeps its tool, request hash, lease (`attempt_id`, `locked_until`) and `expires_at`: `saveIfAbsent` takes over an unanswered lapsed lease of the same call, `renewLease`, `saveResponse` and `deleteByKey` are conditional on the owner token and answer whether they applied, `deleteExpired(now)` removes what expired and is answered or lapsed. `completeUnlessInterrupted` writes a finish only while its tree's lease row carries no stop or cancel mark, read `FOR SHARE` in the write's own transaction. A2A pending pauses read back `input` and `toolCall`. No migration: the baseline changed.

@@ -144,14 +144,14 @@ export class PauseScans {
     const rows = await rowsOf(
       this.pool,
       `SELECT record, seq FROM agboss_pauses WHERE tenant_id = $1 AND seq > $2::bigint
-         AND status = ANY($3::text[]) AND ($4::text IS NULL OR channel = $4)
+         AND status = ANY($3::text[]) AND ($4::text IS NULL OR target = $4)
          AND ($5::timestamptz IS NULL OR (expires_at IS NOT NULL AND expires_at < $5))
          ORDER BY seq LIMIT $6`,
       [
         tenantId,
         after,
         [...filter.statuses],
-        filter.channel ?? null,
+        filter.target ?? null,
         filter.expiresBefore ?? null,
         limit + 1,
       ],

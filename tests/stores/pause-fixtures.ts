@@ -1,5 +1,5 @@
-import { PauseAnswerer, PauseKind, PauseStatus, type PauseRecord } from "@agboss/core";
-import { PauseExpiryBound, type PauseRecipients } from "@agboss/core/stores";
+import { PauseKind, PauseStatus, type PauseRecord } from "@agboss/core";
+import { PauseExpiryBound, PauseRespondent, type PauseRecipients } from "@agboss/core/stores";
 import { VirtualClock } from "@agboss/core/testing";
 import { PostgresPausedExecutionRepository } from "../../src/index.js";
 import { connectionTo } from "../support/stores.js";
@@ -9,7 +9,7 @@ export const DEADLINE = new Date("2026-01-05T10:00:00.000Z");
 export const NINE = new Date("2026-01-05T09:00:00.000Z");
 export const MID = new Date("2026-01-05T09:45:00.000Z");
 export const LATER = new Date("2026-01-06T09:00:00.000Z");
-export const APPROVED = { decision: { approved: true }, answeredBy: "manager-17" };
+export const APPROVED = { decision: { approved: true }, actor: { id: "manager-17" } };
 
 export const pauseOf = (pauseId: string, stepKey = `run-1:${pauseId}`): PauseRecord => ({
   pauseId,
@@ -25,9 +25,19 @@ export const pauseOf = (pauseId: string, stepKey = `run-1:${pauseId}`): PauseRec
   copyNumber: 1,
   kind: PauseKind.Approval,
   step: "clerk-agent",
+  target: "refund-tool-approval",
   channel: "refund-approval-channel",
-  answerer: PauseAnswerer.Channel,
-  ask: { callId: "call-1", tool: "charge", arguments: { text: "10 USD" }, summary: "charge" },
+  respondent: PauseRespondent.Delegate,
+  input: { text: "10 USD" },
+  toolCall: { callId: "call-1", tool: "charge", summary: "charge" },
+  trail: [
+    {
+      action: "opened",
+      at: "2026-01-05T09:00:00.000Z",
+      target: "refund-tool-approval",
+      channel: "refund-approval-channel",
+    },
+  ],
   status: PauseStatus.Pending,
   isSent: false,
   askedAt: "2026-01-05T09:00:00.000Z",

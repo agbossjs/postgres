@@ -1,16 +1,11 @@
-import {
-  Clock,
-  Injectable,
-  type PauseAnswer,
-  type PauseCancellation,
-  type PauseRecord,
-} from "@agboss/core";
+import { Clock, Injectable, type PauseCancellation, type PauseRecord } from "@agboss/core";
 import type {
+  PauseAnswer,
   PauseExpiry,
   PauseDeadlineChange,
   PauseNoticeFacts,
   PauseNoticeKind,
-  PauseReplacement,
+  PauseReassignmentChange,
   PauseRecipients,
   PauseUntakenResolution,
 } from "@agboss/core/stores";
@@ -38,8 +33,14 @@ export class PostgresPausedExecutionRepository extends PostgresPauseQueryReposit
     tenantId: string,
     pauseId: string,
     recipients: PauseRecipients,
+    externalRef?: string,
   ): Promise<boolean> {
-    return new PauseTimerChanges(this.connection.pool).markSent(tenantId, pauseId, recipients);
+    return new PauseTimerChanges(this.connection.pool).markSent(
+      tenantId,
+      pauseId,
+      recipients,
+      externalRef,
+    );
   }
 
   resolveByTenantIdAndPauseId(
@@ -112,7 +113,7 @@ export class PostgresPausedExecutionRepository extends PostgresPauseQueryReposit
   reassignByTenantIdAndPauseId(
     tenantId: string,
     pauseId: string,
-    replacement: PauseReplacement,
+    replacement: PauseReassignmentChange,
     at: Date,
     recipients: PauseRecipients,
   ): Promise<PauseRecord | undefined> {

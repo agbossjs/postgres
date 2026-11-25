@@ -71,6 +71,31 @@ function instantOf(text: string | undefined): Date {
 }
 
 /**
+ * The notices of a pause whose channel was just asked: `opened` to the listeners; for a replacement a
+ * reassignment made, `reassigned` to the listeners instead (its channel was sent it, the old pause's
+ * channel was told `closed`), naming what it moved from — the entry before its own in the chain.
+ */
+function openingNotices(
+  pause: PauseRecord,
+  sent: PauseRecord,
+  recipients: PauseRecipients,
+): readonly PlannedNotice[] {
+  const at = instantOf(pause.askedAt);
+  if (pause.reassignedFrom === undefined)
+    return noticesOf(recipients, PauseNoticeKind.Opened, at, { expiresAt: pause.expiresAt });
+  const before = pause.trail.at(-2);
+  return noticesOf({ listeners: recipients.listeners }, PauseNoticeKind.Reassigned, at, {
+    expiresAt: pause.expiresAt,
+    previousExpiresAt: before?.expiresAt,
+    assignees: sent.assignees,
+    previousAssignees: before?.assignees,
+    previousTarget: before?.target,
+    previousChannel: before?.channel,
+    previousExternalRef: before?.externalRef,
+  });
+}
+
+/**
  * The channel was asked (rule 2), the pause as it was read: `opened` to the listeners, then, when
  * the pause closed meanwhile, its `closed` to the channel and the listeners — written at the first
  * close's time (`closedFirst ?? the record`), its reason and time the core's — then its
@@ -79,11 +104,10 @@ function instantOf(text: string | undefined): Date {
  */
 export function markSentNotices(
   pause: PauseRecord,
+  sent: PauseRecord,
   recipients: PauseRecipients,
 ): readonly PlannedNotice[] {
-  const opened = noticesOf(recipients, PauseNoticeKind.Opened, instantOf(pause.askedAt), {
-    expiresAt: pause.expiresAt,
-  });
+  const opened = openingNotices(pause, sent, recipients);
   if (pause.status === PauseStatus.Pending) return opened;
   const closed = closedNotices(
     pause,

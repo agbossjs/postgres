@@ -1,6 +1,5 @@
 import { PauseStatus, type PauseRecord } from "@agboss/core";
 import {
-  PauseExpiryBound,
   PauseNoticeKind,
   type PauseDeadlineChange,
   type PauseNoticeFacts,
@@ -13,7 +12,9 @@ import { escapedJsonOf } from "../nul-escape.js";
 import { whenHeard } from "./pause-changes.js";
 import { markSentNotices, noticesOf } from "./pause-notice-plan.js";
 import { appendNotices } from "./pause-notice-rows.js";
+import { writtenPause } from "./pause-reassign.js";
 import { LOCKED_PAUSE, recordOfRow } from "./pause-rows.js";
+import { extendPlan, sentPause } from "./pause-timer-plan.js";
 
 /**
  * The changes of a pause that read it first (agbossjs/agboss#935, #910): the deadline moved, the
@@ -32,7 +33,11 @@ const PENDING = "AND status = 'pending'";
 export class PauseTimerChanges {
   constructor(private readonly pool: pg.Pool) {}
 
-  /** The deadline moved — only while `Pending`, `expiresAt` set and after `at`, to a time after `at` (I3). */
+  /**
+   * The deadline moved — the pause row-locked and read, the change planned (`extendPlan`: only while
+   * `Pending`, from the deadline the caller read, to a later one, under `maxExtensions`), written
+   * over the status it was read at, with its `timeout-changed` entry and its `extended` notices.
+   */
   extend(
     tenantId: string,
     pauseId: string,
@@ -40,37 +45,16 @@ export class PauseTimerChanges {
     at: Date,
     recipients: PauseRecipients,
   ): Promise<PauseRecord | undefined> {
-    return whenHeard(this.pool, recipients, async (database) => {
-      const patch = {
-        expiresAt: change.expiresAt,
-        expiryBound: PauseExpiryBound.Pause,
-        remindAt: change.remindAt, // undefined is no key in the JSON
-      };
-      const row = await firstRowOf(
-        database,
-        `UPDATE agboss_pauses SET expires_at = $3::timestamptz, remind_at = $4::timestamptz,
-           record = (record - 'remindAt') || $5::jsonb
-         WHERE tenant_id = $1 AND pause_id = $2 AND status = 'pending' AND expires_at > $6
-           AND record->>'expiresAt' = $7 AND $3::timestamptz > expires_at RETURNING record`,
-        [
-          tenantId,
-          pauseId,
-          change.expiresAt,
-          change.remindAt ?? null,
-          escapedJsonOf(patch),
-          at,
-          change.previousExpiresAt,
-        ],
-      );
-      if (row === undefined) return undefined;
-      const facts = { expiresAt: change.expiresAt, previousExpiresAt: change.previousExpiresAt };
-      await appendNotices(
-        database,
-        tenantId,
-        pauseId,
-        noticesOf(recipients, PauseNoticeKind.Extended, at, facts),
-      );
-      return recordOfRow(row);
+    return inPoolTransaction(this.pool, async (database) => {
+      const read = await firstRowOf(database, LOCKED_PAUSE, [tenantId, pauseId]);
+      if (read === undefined) return undefined;
+      const before = recordOfRow(read);
+      const plan = extendPlan(before, change, at, recipients);
+      if (plan === undefined) return undefined;
+      const written = await writtenPause(database, before, plan.pause);
+      if (written === undefined) return undefined;
+      await appendNotices(database, tenantId, pauseId, plan.notices);
+      return written;
     });
   }
 
@@ -108,19 +92,24 @@ export class PauseTimerChanges {
    * not yet — the notices `markSentNotices` plans from the pause as it was read. `true` while
    * the pause is `Pending`.
    */
-  markSent(tenantId: string, pauseId: string, recipients: PauseRecipients): Promise<boolean> {
+  markSent(
+    tenantId: string,
+    pauseId: string,
+    recipients: PauseRecipients,
+    externalRef?: string,
+  ): Promise<boolean> {
     return inPoolTransaction(this.pool, async (database) => {
       const read = await firstRowOf(database, LOCKED_PAUSE, [tenantId, pauseId]);
       if (read === undefined) return false;
       const before = recordOfRow(read);
       if (!before.isSent) {
+        const sent = sentPause(before, externalRef);
         await changesOf(
           database,
-          `UPDATE agboss_pauses SET record = jsonb_set(record, '{isSent}', 'true')
-           WHERE tenant_id = $1 AND pause_id = $2`,
-          [tenantId, pauseId],
+          `UPDATE agboss_pauses SET record = $3::jsonb WHERE tenant_id = $1 AND pause_id = $2`,
+          [tenantId, pauseId, escapedJsonOf(sent)],
         );
-        await appendNotices(database, tenantId, pauseId, markSentNotices(before, recipients));
+        await appendNotices(database, tenantId, pauseId, markSentNotices(before, sent, recipients));
       }
       return before.status === PauseStatus.Pending;
     });

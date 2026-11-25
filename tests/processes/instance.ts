@@ -21,8 +21,8 @@ import { ProcessApplication } from "../fixtures/process.application.js";
 import { emit, openGate } from "../fixtures/process-log.js";
 import {
   LimitedWorkflowStart,
-  OrdersCallerResolver,
-  ProcessA2AExpose,
+  OrdersAuthenticator,
+  ProcessA2AEndpoint,
   SpendWorkflowStart,
 } from "../fixtures/shared.workflow.js";
 import { PaidHoldWorkflowStart } from "../fixtures/paid-hold.workflow.js";
@@ -100,7 +100,7 @@ async function answerOf(app: App, command: Command): Promise<unknown> {
       return outputOf(
         await app.resume(
           { pauseId: String(command.pauseId), decision: command.decision },
-          { ownerId: OWNER },
+          { ownerId: OWNER, tenantId: "default" },
         ),
       );
     case "audit-log":
@@ -142,8 +142,8 @@ const server = createServer((req, res) => served.listener?.(req, res));
 await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
 const { port } = server.address() as AddressInfo;
 served.listener = a2aHttpListener(app, {
-  expose: ProcessA2AExpose,
-  callerResolver: OrdersCallerResolver,
+  endpoint: ProcessA2AEndpoint,
+  authenticator: OrdersAuthenticator,
   publicUrl: `http://127.0.0.1:${String(port)}`,
 });
 const { instanceId } = app.resolve(ApplicationContext);

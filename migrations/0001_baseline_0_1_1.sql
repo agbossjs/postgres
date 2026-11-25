@@ -246,11 +246,16 @@ CREATE TABLE IF NOT EXISTS agboss_mesh_requests (
     tenant_id text NOT NULL,
     peer text NOT NULL,
     idempotency_key text NOT NULL,
+    tool text NOT NULL,
+    request_hash text NOT NULL,
+    attempt_id text NOT NULL,
     created_at timestamp with time zone NOT NULL,
+    expires_at timestamp with time zone NOT NULL,
+    locked_until timestamp with time zone NOT NULL,
     response jsonb,
     CONSTRAINT agboss_mesh_requests_pkey PRIMARY KEY (tenant_id, peer, idempotency_key)
 );
-CREATE INDEX IF NOT EXISTS agboss_mesh_requests_by_created_at ON agboss_mesh_requests (created_at);
+CREATE INDEX IF NOT EXISTS agboss_mesh_requests_by_expiry ON agboss_mesh_requests (expires_at);
 
 CREATE TABLE IF NOT EXISTS agboss_outbound_calls (
     id bigint GENERATED ALWAYS AS IDENTITY,
@@ -325,14 +330,14 @@ CREATE TABLE IF NOT EXISTS agboss_pauses (
     record jsonb NOT NULL,
     expires_at timestamp with time zone,
     remind_at timestamp with time zone,
-    channel text GENERATED ALWAYS AS ((record ->> 'channel'::text)) STORED,
+    target text GENERATED ALWAYS AS ((record ->> 'target'::text)) STORED,
     CONSTRAINT agboss_pauses_pkey PRIMARY KEY (tenant_id, pause_id),
     CONSTRAINT agboss_pauses_seq_key UNIQUE (seq),
     CONSTRAINT agboss_pauses_tenant_id_root_execution_id_step_key_key UNIQUE (tenant_id, root_execution_id, step_key)
 );
 CREATE INDEX IF NOT EXISTS agboss_pauses_by_resolved_at ON agboss_pauses (status, resolved_at);
 CREATE INDEX IF NOT EXISTS agboss_pauses_by_root ON agboss_pauses (tenant_id, root_execution_id, seq);
-CREATE INDEX IF NOT EXISTS agboss_pauses_by_tenant ON agboss_pauses (tenant_id, status, channel, seq);
+CREATE INDEX IF NOT EXISTS agboss_pauses_by_tenant ON agboss_pauses (tenant_id, status, target, seq);
 CREATE INDEX IF NOT EXISTS agboss_pauses_open ON agboss_pauses (seq) WHERE (status = ANY (ARRAY['pending'::text, 'resolved'::text]));
 CREATE INDEX IF NOT EXISTS agboss_pauses_pending_by_expiry ON agboss_pauses (expires_at) WHERE ((status = 'pending'::text) AND (expires_at IS NOT NULL));
 CREATE INDEX IF NOT EXISTS agboss_pauses_pending_by_reminder ON agboss_pauses (remind_at) WHERE ((status = 'pending'::text) AND (remind_at IS NOT NULL));

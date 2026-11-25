@@ -40,7 +40,7 @@ describe("two concurrent stops of a tree with no row", () => {
     [InterruptMode.Immediate, InterruptMode.AfterStep],
   ])("%s and %s, in either order, always end immediate", async (first, second) => {
     for (let round = 0; round < 10; round += 1) {
-      const tree = TREE(`race-stop-${first}-${round}`);
+      const tree = TREE(`race-stop-${first}-${String(round)}`);
       await Promise.all([
         leasesOn("instance-1").requestStop(tree, first),
         leasesOn("instance-2").requestStop(tree, second),
@@ -53,7 +53,7 @@ describe("two concurrent stops of a tree with no row", () => {
 describe("two concurrent pauses of a tree with no row", () => {
   it("after-step and immediate always end immediate", async () => {
     for (let round = 0; round < 10; round += 1) {
-      const tree = TREE(`race-pause-${round}`);
+      const tree = TREE(`race-pause-${String(round)}`);
       await Promise.all([
         leasesOn("instance-1").requestPause(tree, { mode: InterruptMode.AfterStep }),
         leasesOn("instance-2").requestPause(tree, { mode: InterruptMode.Immediate }),

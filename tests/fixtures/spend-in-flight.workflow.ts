@@ -4,12 +4,16 @@ import {
   ChildPlacement,
   ExecutionContext,
   listOf,
+  onStart,
   SpendRecorder,
-  start,
+  toWorkflow,
+  Ttl,
   Workflow,
   WorkflowFinish,
   WorkflowStart,
-  type Produced,
+  type ActionHandler,
+  type InputOf,
+  type OutputOf,
 } from "@agboss/core";
 import { usd } from "@agboss/core/units";
 import { DoneDto, JobDto, SummaryDto } from "./dto.js";
@@ -17,7 +21,7 @@ import { atGate, emit } from "./process-log.js";
 
 /**
  * agbossjs/agboss#727 — a tree's spend in flight seen by its own children on the other process.
- * One child per job, queued with `ChildPlacement.AnyInstance`; each child pays $0.60, tells the
+ * One child per job, queued with `ChildPlacement.AnyWorker` (the child's own placement); each child pays $0.60, tells the
  * test and waits at its process's gate, then pays $0.30 twice. The execution may spend $1: with
  * one child holding its $0.60 at one process's gate, the other child — on the other process —
  * pays its $0.60 (it read $0.60 of $1) and is held back at its next step ($1.20), because the
@@ -31,15 +35,15 @@ import { atGate, emit } from "./process-log.js";
   output: JobDto,
   deps: [ApplicationContext, ExecutionContext, SpendRecorder],
 })
-export class PayFirstAction {
+export class PayFirstAction implements ActionHandler<PayFirstAction> {
   constructor(
     private readonly applicationContext: ApplicationContext,
     private readonly executionContext: ExecutionContext,
     private readonly spendRecorder: SpendRecorder,
   ) {}
 
-  async execute(input: { readonly job: Produced<JobDto, unknown> }): Promise<JobDto> {
-    const { name } = input.job.value;
+  async execute(input: InputOf<PayFirstAction>): Promise<OutputOf<PayFirstAction>> {
+    const { name } = input.job;
     this.spendRecorder.record({ service: "job-api", cost: usd(0.6) });
     emit("paying", { name, instanceId: this.applicationContext.instanceId });
     await atGate(this.executionContext.signal);
@@ -66,14 +70,14 @@ function paidStep(
   output: JobDto,
   deps: [ApplicationContext, SpendRecorder],
 })
-export class PaySecondAction {
+export class PaySecondAction implements ActionHandler<PaySecondAction> {
   constructor(
     private readonly applicationContext: ApplicationContext,
     private readonly spendRecorder: SpendRecorder,
   ) {}
 
-  execute(input: { readonly job: Produced<JobDto, unknown> }): Promise<JobDto> {
-    return paidStep("pay-second", input.job.value, this.applicationContext, this.spendRecorder);
+  execute(input: InputOf<PaySecondAction>): Promise<OutputOf<PaySecondAction>> {
+    return paidStep("pay-second", input.job, this.applicationContext, this.spendRecorder);
   }
 }
 
@@ -84,14 +88,14 @@ export class PaySecondAction {
   output: JobDto,
   deps: [ApplicationContext, SpendRecorder],
 })
-export class PayThirdAction {
+export class PayThirdAction implements ActionHandler<PayThirdAction> {
   constructor(
     private readonly applicationContext: ApplicationContext,
     private readonly spendRecorder: SpendRecorder,
   ) {}
 
-  execute(input: { readonly job: Produced<JobDto, unknown> }): Promise<JobDto> {
-    return paidStep("pay-third", input.job.value, this.applicationContext, this.spendRecorder);
+  execute(input: InputOf<PayThirdAction>): Promise<OutputOf<PayThirdAction>> {
+    return paidStep("pay-third", input.job, this.applicationContext, this.spendRecorder);
   }
 }
 
@@ -102,11 +106,11 @@ export class PayThirdAction {
   output: DoneDto,
   deps: [ApplicationContext],
 })
-export class PayDoneAction {
+export class PayDoneAction implements ActionHandler<PayDoneAction> {
   constructor(private readonly applicationContext: ApplicationContext) {}
 
-  execute(input: { readonly job: Produced<JobDto, unknown> }): Promise<DoneDto> {
-    return Promise.resolve({ name: input.job.value.name, by: this.applicationContext.instanceId });
+  execute(input: InputOf<PayDoneAction>): Promise<OutputOf<PayDoneAction>> {
+    return Promise.resolve({ name: input.job.name, by: this.applicationContext.instanceId });
   }
 }
 
@@ -119,17 +123,14 @@ export class PayItemWorkflowFinish {}
 @Workflow({
   name: "pay-item-workflow",
   version: "1.0.0",
+  historyTtl: Ttl.Forever,
+  placement: ChildPlacement.AnyWorker,
   flow: [
-    start(PayItemWorkflowStart)
-      .returns(JobDto)
+    onStart(PayItemWorkflowStart)
       .toAction(PayFirstAction)
-      .returns(JobDto)
       .toAction(PaySecondAction)
-      .returns(JobDto)
       .toAction(PayThirdAction)
-      .returns(JobDto)
       .toAction(PayDoneAction)
-      .returns(DoneDto)
       .toFinish(PayItemWorkflowFinish),
   ],
 })
@@ -138,30 +139,34 @@ export class PayItemWorkflow {}
 @WorkflowStart({ name: "pay-items-workflow-start", description: "The jobs", input: listOf(JobDto) })
 export class PayItemsWorkflowStart {}
 
-@WorkflowFinish({
-  name: "pay-items-workflow-finish",
-  description: "Every job, paid",
+@Action({
+  name: "pay-items-summary-action",
+  description: "Sums the jobs paid up",
   input: { results: listOf(DoneDto) },
   output: SummaryDto,
 })
-export class PayItemsWorkflowFinish {
-  finish(input: { readonly results: readonly Produced<DoneDto, unknown>[] }): SummaryDto {
-    return { text: input.results.map((result) => result.value.name).join(", ") };
+export class PayItemsSummaryAction implements ActionHandler<PayItemsSummaryAction> {
+  execute(input: InputOf<PayItemsSummaryAction>): Promise<OutputOf<PayItemsSummaryAction>> {
+    return Promise.resolve({ text: input.results.map((result) => result.name).join(", ") });
   }
 }
+
+@WorkflowFinish({
+  name: "pay-items-workflow-finish",
+  description: "Every job, paid",
+  output: SummaryDto,
+})
+export class PayItemsWorkflowFinish {}
 
 @Workflow({
   name: "pay-items-workflow",
   version: "1.0.0",
+  historyTtl: Ttl.Forever,
   flow: [
-    start(PayItemsWorkflowStart)
-      .returns(listOf(JobDto))
-      .toParallelWorkflows(PayItemWorkflow, {
-        maxItems: 2,
-        placement: ChildPlacement.AnyInstance,
-      })
+    onStart(PayItemsWorkflowStart)
+      .forEachItem(toWorkflow(PayItemWorkflow), { takeFirst: 2, maxConcurrency: 2 })
       .join()
-      .returns(listOf(DoneDto))
+      .toAction(PayItemsSummaryAction)
       .toFinish(PayItemsWorkflowFinish),
   ],
 })

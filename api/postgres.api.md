@@ -91,7 +91,7 @@ import { OutboundCallRepository } from '@agboss/core/stores';
 import { OutboundCallState } from '@agboss/core/stores';
 import { OutboundCallStatusQuery } from '@agboss/core/stores';
 import { Page } from '@agboss/core/stores';
-import { PauseAnswer } from '@agboss/core';
+import type { PauseAnswer } from '@agboss/core/stores';
 import { PauseAnswerRecord } from '@agboss/core';
 import { PauseCancellation } from '@agboss/core';
 import type { PauseDeadlineChange } from '@agboss/core/stores';
@@ -105,9 +105,9 @@ import type { PauseNoticeCounts } from '@agboss/core/stores';
 import type { PauseNoticeFacts } from '@agboss/core/stores';
 import type { PauseNoticeKind } from '@agboss/core/stores';
 import type { PausePage } from '@agboss/core/stores';
+import type { PauseReassignmentChange } from '@agboss/core/stores';
 import type { PauseRecipients } from '@agboss/core/stores';
 import { PauseRecord } from '@agboss/core';
-import type { PauseReplacement } from '@agboss/core/stores';
 import type { PauseRequest } from '@agboss/core';
 import type { PauseScanAfter } from '@agboss/core/stores';
 import type { PauseUntakenResolution } from '@agboss/core/stores';
@@ -409,6 +409,8 @@ export class PostgresExecutionRecordRepository extends ExecutionRecordRepository
     // (undocumented)
     completeIfStatus(id: string, expected: ExecutionRecordStatus, outcome: TurnOutcome, context?: StatusContext): Promise<boolean>;
     // (undocumented)
+    completeUnlessInterrupted(id: string, outcome: TurnOutcome, context?: StatusContext): Promise<boolean>;
+    // (undocumented)
     configSnapshots(workflow: string, version: string): Promise<ConfigSnapshot[]>;
     createThread(thread: NewThread): Promise<string>;
     // (undocumented)
@@ -563,16 +565,18 @@ export interface PostgresLiveLeasesErrorOptions {
 export class PostgresMeshRequestRepository extends MeshRequestRepository {
     constructor(connection: PostgresConnection);
     // (undocumented)
-    deleteByKey(key: MeshRequestKey): Promise<void>;
-    deleteExpired(cutoff: Date): Promise<number>;
+    deleteByKey(key: MeshRequestKey, attemptId: string): Promise<boolean>;
+    deleteExpired(now: Date): Promise<number>;
     // (undocumented)
     findByKey(key: MeshRequestKey): Promise<MeshRequestRecord | undefined>;
     // (undocumented)
     ping(): Promise<void>;
     // (undocumented)
+    renewLease(key: MeshRequestKey, attemptId: string, lockedUntil: string): Promise<boolean>;
+    // (undocumented)
     saveIfAbsent(record: MeshRequestRecord): Promise<boolean>;
     // (undocumented)
-    saveResponse(key: MeshRequestKey, response: unknown): Promise<void>;
+    saveResponse(key: MeshRequestKey, attemptId: string, response: unknown): Promise<boolean>;
 }
 
 // @public
@@ -627,11 +631,11 @@ export class PostgresPausedExecutionRepository extends PostgresPauseQueryReposit
     // (undocumented)
     extendByTenantIdAndPauseId(tenantId: string, pauseId: string, change: PauseDeadlineChange, at: Date, recipients: PauseRecipients): Promise<PauseRecord | undefined>;
     // (undocumented)
-    markSentByTenantIdAndPauseId(tenantId: string, pauseId: string, recipients: PauseRecipients): Promise<boolean>;
+    markSentByTenantIdAndPauseId(tenantId: string, pauseId: string, recipients: PauseRecipients, externalRef?: string): Promise<boolean>;
     // (undocumented)
     noticeOnceByTenantIdAndPauseId(tenantId: string, pauseId: string, kind: PauseNoticeKind, facts: PauseNoticeFacts, at: Date, recipients: PauseRecipients): Promise<boolean>;
     // (undocumented)
-    reassignByTenantIdAndPauseId(tenantId: string, pauseId: string, replacement: PauseReplacement, at: Date, recipients: PauseRecipients): Promise<PauseRecord | undefined>;
+    reassignByTenantIdAndPauseId(tenantId: string, pauseId: string, replacement: PauseReassignmentChange, at: Date, recipients: PauseRecipients): Promise<PauseRecord | undefined>;
     // (undocumented)
     remindByTenantIdAndPauseId(tenantId: string, pauseId: string, at: Date, recipients: PauseRecipients): Promise<boolean>;
     // (undocumented)
@@ -901,6 +905,7 @@ export type StepIndexResult = "built" | "present" | "skipped";
 // src/stores/postgres-execution-record.repository.ts - (ae-undocumented) Missing documentation for "append".
 // src/stores/postgres-execution-record.repository.ts - (ae-undocumented) Missing documentation for "complete".
 // src/stores/postgres-execution-record.repository.ts - (ae-undocumented) Missing documentation for "completeIfStatus".
+// src/stores/postgres-execution-record.repository.ts - (ae-undocumented) Missing documentation for "completeUnlessInterrupted".
 // src/stores/postgres-execution-record.repository.ts - (ae-undocumented) Missing documentation for "statusHistory".
 // src/stores/postgres-execution-record.repository.ts - (ae-undocumented) Missing documentation for "forgetStatusHistory".
 // src/stores/postgres-execution-record.repository.ts - (ae-undocumented) Missing documentation for "deleteIdleThreads".
@@ -948,6 +953,7 @@ export type StepIndexResult = "built" | "present" | "skipped";
 // src/stores/postgres-mesh-request.repository.ts - (ae-undocumented) Missing documentation for "ping".
 // src/stores/postgres-mesh-request.repository.ts - (ae-undocumented) Missing documentation for "saveIfAbsent".
 // src/stores/postgres-mesh-request.repository.ts - (ae-undocumented) Missing documentation for "findByKey".
+// src/stores/postgres-mesh-request.repository.ts - (ae-undocumented) Missing documentation for "renewLease".
 // src/stores/postgres-mesh-request.repository.ts - (ae-undocumented) Missing documentation for "saveResponse".
 // src/stores/postgres-mesh-request.repository.ts - (ae-undocumented) Missing documentation for "deleteByKey".
 // src/stores/postgres-outbound-call.repository.ts - (ae-undocumented) Missing documentation for "ping".

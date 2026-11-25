@@ -23,6 +23,7 @@ execFileSync(
     env: {
       ...process.env,
       AGBOSS_PROCESS_DATABASE_URL: "postgres://placeholder@localhost:5432/placeholder",
+      AGBOSS_PROCESS_IDEMPOTENCY_KEY: "check-types-placeholder-key",
       AGBOSS_PROCESS_MESH_PEER_KEY: generateKeyPairSync("ed25519")
         .publicKey.export({ type: "spki", format: "pem" })
         .toString(),

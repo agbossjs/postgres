@@ -20,7 +20,12 @@ const Row = z.object({
   tenant_id: z.string(),
   peer: z.string(),
   idempotency_key: z.string(),
+  tool: z.string(),
+  request_hash: z.string(),
+  attempt_id: z.string(),
   created_at: z.date(),
+  expires_at: z.date(),
+  locked_until: z.date(),
   response: z.unknown(),
   answered: z.boolean(),
 });
@@ -32,12 +37,15 @@ const keyOf = (key: MeshRequestKey): readonly [string, string, string] => [
 ];
 
 /**
- * `MeshRequestRepository` on PostgreSQL (agbossjs/agboss#483): one row per trusted mesh request,
- * by the receiver's tenant, the peer and the caller's idempotency key, its answer as `jsonb`.
- * `saveIfAbsent` is one `INSERT … ON CONFLICT DO NOTHING`: of two instances admitting one key —
- * a request retried against another pod — exactly one inserts it and runs it, the other finds it
- * (its answer, or a run still in progress). The answer, the forget and the retention sweep's
- * `deleteByCreatedAtBefore` (the `Clock`'s cutoff, passed as a parameter) are one statement each. Every
+ * `MeshRequestRepository` on PostgreSQL (agbossjs/agboss#483, #398): one row per trusted mesh
+ * request, by the receiver's tenant, the peer and the caller's idempotency key — its tool, the hash
+ * of its arguments, its lease (`attempt_id`, `locked_until`) and its answer as `jsonb`.
+ * `saveIfAbsent` is one `INSERT … ON CONFLICT DO UPDATE … WHERE` statement: of two instances
+ * admitting one key — a request retried against another pod — exactly one inserts it, or takes it
+ * over when its unanswered lease lapsed (the same tool and arguments only), and runs it; the other
+ * is refused. Only the attempt that holds a request renews it, answers it or forgets it: each is
+ * one statement conditional on the owner token, so a stale attempt never overwrites the answer of
+ * the one that took over. The retention sweep removes what expired and was answered or lapsed. Every
  * statement runs alone at `READ COMMITTED`; no other locking. Listed in
  * `@Application({ providers })` with `postgresUrl`.
  */
@@ -52,20 +60,35 @@ export class PostgresMeshRequestRepository extends MeshRequestRepository {
   }
 
   async saveIfAbsent(record: MeshRequestRecord): Promise<boolean> {
-    const inserted = await changesOf(
+    const saved = await changesOf(
       this.connection.pool,
-      `INSERT INTO agboss_mesh_requests (tenant_id, peer, idempotency_key, created_at)
-       VALUES ($1, $2, $3, $4) ON CONFLICT (tenant_id, peer, idempotency_key) DO NOTHING`,
-      [...keyOf(record), new Date(record.createdAt)],
+      `INSERT INTO agboss_mesh_requests AS request (tenant_id, peer, idempotency_key, tool,
+         request_hash, attempt_id, created_at, expires_at, locked_until, response)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb)
+       ON CONFLICT (tenant_id, peer, idempotency_key) DO UPDATE SET
+         attempt_id = EXCLUDED.attempt_id, created_at = EXCLUDED.created_at,
+         locked_until = EXCLUDED.locked_until
+       WHERE request.response IS NULL AND request.locked_until <= EXCLUDED.created_at
+         AND request.tool = EXCLUDED.tool AND request.request_hash = EXCLUDED.request_hash`,
+      [
+        ...keyOf(record),
+        record.tool,
+        record.requestHash,
+        record.attemptId,
+        new Date(record.createdAt),
+        new Date(record.expiresAt),
+        new Date(record.lockedUntil),
+        record.response === undefined ? null : escapedJsonOf(record.response),
+      ],
     );
-    return inserted === 1;
+    return saved === 1;
   }
 
   async findByKey(key: MeshRequestKey): Promise<MeshRequestRecord | undefined> {
     const row = await firstRowOf(
       this.connection.pool,
-      `SELECT tenant_id, peer, idempotency_key, created_at, response,
-         response IS NOT NULL AS answered
+      `SELECT tenant_id, peer, idempotency_key, tool, request_hash, attempt_id, created_at,
+         expires_at, locked_until, response, response IS NOT NULL AS answered
        FROM agboss_mesh_requests WHERE ${KEY}`,
       keyOf(key),
     );
@@ -75,31 +98,54 @@ export class PostgresMeshRequestRepository extends MeshRequestRepository {
       tenantId: parsed.tenant_id,
       peer: parsed.peer,
       idempotencyKey: parsed.idempotency_key,
+      tool: parsed.tool,
+      requestHash: parsed.request_hash,
+      attemptId: parsed.attempt_id,
       createdAt: parsed.created_at.toISOString(),
+      expiresAt: parsed.expires_at.toISOString(),
+      lockedUntil: parsed.locked_until.toISOString(),
       ...(parsed.answered ? { response: unescapedJson(parsed.response) } : {}),
     };
   }
 
-  async saveResponse(key: MeshRequestKey, response: unknown): Promise<void> {
-    await changesOf(
+  async renewLease(key: MeshRequestKey, attemptId: string, lockedUntil: string): Promise<boolean> {
+    const renewed = await changesOf(
       this.connection.pool,
-      `UPDATE agboss_mesh_requests SET response = $4::jsonb WHERE ${KEY}`,
-      [...keyOf(key), escapedJsonOf(response)],
+      `UPDATE agboss_mesh_requests SET locked_until = $5
+       WHERE ${KEY} AND attempt_id = $4 AND response IS NULL`,
+      [...keyOf(key), attemptId, new Date(lockedUntil)],
     );
+    return renewed === 1;
   }
 
-  async deleteByKey(key: MeshRequestKey): Promise<void> {
-    await changesOf(
+  async saveResponse(key: MeshRequestKey, attemptId: string, response: unknown): Promise<boolean> {
+    const saved = await changesOf(
       this.connection.pool,
-      `DELETE FROM agboss_mesh_requests WHERE ${KEY}`,
-      keyOf(key),
+      `UPDATE agboss_mesh_requests SET response = $5::jsonb
+       WHERE ${KEY} AND attempt_id = $4 AND response IS NULL`,
+      [...keyOf(key), attemptId, escapedJsonOf(response)],
     );
+    return saved === 1;
   }
 
-  /** Removes every request admitted before `cutoff`; how many went. */
-  deleteExpired(cutoff: Date): Promise<number> {
+  async deleteByKey(key: MeshRequestKey, attemptId: string): Promise<boolean> {
+    const deleted = await changesOf(
+      this.connection.pool,
+      `DELETE FROM agboss_mesh_requests WHERE ${KEY} AND attempt_id = $4`,
+      [...keyOf(key), attemptId],
+    );
+    return deleted === 1;
+  }
+
+  /** Removes every request that expired at or before `now` and is answered or whose lease lapsed; how many went. */
+  deleteExpired(now: Date): Promise<number> {
     return inLongTransaction(this.connection.pool, (client) =>
-      changesOf(client, "DELETE FROM agboss_mesh_requests WHERE created_at < $1", [cutoff]),
+      changesOf(
+        client,
+        `DELETE FROM agboss_mesh_requests
+         WHERE expires_at <= $1 AND (response IS NOT NULL OR locked_until <= $1)`,
+        [now],
+      ),
     );
   }
 }

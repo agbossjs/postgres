@@ -1,12 +1,12 @@
 import {
   PauseResolution,
   PauseStatus,
-  type PauseAnswer,
   type PauseCancellation,
   type PauseRecord,
 } from "@agboss/core";
 import {
   NO_RECIPIENTS,
+  type PauseAnswer,
   type PauseExpiry,
   type PauseRecipients,
   type PauseUntakenResolution,

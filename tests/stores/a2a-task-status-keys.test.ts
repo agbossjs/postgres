@@ -15,7 +15,7 @@ const NINE = new Date("2026-01-05T09:00:00.000Z");
 describe("agbossjs/agboss#960: an unknown key inside a pending pause (PostgreSQL)", () => {
   it("survives a round trip, beside the keys the pause knows", async () => {
     const tasks = new PostgresA2ATaskRepository(connectionTo(database.url()));
-    const pause = { pauseId: "p-1", kind: PauseKind.Approval, ask: { q: 1 }, futureKey: "kept?" };
+    const pause = { pauseId: "p-1", kind: PauseKind.Approval, input: { q: 1 }, futureKey: "kept?" };
     const status = {
       state: A2ATaskState.InputRequired,
       pendingPauses: [pause],

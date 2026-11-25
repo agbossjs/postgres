@@ -178,7 +178,7 @@ describe("the retention's removal of closed pauses", () => {
     await store().reassignByTenantIdAndPauseId(
       "default",
       "old",
-      { pauseId: "new", assignee: "bob" },
+      { pauseId: "new", assignees: ["bob"] },
       NINE,
       RECIPIENTS,
     );

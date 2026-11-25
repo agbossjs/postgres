@@ -6,7 +6,8 @@
     "vitest.config.ts",
     "vitest.faults.config.ts",
     "vitest.mutation.config.ts",
-    "eslint.config.js"
+    "eslint.config.js",
+    ".agboss/types.d.ts"
   ],
   "exclude": ["tests/fixtures", "tests/processes"]
 }

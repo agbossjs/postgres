@@ -2,47 +2,54 @@ import {
   Agent,
   ApplicationContext,
   Channel,
-  ChannelOf,
   ChannelOutcome,
-  ChannelRole,
-  PauseAnswerer,
-  start,
+  inline,
+  onStart,
+  PauseRespondent,
   Tool,
+  ToolApproval,
+  Ttl,
   Workflow,
   WorkflowFinish,
   WorkflowStart,
   type ToolHandler,
 } from "@agboss/core";
 import {
+  CircuitBreakerPolicy,
   ModelCost,
   ModelProvider,
   ModelProviderMessageRole,
-  RetryPolicy,
   type ModelProviderRequest,
   type ModelProviderResponse,
 } from "@agboss/core/models";
-import { minutes, seconds, usd } from "@agboss/core/units";
+import { days, minutes, seconds, usd } from "@agboss/core/units";
 import { DoneDto, JobDto } from "./dto.js";
 import { emit } from "./process-log.js";
 
 /**
- * AC3 — a clerk agent that ships a job through `ship-tool`, whose channel only queues the ask: the
- * execution pauses, its pause kept in PostgreSQL, until a resume answers it — on any instance.
- * The model is a deterministic provider of this file: first it calls the tool, then, once the
- * tool's result is in the conversation, it answers with that result.
+ * AC3 — a clerk agent that ships a job through `ship-tool`, whose approval target's channel only
+ * queues the ask: the execution pauses, its pause kept in PostgreSQL, until a resume answers it —
+ * on any instance. The model is a deterministic provider of this file: first it calls the tool,
+ * then, once the tool's result is in the conversation, it answers with that result.
  */
 
-@ChannelRole({
-  name: "ship-approval-channel",
+@ToolApproval({
+  name: "ship-tool-approval",
   description: "An operator approves shipping a job",
-  approves: JobDto,
-  answerer: PauseAnswerer.ThreadOwner,
+  input: JobDto,
+  respondent: PauseRespondent.Owner,
+  timeout: days(365),
 })
-export abstract class ShipApprovalChannel extends ChannelOf<ShipApprovalChannel> {}
+export class ShipToolApproval {}
 
-@Channel({ name: "queued-ship-approval-channel", description: "Leaves the ask in the pause store" })
-export class QueuedShipApprovalChannel extends ShipApprovalChannel {
-  send(): Promise<ChannelOutcome<ShipApprovalChannel>> {
+@Channel({
+  name: "queued-ship-approval-channel",
+  description: "Leaves the ask in the pause store",
+  target: ShipToolApproval,
+  ttl: days(1),
+})
+export class QueuedShipApprovalChannel {
+  send(): Promise<ChannelOutcome<ShipToolApproval>> {
     return Promise.resolve(ChannelOutcome.awaitReply());
   }
 }
@@ -50,15 +57,15 @@ export class QueuedShipApprovalChannel extends ShipApprovalChannel {
 @Tool({
   name: "ship-tool",
   description: "Ships the job, once an operator approved it",
+  approval: ShipToolApproval,
   input: JobDto,
   output: DoneDto,
-  channel: ShipApprovalChannel,
   deps: [ApplicationContext],
 })
 export class ShipTool implements ToolHandler<JobDto, DoneDto> {
   constructor(private readonly applicationContext: ApplicationContext) {}
 
-  run({ name }: JobDto): Promise<DoneDto> {
+  execute({ name }: JobDto): Promise<DoneDto> {
     const { instanceId } = this.applicationContext;
     emit("shipped", { name, instanceId });
     return Promise.resolve({ name, by: instanceId });
@@ -69,16 +76,19 @@ export class ShipTool implements ToolHandler<JobDto, DoneDto> {
 const fieldOf = (text: string, key: string): string =>
   new RegExp(`"${key}"\\s*:\\s*"([^"]+)"`, "u").exec(text)?.[1] ?? "";
 
-const USAGE = { inputTokens: 10, outputTokens: 5 };
+const USAGE = { inputTokens: 10, outputTokens: 5, cacheReadTokens: 0, cacheWriteTokens: 0 };
 
 @ModelProvider({
   name: "offline-clerk-model-provider",
   description: "A deterministic clerk: ships the job, then answers with what was shipped",
-  serves: [/^offline\//u],
+  model: "offline/clerk",
   timeout: seconds(30),
   cost: ModelCost.fromResponse(),
-  retryPolicy: RetryPolicy.none(),
-  circuitBreakerPolicy: { failureThreshold: 5, window: minutes(1), openFor: seconds(10) },
+  circuitBreakerPolicy: CircuitBreakerPolicy.fixed({
+    failureThreshold: 5,
+    failureWindow: minutes(1),
+    openDuration: seconds(10),
+  }),
 })
 export class OfflineClerkModelProvider {
   complete(request: ModelProviderRequest): Promise<ModelProviderResponse> {
@@ -104,12 +114,12 @@ export class OfflineClerkModelProvider {
 @Agent({
   name: "clerk-agent",
   description: "Ships a job",
-  prompt: "Ship the job with ship-tool, then answer with what was shipped.",
-  model: "offline/clerk",
+  prompt: inline("Ship the job with ship-tool, then answer with what was shipped."),
+  modelProvider: OfflineClerkModelProvider,
   input: { job: JobDto },
   output: DoneDto,
   tools: [ShipTool],
-  maxToolCalls: 2,
+  executionLimits: { maxToolCalls: 2 },
 })
 export class ClerkAgent {}
 
@@ -122,13 +132,8 @@ export class ApprovalWorkflowFinish {}
 @Workflow({
   name: "approval-workflow",
   version: "1.0.0",
-  flow: [
-    start(ApprovalWorkflowStart)
-      .returns(JobDto)
-      .toAgent(ClerkAgent)
-      .returns(DoneDto)
-      .toFinish(ApprovalWorkflowFinish),
-  ],
+  historyTtl: Ttl.Forever,
+  flow: [onStart(ApprovalWorkflowStart).toAgent(ClerkAgent).toFinish(ApprovalWorkflowFinish)],
 })
 export class ApprovalWorkflow {}
 
@@ -136,15 +141,15 @@ export class ApprovalWorkflow {}
 @Tool({
   name: "reship-tool",
   description: "Ships the job once more, once an operator approved it",
+  approval: ShipToolApproval,
   input: JobDto,
   output: DoneDto,
-  channel: ShipApprovalChannel,
   deps: [ApplicationContext],
 })
 export class ReshipTool implements ToolHandler<JobDto, DoneDto> {
   constructor(private readonly applicationContext: ApplicationContext) {}
 
-  run({ name }: JobDto): Promise<DoneDto> {
+  execute({ name }: JobDto): Promise<DoneDto> {
     const { instanceId } = this.applicationContext;
     emit("shipped", { name, instanceId });
     return Promise.resolve({ name, by: instanceId });
@@ -159,12 +164,12 @@ export class ReshipTool implements ToolHandler<JobDto, DoneDto> {
 @Agent({
   name: "recheck-clerk-agent",
   description: "Ships a shipped job once more",
-  prompt: "Ship the job with ship-tool, then answer with what was shipped.",
-  model: "offline/clerk",
+  prompt: inline("Ship the job with ship-tool, then answer with what was shipped."),
+  modelProvider: OfflineClerkModelProvider,
   input: { done: DoneDto },
   output: DoneDto,
   tools: [ReshipTool],
-  maxToolCalls: 2,
+  executionLimits: { maxToolCalls: 2 },
 })
 export class RecheckClerkAgent {}
 
@@ -185,13 +190,11 @@ export class TwoApprovalsWorkflowFinish {}
 @Workflow({
   name: "two-approvals-workflow",
   version: "1.0.0",
+  historyTtl: Ttl.Forever,
   flow: [
-    start(TwoApprovalsWorkflowStart)
-      .returns(JobDto)
+    onStart(TwoApprovalsWorkflowStart)
       .toAgent(ClerkAgent)
-      .returns(DoneDto)
       .toAgent(RecheckClerkAgent)
-      .returns(DoneDto)
       .toFinish(TwoApprovalsWorkflowFinish),
   ],
 })

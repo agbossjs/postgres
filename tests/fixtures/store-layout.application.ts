@@ -1,8 +1,5 @@
-import { Application, type Class, type Provider } from "@agboss/core";
-import { PostgresConnection } from "../../src/index.js";
-import { OfflineClerkModelProvider } from "./approval.workflow.js";
-import { ChargeWorkflow } from "./charge.workflow.js";
-import { ProcessEnvironment } from "./environments/app.environment.js";
+import { Application, EmptyEnvironment, type Class, type Provider } from "@agboss/core";
+import { TakeoverWorkflow } from "./takeover.workflow.js";
 import {
   ProcessApplicationBudget,
   ProcessExecutionBudget,
@@ -10,20 +7,19 @@ import {
 } from "./process.application.js";
 
 /**
- * An application of the charge workflow (an outbound call) on the given stores — a layout of
- * `tests/processes/store-backends.test.ts` (agbossjs/agboss#526 AC1), on the `process`
- * environment, with an offline model provider (no key to read). It lists `PostgresConnection` only because the charge action injects it itself:
- * the stores no longer need it listed (#526 AC8).
+ * An application of the takeover workflow on the given stores, listed one by one in `providers` (no
+ * `@DatabaseStorage`) — a layout of `tests/processes/store-backends.test.ts` (agbossjs/agboss#526
+ * AC1), with no model to call (no key to read). The workflow writes no business key, so no
+ * idempotency secret is needed; the stores' connection settings are the process's variables.
  */
 export function storeLayoutOf(providers: readonly Provider[]): Class {
   @Application({
     name: "store-layout-application",
     version: "1.0.0",
-    environment: ProcessEnvironment,
-    idempotencyKeyField: "idempotencyKey",
-    workflows: [ChargeWorkflow],
+    environment: EmptyEnvironment,
+    workflows: [TakeoverWorkflow],
     budgets: [ProcessApplicationBudget, ProcessTenantBudget, ProcessExecutionBudget],
-    providers: [OfflineClerkModelProvider, PostgresConnection, ...providers],
+    providers: [...providers],
   })
   class StoreLayoutApplication {}
   return StoreLayoutApplication;

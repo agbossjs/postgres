@@ -4,23 +4,26 @@ import {
   Budget,
   BudgetScope,
   Clock,
-  Injectable,
-  start,
+  HttpAuthenticator,
+  HttpAuthResult,
+  inline,
+  onStart,
+  Ttl,
   Workflow,
   WorkflowFinish,
   WorkflowStart,
   type BudgetHandler,
 } from "@agboss/core";
-import { A2ACallerResolution, A2AExpose, type A2ACallerResolver } from "@agboss/core/a2a";
+import { A2AEndpoint } from "@agboss/core/a2a";
 import {
+  CircuitBreakerPolicy,
   ModelCost,
   ModelProvider,
   RateLimitPolicy,
-  RetryPolicy,
   type ModelProviderRequest,
   type ModelProviderResponse,
 } from "@agboss/core/models";
-import { minutes, seconds, usd, type Usd } from "@agboss/core/units";
+import { hours, minutes, seconds, usd, type Usd } from "@agboss/core/units";
 import { DoneDto, JobDto } from "./dto.js";
 import { emit } from "./process-log.js";
 
@@ -44,16 +47,19 @@ function answerOf(request: ModelProviderRequest, by: string): ModelProviderRespo
   return [{ id: "call-answer", name: answer, arguments: { name, by } }];
 }
 
-const USAGE = { inputTokens: 10, outputTokens: 5 };
-const BREAKER = { failureThreshold: 5, window: minutes(1), openFor: seconds(10) };
+const USAGE = { inputTokens: 10, outputTokens: 5, cacheReadTokens: 0, cacheWriteTokens: 0 };
+const BREAKER = CircuitBreakerPolicy.fixed({
+  failureThreshold: 5,
+  failureWindow: minutes(1),
+  openDuration: seconds(10),
+});
 
 @ModelProvider({
   name: "priced-model-provider",
   description: "A scripted transport: answers at once, each call costs $5",
-  serves: [/^priced\//u],
+  model: "priced/clerk",
   timeout: seconds(30),
   cost: ModelCost.fromResponse(),
-  retryPolicy: RetryPolicy.none(),
   circuitBreakerPolicy: BREAKER,
   deps: [ApplicationContext],
 })
@@ -71,10 +77,9 @@ export class PricedModelProvider {
 @ModelProvider({
   name: "limited-model-provider",
   description: "A scripted transport: one call at a time across instances, each held 300 ms",
-  serves: [/^limited\//u],
+  model: "limited/clerk",
   timeout: seconds(30),
   cost: ModelCost.fromResponse(),
-  retryPolicy: RetryPolicy.none(),
   circuitBreakerPolicy: BREAKER,
   rateLimitPolicy: RateLimitPolicy.of({ maxConcurrentCalls: 1 }),
   deps: [ApplicationContext, Clock],
@@ -98,8 +103,8 @@ export class LimitedModelProvider {
 @Agent({
   name: "spender-agent",
   description: "Answers with the job's name; its one call is priced",
-  prompt: "Answer with the job's name.",
-  model: "priced/clerk",
+  prompt: inline("Answer with the job's name."),
+  modelProvider: PricedModelProvider,
   input: { job: JobDto },
   output: DoneDto,
 })
@@ -108,8 +113,8 @@ export class SpenderAgent {}
 @Agent({
   name: "limited-agent",
   description: "Answers with the job's name through the limited provider",
-  prompt: "Answer with the job's name.",
-  model: "limited/clerk",
+  prompt: inline("Answer with the job's name."),
+  modelProvider: LimitedModelProvider,
   input: { job: JobDto },
   output: DoneDto,
 })
@@ -124,13 +129,8 @@ export class SpendWorkflowFinish {}
 @Workflow({
   name: "spend-workflow",
   version: "1.0.0",
-  flow: [
-    start(SpendWorkflowStart)
-      .returns(JobDto)
-      .toAgent(SpenderAgent)
-      .returns(DoneDto)
-      .toFinish(SpendWorkflowFinish),
-  ],
+  historyTtl: Ttl.Forever,
+  flow: [onStart(SpendWorkflowStart).toAgent(SpenderAgent).toFinish(SpendWorkflowFinish)],
 })
 export class SpendWorkflow {}
 
@@ -143,10 +143,13 @@ export class SpendExecutionBudget implements BudgetHandler {
 }
 
 /** Every caller is the mesh peer `orders-application` (as if its transport proved it). */
-@Injectable()
-export class OrdersCallerResolver implements A2ACallerResolver<typeof LimitedWorkflowStart> {
-  resolveCaller(): A2ACallerResolution<typeof LimitedWorkflowStart> {
-    return A2ACallerResolution.resolved({ peer: "orders-application" });
+@HttpAuthenticator({
+  name: "orders-http-authenticator",
+  description: "Every caller is the orders application",
+})
+export class OrdersAuthenticator {
+  authenticate(): HttpAuthResult {
+    return HttpAuthResult.authenticated({ peer: "orders-application" });
   }
 }
 
@@ -159,22 +162,17 @@ export class LimitedWorkflowFinish {}
 @Workflow({
   name: "limited-workflow",
   version: "1.0.0",
-  flow: [
-    start(LimitedWorkflowStart)
-      .returns(JobDto)
-      .toAgent(LimitedAgent)
-      .returns(DoneDto)
-      .toFinish(LimitedWorkflowFinish),
-  ],
-  providers: [OrdersCallerResolver],
+  historyTtl: Ttl.Forever,
+  flow: [onStart(LimitedWorkflowStart).toAgent(LimitedAgent).toFinish(LimitedWorkflowFinish)],
 })
 export class LimitedWorkflow {}
 
 /** AC4: what the processes serve over A2A — the limited workflow. */
-@A2AExpose({
-  name: "process-a2a-expose",
+@A2AEndpoint({
+  name: "process-a2a-endpoint",
   version: "1.0.0",
   description: "Answers jobs",
-  exports: [LimitedWorkflowStart],
+  ttl: { tasks: hours(24), messages: minutes(15) },
+  skills: [{ start: LimitedWorkflowStart, tags: ["jobs"] }],
 })
-export class ProcessA2AExpose {}
+export class ProcessA2AEndpoint {}

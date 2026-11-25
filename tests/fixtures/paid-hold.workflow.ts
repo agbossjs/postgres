@@ -3,11 +3,14 @@ import {
   ApplicationContext,
   ExecutionContext,
   SpendRecorder,
-  start,
+  onStart,
+  Ttl,
   Workflow,
   WorkflowFinish,
   WorkflowStart,
-  type Produced,
+  type ActionHandler,
+  type InputOf,
+  type OutputOf,
 } from "@agboss/core";
 import { usd } from "@agboss/core/units";
 import { DoneDto, JobDto } from "./dto.js";
@@ -26,14 +29,14 @@ import { atGate, emit } from "./process-log.js";
   output: JobDto,
   deps: [ApplicationContext, ExecutionContext],
 })
-export class WaitAction {
+export class WaitAction implements ActionHandler<WaitAction> {
   constructor(
     private readonly applicationContext: ApplicationContext,
     private readonly executionContext: ExecutionContext,
   ) {}
 
-  async execute(input: { readonly job: Produced<JobDto, unknown> }): Promise<JobDto> {
-    const { name } = input.job.value;
+  async execute(input: InputOf<WaitAction>): Promise<OutputOf<WaitAction>> {
+    const { name } = input.job;
     emit("waiting", { name, instanceId: this.applicationContext.instanceId });
     await atGate(this.executionContext.signal);
     return { name };
@@ -47,14 +50,14 @@ export class WaitAction {
   output: DoneDto,
   deps: [ApplicationContext, SpendRecorder],
 })
-export class PaidAction {
+export class PaidAction implements ActionHandler<PaidAction> {
   constructor(
     private readonly applicationContext: ApplicationContext,
     private readonly spendRecorder: SpendRecorder,
   ) {}
 
-  execute(input: { readonly job: Produced<JobDto, unknown> }): Promise<DoneDto> {
-    const { name } = input.job.value;
+  execute(input: InputOf<PaidAction>): Promise<OutputOf<PaidAction>> {
+    const { name } = input.job;
     const by = this.applicationContext.instanceId;
     emit("paid", { name, instanceId: by });
     this.spendRecorder.record({ service: "job-api", cost: usd(1) });
@@ -71,13 +74,11 @@ export class PaidHoldWorkflowFinish {}
 @Workflow({
   name: "paid-hold-workflow",
   version: "1.0.0",
+  historyTtl: Ttl.Forever,
   flow: [
-    start(PaidHoldWorkflowStart)
-      .returns(JobDto)
+    onStart(PaidHoldWorkflowStart)
       .toAction(WaitAction)
-      .returns(JobDto)
       .toAction(PaidAction)
-      .returns(DoneDto)
       .toFinish(PaidHoldWorkflowFinish),
   ],
 })

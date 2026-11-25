@@ -3,31 +3,19 @@ import {
   Budget,
   BudgetPeriod,
   BudgetScope,
-  Injectable,
+  DatabaseStorage,
+  EmptyEnvironment,
+  env,
+  Mesh,
+  MeshInboundMode,
+  Observer,
+  secret,
   type BudgetHandler,
   type ExecutionEndEvent,
   type ExecutionLeaseTakeoverEvent,
-  type OnExecutionEnd,
-  type OnExecutionLeaseTakeover,
+  type ExecutionObserver,
 } from "@agboss/core";
-import { hours, usd, type Usd } from "@agboss/core/units";
-import {
-  PostgresConnection,
-  PostgresA2ADirectMessageRepository,
-  PostgresA2ATaskRepository,
-  PostgresCheckpointSaver,
-  PostgresChildExecutionQueueRepository,
-  PostgresCostLedgerRepository,
-  PostgresExecutionHistoryRepository,
-  PostgresExecutionAuditLogRepository,
-  PostgresExecutionRecordRepository,
-  PostgresExecutionTreeRepository,
-  PostgresFencedEffectRepository,
-  PostgresMeshRequestRepository,
-  PostgresOutboundCallRepository,
-  PostgresPausedExecutionRepository,
-  PostgresRateLimitRepository,
-} from "../../src/index.js";
+import { hours, minutes, usd, type Usd } from "@agboss/core/units";
 import {
   ApprovalWorkflow,
   OfflineClerkModelProvider,
@@ -36,26 +24,28 @@ import {
 } from "./approval.workflow.js";
 import { BatchWorkflow, ItemWorkflow } from "./batch.workflow.js";
 import { ChargeWorkflow, OrderChargeWorkflow } from "./charge.workflow.js";
-import { HeldPostgresExecutionLeaseRepository } from "./held-stores.js";
-import { ProcessEnvironment } from "./environments/app.environment.js";
+import { HeldPostgresDriver } from "./held-stores.js";
 import { emit } from "./process-log.js";
 import {
   LimitedModelProvider,
   LimitedWorkflow,
+  OrdersAuthenticator,
   PricedModelProvider,
-  ProcessA2AExpose,
+  ProcessA2AEndpoint,
   SpendExecutionBudget,
   SpendWorkflow,
 } from "./shared.workflow.js";
 import { PaidHoldWorkflow } from "./paid-hold.workflow.js";
-import { PayItemsWorkflow } from "./spend-in-flight.workflow.js";
+import { PayItemsWorkflow, PayItemWorkflow } from "./spend-in-flight.workflow.js";
+import { StopBatchWorkflow, StopItemWorkflow } from "./stop/stop.application.js";
 import { TakeoverWorkflow } from "./takeover.workflow.js";
 
 /**
- * The application each process of tests/processes/ runs (`environments/process.environment.ts`):
- * every store on PostgreSQL, the outbound calls' too (agbossjs/agboss#505) — nothing on a disk, nothing shared but the database — and one step
- * slot per instance (`maxConcurrentSteps: 1`), so a launch of several children needs both
- * instances; its lease store is the package's with the test's hold on an acquire (agbossjs/agboss#520).
+ * The application each process of tests/processes/ runs: every store on PostgreSQL through its
+ * `@DatabaseStorage` (`PostgresDriver`), the outbound calls' too (agbossjs/agboss#505) — nothing on a
+ * disk, nothing shared but the database — and one step slot per instance
+ * (`executionLimits.maxConcurrentSteps: 1`), so a launch of several children needs both instances; the
+ * driver's lease store is the package's with the test's hold on an acquire (agbossjs/agboss#520).
  * It keeps its executions' history (agbossjs/agboss#483 AC3), trusts the mesh peer
  * `orders-application` (AC4), and its tenant's day is $10 (AC1). Its observer tells the test of
  * every end and every takeover.
@@ -87,8 +77,8 @@ export class ProcessExecutionBudget implements BudgetHandler {
 }
 
 /** Tells the test of each execution's end and each takeover of a lease. */
-@Injectable()
-export class ProcessObserver implements OnExecutionEnd, OnExecutionLeaseTakeover {
+@Observer()
+export class ProcessObserver implements ExecutionObserver {
   onExecutionEnd(event: ExecutionEndEvent): void {
     const { executionId, rootExecutionId, parentExecutionId, tenantId, finish } = event;
     emit("end", { executionId, rootExecutionId, parentExecutionId, tenantId, finish: finish.name });
@@ -99,11 +89,34 @@ export class ProcessObserver implements OnExecutionEnd, OnExecutionLeaseTakeover
   }
 }
 
+/** Every row on PostgreSQL: the test's schema, a pool of 4, the keys the processes share. */
+@DatabaseStorage({
+  name: "process-database-storage",
+  description: "The process tests' PostgreSQL, the lease store held",
+  driver: HeldPostgresDriver({ url: secret("AGBOSS_PROCESS_DATABASE_URL"), poolSize: 4 }),
+  auditLogTtl: hours(24),
+  ledgerEntriesTtl: hours(24),
+  // every process of a test keys its business-key fingerprints alike (agbossjs/agboss#825)
+  idempotencySecret: secret("AGBOSS_PROCESS_IDEMPOTENCY_KEY"),
+})
+export class ProcessDatabaseStorage {}
+
+/** The mesh peer `orders-application` is trusted (AC4): its public key is the harness's pair's. */
+@Mesh({
+  name: "process-mesh",
+  description: "Trusts the orders application",
+  inboundMode: MeshInboundMode.AllowExternal,
+  deduplicationTtl: minutes(30),
+  maxHops: 4,
+  peers: [{ application: "orders-application", verifyKeys: [env("AGBOSS_PROCESS_MESH_PEER_KEY")] }],
+})
+export class ProcessMesh {}
+
 @Application({
   name: "postgres-process-application",
   version: "1.0.0",
-  environment: ProcessEnvironment,
-  idempotencyKeyField: "idempotencyKey",
+  environment: EmptyEnvironment,
+  storage: ProcessDatabaseStorage,
   workflows: [
     TakeoverWorkflow,
     BatchWorkflow,
@@ -116,6 +129,7 @@ export class ProcessObserver implements OnExecutionEnd, OnExecutionLeaseTakeover
     OrderChargeWorkflow,
     PaidHoldWorkflow,
     PayItemsWorkflow,
+    PayItemWorkflow,
   ],
   observers: [ProcessObserver],
   budgets: [
@@ -124,31 +138,16 @@ export class ProcessObserver implements OnExecutionEnd, OnExecutionLeaseTakeover
     ProcessExecutionBudget,
     SpendExecutionBudget,
   ],
-  maxConcurrentSteps: 1,
+  executionLimits: { maxConcurrentSteps: 1 },
   retention: { executionRecords: hours(24) },
-  exposes: [ProcessA2AExpose],
-  mesh: { peers: [{ application: "orders-application", verifyKey: "meshPeerKey" }] },
+  endpoints: [ProcessA2AEndpoint],
+  mesh: ProcessMesh,
   providers: [
     OfflineClerkModelProvider,
     PricedModelProvider,
     LimitedModelProvider,
     QueuedShipApprovalChannel,
-    PostgresConnection,
-    PostgresA2ADirectMessageRepository,
-    PostgresA2ATaskRepository,
-    PostgresCheckpointSaver,
-    PostgresChildExecutionQueueRepository,
-    PostgresCostLedgerRepository,
-    PostgresExecutionHistoryRepository,
-    PostgresExecutionAuditLogRepository,
-    HeldPostgresExecutionLeaseRepository,
-    PostgresExecutionRecordRepository,
-    PostgresExecutionTreeRepository,
-    PostgresFencedEffectRepository,
-    PostgresMeshRequestRepository,
-    PostgresOutboundCallRepository,
-    PostgresPausedExecutionRepository,
-    PostgresRateLimitRepository,
+    OrdersAuthenticator,
   ],
 })
 export class ProcessApplication {}
@@ -164,6 +163,9 @@ export {
   LimitedWorkflow,
   PaidHoldWorkflow,
   PayItemsWorkflow,
+  PayItemWorkflow,
   SpendWorkflow,
+  StopBatchWorkflow,
+  StopItemWorkflow,
   TakeoverWorkflow,
 };

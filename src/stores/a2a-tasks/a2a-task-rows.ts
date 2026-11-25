@@ -41,7 +41,12 @@ const Status = z.looseObject({
   state: z.enum(A2ATaskState),
   message: z.string().optional(),
   pendingPauses: z.array(
-    z.looseObject({ pauseId: z.string().optional(), kind: z.enum(PauseKind), ask: z.unknown() }),
+    z.looseObject({
+      pauseId: z.string().optional(),
+      kind: z.enum(PauseKind),
+      input: z.unknown(),
+      toolCall: z.unknown().optional(),
+    }),
   ),
   finish: z.string().optional(),
   output: z.unknown().optional(),

@@ -1,8 +1,9 @@
-import type { ExecutionTreeValue, MeshRequestKey, MeshRequestRecord } from "@agboss/core";
+import type { ExecutionTreeValue, MeshRequestRecord } from "@agboss/core";
 import { describe, expect, it } from "vitest";
 import { PostgresExecutionTreeRepository, PostgresMeshRequestRepository } from "../../src/index.js";
 import { onSchema, testDatabase } from "../support/database.js";
 import { connectionTo } from "../support/stores.js";
+import { keyOf, requestOf } from "./mesh-fixtures.js";
 
 /**
  * Acceptance corner cases (agbossjs/agboss#521 AC4, #483 AC4) on a real PostgreSQL: text that holds
@@ -33,12 +34,6 @@ const hardValue = (): ExecutionTreeValue => ({
   nested: [{ [ESCAPE]: { [`${ESCAPE}0`]: HARD } }],
 });
 
-const keyOf = (idempotencyKey: string): MeshRequestKey => ({
-  tenantId: "acme",
-  peer: "orders-application",
-  idempotencyKey,
-});
-
 describe("#521 AC4 acceptance: the escape character itself round-trips", () => {
   it("AC4: a tree value with U+E000 sequences and NUL in values and keys reads back equal", async () => {
     const tree = new PostgresExecutionTreeRepository(connectionTo(database.url()));
@@ -54,9 +49,9 @@ describe("#521 AC4 acceptance: the escape character itself round-trips", () => {
       new PostgresMeshRequestRepository(connectionTo(database.url())),
       new PostgresMeshRequestRepository(connectionTo(database.url())),
     ];
-    await a.saveIfAbsent({ ...keyOf("escape"), createdAt: "2026-01-05T09:00:00.000Z" });
+    await a.saveIfAbsent(requestOf("escape"));
 
-    await a.saveResponse(keyOf("escape"), hardValue());
+    await a.saveResponse(keyOf("escape"), "attempt-1", hardValue());
 
     expect((await b.findByKey(keyOf("escape")))?.response).toEqual(hardValue());
   });
@@ -69,9 +64,14 @@ describe("#483 AC4 acceptance: a mesh request retried against many pods at once"
       if ((await this.findByKey(record)) !== undefined) return false;
       await onSchema(
         database.url(),
-        `INSERT INTO agboss_mesh_requests (tenant_id, peer, idempotency_key, created_at)
-         VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING`,
-        [record.tenantId, record.peer, record.idempotencyKey, record.createdAt],
+        `INSERT INTO agboss_mesh_requests (tenant_id, peer, idempotency_key, tool, request_hash,
+           attempt_id, created_at, expires_at, locked_until)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) ON CONFLICT DO NOTHING`,
+        [
+          ...[record.tenantId, record.peer, record.idempotencyKey, record.tool],
+          ...[record.requestHash, record.attemptId, record.createdAt],
+          ...[record.expiresAt, record.lockedUntil],
+        ],
       );
       return true;
     }
@@ -85,10 +85,9 @@ describe("#483 AC4 acceptance: a mesh request retried against many pods at once"
     ];
     const admitted = await Promise.all(
       Array.from({ length: 10 }, (_, index) =>
-        (index % 2 === 0 ? a : b).saveIfAbsent({
-          ...keyOf(key),
-          createdAt: `2026-01-05T09:00:0${String(index)}.000Z`,
-        }),
+        (index % 2 === 0 ? a : b).saveIfAbsent(
+          requestOf(key, `2026-01-05T09:00:0${String(index)}.000Z`, `attempt-${String(index)}`),
+        ),
       ),
     );
     return admitted.filter(Boolean).length;

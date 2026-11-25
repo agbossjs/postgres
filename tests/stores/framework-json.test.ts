@@ -4,7 +4,8 @@ import {
   pausedRunJsonOf,
   pausedRunOfJson,
 } from "../../src/stores/framework-json.js";
-import { oldPause, oldPausedRun } from "./pause-names-0.1.0.fixtures.js";
+import { pauseOf } from "./pause-fixtures.js";
+import { pausedRun } from "./stored-rows.fixtures.js";
 
 /**
  * agbossjs/agboss#1213: the paused run's text keeps what JSON cannot (`Infinity`, `-Infinity`,
@@ -13,7 +14,7 @@ import { oldPause, oldPausedRun } from "./pause-names-0.1.0.fixtures.js";
 const IDS = { threadId: "thread-1", runId: "run-1" };
 
 const base = pausedRunOfJson(
-  JSON.stringify({ ...oldPausedRun, threadId: "thread-1", runId: "run-1", tenantId: "acme" }),
+  JSON.stringify({ ...pausedRun, threadId: "thread-1", runId: "run-1", tenantId: "acme" }),
   IDS,
 );
 
@@ -72,12 +73,14 @@ describe("agbossjs/agboss#1213: paused run text and non-finite numbers", () => {
 });
 
 describe("agbossjs/agboss#1213: pauseRecordOf", () => {
-  it("reads a pause the core's way, 0.1.0 names included", () => {
-    expect(pauseRecordOf(oldPause)).toMatchObject({
+  it("reads a pause the core's way", () => {
+    expect(pauseRecordOf(pauseOf("p1"))).toMatchObject({
       pauseId: "p1",
       tenantId: "default",
-      status: "resolved",
+      status: "pending",
       kind: "approval",
+      target: "refund-tool-approval",
+      respondent: "delegate",
     });
   });
 });

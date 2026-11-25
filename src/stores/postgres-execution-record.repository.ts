@@ -26,6 +26,8 @@ import {
 } from "@agboss/core/stores";
 import { PostgresConnection } from "../connection/postgres-connection.js";
 import { pauseAnswerOfJson } from "./framework-json.js";
+import { completeRecord } from "./records/record-complete.js";
+import { completeUnlessInterrupted } from "./records/record-interrupt.js";
 import * as memories from "./records/record-memory.js";
 import * as reads from "./records/record-reads.js";
 import * as scores from "./records/record-scores.js";
@@ -93,10 +95,7 @@ export class PostgresExecutionRecordRepository extends ExecutionRecordRepository
     return writes.appendRecord(this.connection.pool, record, { now: this.clock.now(), context });
   }
   async complete(id: string, outcome: TurnOutcome, context?: StatusContext): Promise<void> {
-    await writes.completeRecord(this.connection.pool, id, outcome, {
-      now: this.clock.now(),
-      context,
-    });
+    await completeRecord(this.connection.pool, id, outcome, { now: this.clock.now(), context });
   }
   completeIfStatus(
     id: string,
@@ -104,11 +103,19 @@ export class PostgresExecutionRecordRepository extends ExecutionRecordRepository
     outcome: TurnOutcome,
     context?: StatusContext,
   ): Promise<boolean> {
-    return writes.completeRecord(this.connection.pool, id, outcome, {
+    return completeRecord(this.connection.pool, id, outcome, {
       now: this.clock.now(),
       expected,
       context,
     });
+  }
+  completeUnlessInterrupted(
+    id: string,
+    outcome: TurnOutcome,
+    context?: StatusContext,
+  ): Promise<boolean> {
+    const write = { now: this.clock.now(), context };
+    return completeUnlessInterrupted(this.connection.pool, id, outcome, write);
   }
   statusHistory(tenantId: string, threadId: string): Promise<readonly ThreadStatusTransition[]> {
     return historyOf(this.connection.pool, { tenantId, threadId });

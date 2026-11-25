@@ -13,7 +13,7 @@ import {
   instanceOn,
   pauseOf,
 } from "./pause-fixtures.js";
-import { oldPausedRun } from "./pause-names-0.1.0.fixtures.js";
+import { pausedRun } from "./stored-rows.fixtures.js";
 
 /**
  * Each clause of the pause row's statements a test proves (agbossjs/agboss#1302): dropping it from
@@ -76,7 +76,7 @@ describe("a paused run's row", () => {
     await onSchema(
       database.url(),
       `INSERT INTO agboss_paused_executions VALUES ('acme', 'thread-1', 'run-1', $1, '1.0.0', 'hash-1', now())`,
-      [JSON.stringify({ ...oldPausedRun, tenantId: "acme", threadId: "thread-1", runId: "run-1" })],
+      [JSON.stringify({ ...pausedRun, tenantId: "acme", threadId: "thread-1", runId: "run-1" })],
     );
     const found = await pauses.findByTenantIdAndThreadId("acme", "thread-1");
     if (found === undefined) throw new Error("the run was not stored");

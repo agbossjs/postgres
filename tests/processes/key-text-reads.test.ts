@@ -125,7 +125,7 @@ describe("agbossjs/agboss#568, #580 on PostgreSQL: a key's text at the operator'
 
     const status = OutboundCallStatus.Pending;
     expect(
-      (await calls.findAllByTenantIdAndStatus({ tenantId: "t\uD800", status, limit: 10 })).calls,
+      (await calls.findAllByTenantIdAndStatus({ tenantId: "t\uD800", status, limit: 10 })).items,
     ).toHaveLength(1);
     expect(
       await log.findAllByTenantIdAndRootExecutionIdOrderByOccurredAt("t\uD800", "r1"),

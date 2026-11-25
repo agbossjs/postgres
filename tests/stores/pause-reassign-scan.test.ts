@@ -24,7 +24,7 @@ describe("the replacement of a reassigned pause", () => {
     const made = await store().reassignByTenantIdAndPauseId(
       "default",
       "old",
-      { pauseId: "new", assignee: "bob" },
+      { pauseId: "new", assignees: ["bob"] },
       NINE,
       RECIPIENTS,
     );
@@ -54,7 +54,7 @@ describe("the unsent replacements scan", () => {
       await store().reassignByTenantIdAndPauseId(
         "default",
         `from-${id}`,
-        { pauseId: id, assignee: "bob" },
+        { pauseId: id, assignees: ["bob"] },
         NINE,
         RECIPIENTS,
       );

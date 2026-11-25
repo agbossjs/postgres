@@ -5,7 +5,12 @@ import {
   StoreHoldPoint,
   withHoldPoints,
 } from "@agboss/core/testing/faults";
-import { PostgresExecutionLeaseRepository } from "../../src/index.js";
+import { defineStorageDriver, type DatabaseDriver } from "@agboss/core/stores";
+import {
+  PostgresDriver,
+  PostgresExecutionLeaseRepository,
+  type PostgresDriverOptions,
+} from "../../src/index.js";
 import { emit } from "./process-log.js";
 
 /**
@@ -19,6 +24,25 @@ import { emit } from "./process-log.js";
 export const HeldPostgresExecutionLeaseRepository = withHoldPoints(
   PostgresExecutionLeaseRepository,
 );
+
+/**
+ * `PostgresDriver` with the held lease store in the lease store's place: the application keeps its
+ * `@DatabaseStorage` (the storage components provide the stores, so none is listed beside it), and
+ * the driver's lease store is the package's with the hold points.
+ */
+export function HeldPostgresDriver(options: PostgresDriverOptions): DatabaseDriver {
+  const driver = PostgresDriver(options);
+  const held = <TStore>(store: TStore): TStore | typeof HeldPostgresExecutionLeaseRepository =>
+    store === (PostgresExecutionLeaseRepository as unknown)
+      ? HeldPostgresExecutionLeaseRepository
+      : store;
+  return defineStorageDriver({
+    ...driver,
+    providers: driver.providers.map(held),
+    leaseStore: HeldPostgresExecutionLeaseRepository,
+    coordinationStores: driver.coordinationStores?.map(held),
+  });
+}
 
 /** Tells the test of every held operation and every answered `acquire` of this process. */
 export function reportHolds(instanceId: string): void {

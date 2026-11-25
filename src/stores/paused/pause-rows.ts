@@ -9,7 +9,7 @@ import { escapedJsonOf, unescapedJson } from "../nul-escape.js";
  * The pauses of `PostgresPausedExecutionRepository` (#267 S35): one row per pause, unique per step
  * key of a tree (agbossjs/agboss#663: a step key names no tree, migration 0020), the record as
  * `jsonb` — it is where a pause's fields are, `isSent` and `resolution` included. The columns the
- * queries filter on (`status`, `resolved_at`, and since 0031 `expires_at`, `remind_at`; `channel` is generated from the record, 0033, #1104)
+ * queries filter on (`status`, `resolved_at`, and since 0031 `expires_at`, `remind_at`; `target` is generated from the record, #1104)
  * are mirrored in it, so a read never needs them; `seq` is the monotonic insertion sequence the
  * pages follow. A transition of a pending pause is one statement — the status column compared and
  * set, the record patched with it — so of two instances exactly one changes it (`pause-changes.ts`).

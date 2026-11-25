@@ -1,52 +1,29 @@
-import { PauseResolution, PauseStatus, type PauseRecord } from "@agboss/core";
-import {
-  replacementStepKeyOf,
-  type PauseRecipients,
-  type PauseReplacement,
-} from "@agboss/core/stores";
+import type { PauseRecord } from "@agboss/core";
+import type { PauseReassignmentChange, PauseRecipients } from "@agboss/core/stores";
 import type pg from "pg";
 import { z } from "zod";
 import { firstRowOf, rowsOf, type Queryable } from "../../connection/query.js";
 import { inPoolTransaction } from "../../connection/transaction.js";
 import { escapedJsonOf } from "../nul-escape.js";
-import { closedNotices } from "./pause-notice-plan.js";
 import { appendNotices } from "./pause-notice-rows.js";
+import { reassignPlan } from "./pause-reassign-plan.js";
 import { LOCKED_PAUSE, recordOfRow } from "./pause-rows.js";
 
 /**
- * A pause moved to another addressee (agbossjs/agboss#946): one transaction — the old pause row-locked
- * and read, the step keys of its tree read, the old pause written `Cancelled` / `Reassigned` (the
- * status column compared and the deadline checked in the statement, so no reassignment follows an
- * answer or the deadline), its `closed` notices appended when it was sent (I7), and the replacement
- * inserted `Pending` and unsent. Of two racing reassignments, or a reassignment and an answer, the row
- * lock lets exactly one change the pause: the other finds it no longer `Pending` and answers
- * `undefined`.
+ * A pause moved to another addressee (agbossjs/agboss#946, #1307): one transaction — the pause
+ * row-locked and read, the step keys of its tree read, the change planned (`reassignPlan`: the pause
+ * as it was seen, open at `at` or due, under its limits), the pause written over the status it was
+ * read at, its notices appended, and a replacement inserted `Pending` and unsent. Of two racing
+ * reassignments, or a reassignment and an answer, the row lock lets exactly one change the pause:
+ * the other finds it changed and answers `undefined`.
  */
 
 const KeyRow = z.object({ step_key: z.string() });
 
-/** The old pause closed as reassigned: the status column compared (`$5`), the deadline after `$3`. */
-const REASSIGN = `UPDATE agboss_pauses SET status = 'cancelled', resolved_at = $3,
-    record = record || $4::jsonb
-  WHERE tenant_id = $1 AND pause_id = $2 AND status = 'pending'
-    AND (expires_at IS NULL OR expires_at > $3) RETURNING record`;
-
-/** The replacement of `old`: a copy for another addressee, unsent, asked at `at` (a reassignment is no new deadline). */
-const replacementOf = (
-  old: PauseRecord,
-  replacement: PauseReplacement,
-  stepKey: string,
-  at: Date,
-): PauseRecord => ({
-  ...old,
-  pauseId: replacement.pauseId,
-  assignee: replacement.assignee,
-  stepKey,
-  status: PauseStatus.Pending,
-  isSent: false,
-  askedAt: at.toISOString(),
-  reassignedFrom: old.pauseId,
-});
+/** The pause written as the plan made it: the status column compared (`$2`), the columns mirroring the record set. */
+const WRITE = `UPDATE agboss_pauses SET status = $4, resolved_at = $5::timestamptz,
+    expires_at = $6::timestamptz, remind_at = $7::timestamptz, record = $8::jsonb
+  WHERE tenant_id = $1 AND pause_id = $2 AND status = $3 RETURNING record`;
 
 /** The replacement's row: its deadline and reminder columns mirror its record. */
 async function insertedReplacement(database: Queryable, made: PauseRecord): Promise<void> {
@@ -66,11 +43,30 @@ async function insertedReplacement(database: Queryable, made: PauseRecord): Prom
   );
 }
 
-/** `old` moved to `replacement`'s addressee; the replacement, or `undefined` when the pause is not open at `at`. */
+/** The change applied to the pause read and locked: its row written over its status, or `undefined` (a lost race). */
+export async function writtenPause(
+  database: Queryable,
+  before: PauseRecord,
+  after: PauseRecord,
+): Promise<PauseRecord | undefined> {
+  const row = await firstRowOf(database, WRITE, [
+    before.tenantId,
+    before.pauseId,
+    before.status,
+    after.status,
+    after.resolvedAt ?? null,
+    after.expiresAt ?? null,
+    after.remindAt ?? null,
+    escapedJsonOf(after),
+  ]);
+  return row === undefined ? undefined : recordOfRow(row);
+}
+
+/** The pause moved as `change` says; the replacement (or, in place, the changed pause), or `undefined` when it does not apply at `at`. */
 export function reassigned(
   pool: pg.Pool,
   target: { readonly tenantId: string; readonly pauseId: string },
-  replacement: PauseReplacement,
+  change: PauseReassignmentChange,
   at: Date,
   recipients: PauseRecipients,
 ): Promise<PauseRecord | undefined> {
@@ -88,24 +84,12 @@ export function reassigned(
         )
       ).map((row) => KeyRow.parse(row).step_key),
     );
-    const patch = {
-      status: PauseStatus.Cancelled,
-      resolution: PauseResolution.Reassigned,
-      resolvedAt: at.toISOString(),
-      reassignedTo: replacement.pauseId,
-    };
-    const closed = await firstRowOf(database, REASSIGN, [
-      tenantId,
-      pauseId,
-      at,
-      escapedJsonOf(patch),
-    ]);
-    if (closed === undefined) return undefined;
-    const after = recordOfRow(closed);
-    if (after.isSent)
-      await appendNotices(database, tenantId, pauseId, closedNotices(after, at, recipients));
-    const made = replacementOf(old, replacement, replacementStepKeyOf(old, taken), at);
-    await insertedReplacement(database, made);
-    return made;
+    const plan = reassignPlan(old, change, taken, at, recipients);
+    if (plan === undefined) return undefined;
+    if ((await writtenPause(database, old, plan.pause)) === undefined) return undefined;
+    await appendNotices(database, tenantId, pauseId, plan.notices);
+    if (plan.inserted === undefined) return plan.pause;
+    await insertedReplacement(database, plan.inserted);
+    return plan.inserted;
   });
 }

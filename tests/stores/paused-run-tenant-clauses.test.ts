@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { PostgresPausedExecutionRepository } from "../../src/index.js";
 import { onSchema, testDatabase } from "../support/database.js";
 import { connectionTo } from "../support/stores.js";
-import { oldPausedRun } from "./pause-names-0.1.0.fixtures.js";
+import { pausedRun } from "./stored-rows.fixtures.js";
 
 /**
  * The tenant and the thread of a paused run's statements (agbossjs/agboss#1302): runs of tenants
@@ -15,14 +15,14 @@ const database = testDatabase();
 const pausesOn = (): PostgresPausedExecutionRepository =>
   new PostgresPausedExecutionRepository(connectionTo(database.url()), new VirtualClock());
 
-/** The runs stored: `[tenant, thread]` each under run `run-1`, written as a store of 0.1.0 wrote them. */
+/** The runs stored: `[tenant, thread]` each under run `run-1`, written as the store of 0.1.1 writes them. */
 async function stored(...runs: readonly (readonly [string, string])[]): Promise<void> {
   await onSchema(database.url(), "DELETE FROM agboss_paused_executions");
   for (const [tenantId, threadId] of runs)
     await onSchema(
       database.url(),
       "INSERT INTO agboss_paused_executions VALUES ($1, $2, 'run-1', $3, '1.0.0', 'hash', now())",
-      [tenantId, threadId, JSON.stringify({ ...oldPausedRun, tenantId, threadId, runId: "run-1" })],
+      [tenantId, threadId, JSON.stringify({ ...pausedRun, tenantId, threadId, runId: "run-1" })],
     );
 }
 

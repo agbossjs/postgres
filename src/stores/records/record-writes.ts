@@ -3,18 +3,10 @@ import type pg from "pg";
 import type { StatusContext } from "@agboss/core/stores";
 import { inPoolTransaction } from "../../connection/transaction.js";
 import { appendRecordStatus } from "../status-log.js";
-import type {
-  ExecutionRecordStatus,
-  NewThread,
-  NewTurn,
-  PauseAnswerRecord,
-  Turn,
-  TurnOutcome,
-} from "@agboss/core";
+import type { NewThread, NewTurn, PauseAnswerRecord, Turn } from "@agboss/core";
 import { z } from "zod";
 import { changesOf, firstRowOf, rowsOf, type Queryable } from "../../connection/query.js";
 import { escapedJsonOf, escapedText } from "../nul-escape.js";
-import { outcomeParameters } from "./record-rows.js";
 
 /** Threads, appended records, their completion (unconditional or compare-and-set) and the pause log. */
 
@@ -110,7 +102,7 @@ export async function threadOwnerOf(
 }
 
 /** A write to a thread's record is its activity: what a memory's `ttl` counts from (#1303). */
-const TOUCH = `UPDATE agboss_threads SET last_active_at = $1
+export const TOUCH = `UPDATE agboss_threads SET last_active_at = $1
   WHERE tenant_id = $2 AND id = $3 AND NOT is_swept`;
 
 /**
@@ -150,46 +142,6 @@ const INSERT = `INSERT INTO agboss_execution_records (id, run_id, tenant_id, thr
     model_version, replay_of, config_version, config_hash)
   VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12::jsonb, $13, $14, $15, $16,
     $17, $18)`;
-
-const COMPLETE = `UPDATE agboss_execution_records SET reply_with = $1, status = $2,
-  stop_reason = $3, route = $4::jsonb, steps = $5::jsonb, cost_usd = $6 WHERE id = $7`;
-
-const ThreadOf = z.object({ tenant_id: z.string(), thread_id: z.string() });
-
-/**
- * Writes the outcome, the thread's activity and its status row in one transaction; with `expected`,
- * only while the record's status is it — one compare-and-set statement, atomic.
- */
-export async function completeRecord(
-  pool: pg.Pool,
-  id: string,
-  outcome: TurnOutcome,
-  write: {
-    readonly now: Date;
-    readonly expected?: ExecutionRecordStatus | undefined;
-    readonly context?: StatusContext | undefined;
-  },
-): Promise<boolean> {
-  return inPoolTransaction(pool, async (client) => {
-    const parameters = [...outcomeParameters(outcome), id];
-    const guarded = write.expected === undefined ? "" : " AND status = $8";
-    const row = await firstRowOf(
-      client,
-      `${COMPLETE}${guarded} RETURNING tenant_id, thread_id`,
-      write.expected === undefined ? parameters : [...parameters, write.expected],
-    );
-    if (row === undefined) return false;
-    const thread = ThreadOf.parse(row);
-    const key = { tenantId: thread.tenant_id, threadId: thread.thread_id };
-    await changesOf(client, TOUCH, [write.now, key.tenantId, key.threadId]);
-    await appendRecordStatus(client, key, {
-      status: outcome.status,
-      context: write.context,
-      at: write.now,
-    });
-    return true;
-  });
-}
 
 /** Keeps a resolved pause once per tenant and step key (a second save is ignored). */
 export async function savePauseAnswer(

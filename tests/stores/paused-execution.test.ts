@@ -1,9 +1,7 @@
 import {
   ComponentKind,
-  PauseAnswerer,
   PauseKind,
   PauseResolution,
-  questionAskOf,
   PauseStatus,
   type PauseRecord,
 } from "@agboss/core";
@@ -13,6 +11,7 @@ import { describe, expect, it } from "vitest";
 import { PostgresPausedExecutionRepository } from "../../src/index.js";
 import { onSchema, testDatabase } from "../support/database.js";
 import { connectionTo } from "../support/stores.js";
+import { pauseOf as approvalOf } from "./pause-fixtures.js";
 
 /** What the contract does not reach: a resolved pause taken, rows that are not readable. */
 const database = testDatabase();
@@ -21,34 +20,19 @@ const NINE = new Date("2026-01-05T09:00:00.000Z");
 const pausesOn = (): PostgresPausedExecutionRepository =>
   new PostgresPausedExecutionRepository(connectionTo(database.url()), new VirtualClock());
 
-const pauseOf = (pauseId: string, stepKey: string): PauseRecord => ({
-  pauseId,
-  tenantId: "default",
-  threadId: "thread-1",
-  rootExecutionId: "run-1",
-  executionId: "run-1",
-  workflow: "order-workflow",
-  stepKey,
-  nodeId: "clerk-agent",
-  visitNumber: 1,
-  itemIndex: undefined,
-  copyNumber: 1,
-  kind: PauseKind.Approval,
-  step: "clerk-agent",
-  channel: "refund-approval-channel",
-  answerer: PauseAnswerer.Channel,
-  ask: { callId: "call-1", tool: "charge", arguments: { text: "10 USD" }, summary: "charge" },
-  status: PauseStatus.Pending,
-  isSent: false,
-  askedAt: "2026-01-05T09:00:00.000Z",
-});
+const pauseOf = (pauseId: string, stepKey: string): PauseRecord => approvalOf(pauseId, stepKey);
 
-/** agbossjs/agboss#746: a question role's pause — the role its component, its ask the role's DTO. */
+/** The pause without its tool call: what a question's record is. */
+const withoutToolCall = (pause: PauseRecord): PauseRecord =>
+  Object.fromEntries(Object.entries(pause).filter(([key]) => key !== "toolCall")) as PauseRecord;
+
+/** agbossjs/agboss#746: a question role's pause — the role its component, its input the role's DTO. */
 const questionPauseOf = (pauseId: string, stepKey: string): PauseRecord => ({
-  ...pauseOf(pauseId, stepKey),
+  ...withoutToolCall(pauseOf(pauseId, stepKey)),
   nodeId: "ship-question",
-  kind: PauseKind.Question,
+  kind: PauseKind.ExternalTask,
   step: "ship-question",
+  target: "ship-external-task",
   channel: "ship-question",
   component: {
     name: "ship-question",
@@ -56,11 +40,11 @@ const questionPauseOf = (pauseId: string, stepKey: string): PauseRecord => ({
     promptHash: undefined,
     schemaHash: "ddb0c5dd",
   },
-  ask: questionAskOf({ name: "box-1" }),
+  input: { name: "box-1" },
 });
 
 describe("PostgresPausedExecutionRepository", () => {
-  it("agbossjs/agboss#746: a question's pause, whose ask is no tool call, is read back as written", async () => {
+  it("agbossjs/agboss#746: a question's pause, whose input is no tool call, is read back as written", async () => {
     const pauses = pausesOn();
     const asked = questionPauseOf("p-question", "step-question");
 
@@ -68,13 +52,13 @@ describe("PostgresPausedExecutionRepository", () => {
     await pauses.resolveByTenantIdAndPauseId(
       "default",
       "p-question",
-      { decision: { verdict: "yes" }, answeredBy: undefined },
+      { decision: { verdict: "yes" }, actor: undefined },
       NINE,
       NO_RECIPIENTS,
     );
 
     expect(await pauses.findAllByTenantIdAndRootExecutionId("default", "run-1")).toEqual([
-      expect.objectContaining({ pauseId: "p-question", ask: { name: "box-1" } }),
+      expect.objectContaining({ pauseId: "p-question", input: { name: "box-1" } }),
     ]);
     expect(await pauses.findByTenantIdAndPauseId("default", "p-question")).toMatchObject({
       component: { kind: ComponentKind.Question },
@@ -83,12 +67,12 @@ describe("PostgresPausedExecutionRepository", () => {
     });
   });
 
-  it("an approval's pause whose ask lost its tool call still fails loudly when read", async () => {
+  it("an approval's pause that lost its tool call still fails loudly when read", async () => {
     const pauses = pausesOn();
     await pauses.findOrCreateByStepKey(pauseOf("p-no-call", "step-no-call"));
     await onSchema(
       database.url(),
-      `UPDATE agboss_pauses SET record = record #- '{ask,callId}' WHERE pause_id = 'p-no-call'`,
+      `UPDATE agboss_pauses SET record = record #- '{toolCall}' WHERE pause_id = 'p-no-call'`,
     );
 
     const error: unknown = await pauses.findByTenantIdAndPauseId("default", "p-no-call").then(
@@ -109,7 +93,7 @@ describe("PostgresPausedExecutionRepository", () => {
     await pauses.resolveByTenantIdAndPauseId(
       "default",
       "p-resolved",
-      { decision: 1, answeredBy: "a" },
+      { decision: 1, actor: { id: "a" } },
       NINE,
       NO_RECIPIENTS,
     );
@@ -120,7 +104,7 @@ describe("PostgresPausedExecutionRepository", () => {
     expect(await pauses.findByTenantIdAndPauseId("default", "p-resolved")).toMatchObject({
       status: PauseStatus.Taken,
       resolution: PauseResolution.Replied,
-      answer: { decision: 1, answeredBy: "a" },
+      answer: { decision: 1, actor: { id: "a" } },
       resolvedAt: NINE.toISOString(),
     });
     expect((await pauses.findByTenantIdAndPauseId("default", "p-pending"))?.status).toBe(
@@ -139,7 +123,7 @@ describe("PostgresPausedExecutionRepository", () => {
     await pauses.resolveByTenantIdAndPauseId(
       "default",
       "p-swept",
-      { decision: 1, answeredBy: "a" },
+      { decision: 1, actor: { id: "a" } },
       NINE,
       NO_RECIPIENTS,
     );
@@ -159,12 +143,12 @@ describe("PostgresPausedExecutionRepository", () => {
     );
 
     expect(await pauses.findByTenantIdAndPauseId("default", "p-kept")).toMatchObject({
-      kind: PauseKind.Question,
-      ask: { name: "box-1" },
+      kind: PauseKind.ExternalTask,
+      input: { name: "box-1" },
     });
   });
 
-  it("agbossjs/agboss#801: an approval's pause asks a tool call — a question's ask under kind approval fails loudly", async () => {
+  it("agbossjs/agboss#801: an approval's pause asks a tool call — a question's input under kind approval fails loudly", async () => {
     const pauses = pausesOn();
     await pauses.findOrCreateByStepKey(questionPauseOf("p-unkinded", "step-unkinded"));
     await onSchema(

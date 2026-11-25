@@ -3,12 +3,11 @@ import { VirtualClock } from "@agboss/core/testing";
 import { describe, expect, it } from "vitest";
 import { PostgresPausedExecutionRepository } from "../../src/index.js";
 import { onSchema, testDatabase } from "../support/database.js";
-import { oldPausedRun } from "./pause-names-0.1.0.fixtures.js";
+import { pausedRun } from "./stored-rows.fixtures.js";
 import { connectionTo } from "../support/stores.js";
 
 /**
- * agbossjs/agboss#906 D4: a paused run stored by 0.1.0 names its record `ternId` — read as
- * `turnId` (as the SQLite store does); a stored run that cannot be read is refused by its ids and
+ * agbossjs/agboss#906 D4: a stored run that cannot be read (as the SQLite store reads it) is refused by its ids and
  * the field that failed, the schema's error its `cause` — never with the run in the message, whose
  * `startInput` and `data` are the caller's (PII reaches the logs through a message).
  */
@@ -19,14 +18,13 @@ const pausesOn = (): PostgresPausedExecutionRepository =>
   new PostgresPausedExecutionRepository(connectionTo(database.url()), new VirtualClock());
 
 const run = {
-  ...oldPausedRun,
+  ...pausedRun,
   threadId: "thread-1",
   tenantId: "acme",
   runId: "run-1",
   turnId: "turn-1",
-  ternId: undefined,
   startInput: { ssn: SECRET },
-  data: { ...Object(oldPausedRun.data), note: SECRET },
+  data: { ...Object(pausedRun.data), note: SECRET },
 };
 
 /** The thread's stored run as `stored` (a document no store write makes). */
@@ -51,18 +49,8 @@ const failureOf = async (): Promise<Error> => {
 };
 
 describe("agbossjs/agboss#906 D4: PostgreSQL paused runs", () => {
-  it("a run stored by 0.1.0 under `ternId` is read as `turnId`, and resumes from there", async () => {
-    const { turnId, ...rest } = run;
-    await insertRun({ ...rest, ternId: turnId });
-
-    const found = await pausesOn().findByTenantIdAndThreadId("acme", "thread-1");
-
-    expect(found?.run).toMatchObject({ turnId: "turn-1", runId: "run-1", tenantId: "acme" });
-    expect(found?.run).not.toHaveProperty("ternId");
-  });
-
-  it("a run written whole by 0.1.0 (a typed literal against the published declarations) is read: its pending pause has the new names", async () => {
-    await insertRun({ ...oldPausedRun, threadId: "thread-1", runId: "run-1", tenantId: "acme" });
+  it("a run written whole is read: its pending pause has the 0.1.1 names", async () => {
+    await insertRun({ ...pausedRun, threadId: "thread-1", runId: "run-1", tenantId: "acme" });
 
     const found = await pausesOn().findByTenantIdAndThreadId("acme", "thread-1");
 
@@ -70,8 +58,8 @@ describe("agbossjs/agboss#906 D4: PostgreSQL paused runs", () => {
     expect(found?.run.pending[0]).toMatchObject({
       kind: "approval",
       step: "clerk-agent",
-      answerer: "channel",
-      answeredBy: "channel",
+      target: "refund-tool-approval",
+      respondent: "delegate",
     });
   });
 

@@ -1,13 +1,9 @@
-import { env, secret } from "@agboss/core";
-import type { ProcessEnvironment } from "./app.environment.js";
+import type { EmptyEnvironment } from "@agboss/core";
 
 /**
- * A process of tests/processes/: the test's schema (`AGBOSS_PROCESS_DATABASE_URL`), a pool of 4,
- * the mesh peer's public key (`AGBOSS_PROCESS_MESH_PEER_KEY`, the harness's pair).
+ * A process of tests/processes/: the application's own settings are none — the database
+ * (`AGBOSS_PROCESS_DATABASE_URL`), the idempotency secret (`AGBOSS_PROCESS_IDEMPOTENCY_KEY`) and the
+ * mesh peer's public key (`AGBOSS_PROCESS_MESH_PEER_KEY`) are references its storage and its mesh
+ * read from the process when it starts.
  */
-export const environment: ProcessEnvironment = {
-  postgresUrl: secret("AGBOSS_PROCESS_DATABASE_URL"),
-  postgresPoolSize: 4,
-  meshPeerKey: env("AGBOSS_PROCESS_MESH_PEER_KEY"),
-  idempotencyKey: secret("AGBOSS_PROCESS_IDEMPOTENCY_KEY"),
-};
+export const environment: EmptyEnvironment = {};

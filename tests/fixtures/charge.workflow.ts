@@ -2,23 +2,26 @@ import {
   Action,
   ApplicationContext,
   ExecutionContext,
-  NotSentTrust,
-  OutboundCallReconciliation,
-  OutboundCalls,
+  Idempotency,
+  onStart,
+  OutboundRecovery,
+  Reconciliation,
+  Ttl,
   Workflow,
   WorkflowFinish,
   WorkflowStart,
-  effectKeyOf,
-  start,
-  type Produced,
+  type ActionHandler,
+  type InputOf,
+  type OutputOf,
 } from "@agboss/core";
+import { hours, seconds } from "@agboss/core/units";
 import { PostgresConnection } from "../../src/index.js";
 import { DoneDto, JobDto } from "./dto.js";
 import { atGate, emit } from "./process-log.js";
 
 /**
  * agbossjs/agboss#505, #508 — a step that charges an order through a payment gateway, a call that
- * leaves the system (`OutboundCalls`). The gateway is two tables of the test's schema, beside the
+ * leaves the system (`Idempotency.sendOnce`). The gateway is two tables of the test's schema, beside the
  * stores and outside every store's transaction, as another system is: `test_gateway_attempts`
  * keeps every request that reached it, `test_gateway_charges` one charge per idempotency key (a
  * gateway that deduplicates). The charge is made, then its answer waits at its process's gate: a
@@ -43,21 +46,24 @@ async function charged(
   parts: {
     readonly applicationContext: ApplicationContext;
     readonly executionContext: ExecutionContext;
-    readonly outboundCalls: OutboundCalls;
+    readonly idempotency: Idempotency;
     readonly connection: PostgresConnection;
   },
   name: string,
   byOrder: boolean,
 ): Promise<DoneDto> {
-  const { applicationContext, executionContext, outboundCalls, connection } = parts;
+  const { applicationContext, executionContext, idempotency, connection } = parts;
   const by = applicationContext.instanceId;
-  const options = byOrder ? { businessKey: `order:${name}` } : undefined;
-  const key = effectKeyOf(executionContext, "charge", options);
   const where = { name, instanceId: by, rootExecutionId: executionContext.root.executionId };
-  const outcome = await outboundCalls.send<{ orderId: string }, Receipt>(key, {
+  const outcome = await idempotency.sendOnce<{ orderId: string }, Receipt>({
+    name: "charge",
+    // the step's own key, or the order's business key
+    ...(byOrder ? { key: `order:${name}` } : {}),
     target: "payments",
     operation: "charge",
     request: { orderId: name },
+    timeout: seconds(30),
+    ttl: hours(48),
     send: async (call) => {
       await connection.pool.query(CHARGE, [call.idempotencyKey, name, by]);
       emit("charging", { ...where, idempotencyKey: call.idempotencyKey, attempt: call.attempt });
@@ -65,17 +71,16 @@ async function charged(
       return { receipt: `receipt:${call.idempotencyKey}` };
     },
     // the gateway table is the record of every charge: its "not there" holds at any age (#795)
-    notSent: { trust: NotSentTrust.Lookup },
-    reconcile: async (lookup) => {
+    recovery: OutboundRecovery.permanentLookup(async (lookup) => {
       emit("reconciling", { ...where, idempotencyKey: lookup.idempotencyKey });
       const { rowCount } = await connection.pool.query(
         "SELECT 1 FROM test_gateway_charges WHERE idempotency_key = $1",
         [lookup.idempotencyKey],
       );
       return rowCount === 1
-        ? OutboundCallReconciliation.completed({ receipt: `receipt:${lookup.idempotencyKey}` })
-        : OutboundCallReconciliation.notSent();
-    },
+        ? Reconciliation.completed({ receipt: `receipt:${lookup.idempotencyKey}` })
+        : Reconciliation.notExecuted();
+    }),
   });
   emit("charged", { ...where, status: outcome.status, receipt: outcome.result.receipt });
   return { name, by };
@@ -86,18 +91,18 @@ async function charged(
   description: "Charges the job's order, keyed by the step",
   input: { job: JobDto },
   output: DoneDto,
-  deps: [ApplicationContext, ExecutionContext, OutboundCalls, PostgresConnection],
+  deps: [ApplicationContext, ExecutionContext, Idempotency, PostgresConnection],
 })
-export class ChargeAction {
+export class ChargeAction implements ActionHandler<ChargeAction> {
   constructor(
     readonly applicationContext: ApplicationContext,
     readonly executionContext: ExecutionContext,
-    readonly outboundCalls: OutboundCalls,
+    readonly idempotency: Idempotency,
     readonly connection: PostgresConnection,
   ) {}
 
-  execute(input: { readonly job: Produced<JobDto, unknown> }): Promise<DoneDto> {
-    return charged(this, input.job.value.name, false);
+  execute(input: InputOf<ChargeAction>): Promise<OutputOf<ChargeAction>> {
+    return charged(this, input.job.name, false);
   }
 }
 
@@ -106,18 +111,18 @@ export class ChargeAction {
   description: "Charges the job's order, keyed by the order",
   input: { job: JobDto },
   output: DoneDto,
-  deps: [ApplicationContext, ExecutionContext, OutboundCalls, PostgresConnection],
+  deps: [ApplicationContext, ExecutionContext, Idempotency, PostgresConnection],
 })
-export class OrderChargeAction {
+export class OrderChargeAction implements ActionHandler<OrderChargeAction> {
   constructor(
     readonly applicationContext: ApplicationContext,
     readonly executionContext: ExecutionContext,
-    readonly outboundCalls: OutboundCalls,
+    readonly idempotency: Idempotency,
     readonly connection: PostgresConnection,
   ) {}
 
-  execute(input: { readonly job: Produced<JobDto, unknown> }): Promise<DoneDto> {
-    return charged(this, input.job.value.name, true);
+  execute(input: InputOf<OrderChargeAction>): Promise<OutputOf<OrderChargeAction>> {
+    return charged(this, input.job.name, true);
   }
 }
 
@@ -130,13 +135,8 @@ export class ChargeWorkflowFinish {}
 @Workflow({
   name: "charge-workflow",
   version: "1.0.0",
-  flow: [
-    start(ChargeWorkflowStart)
-      .returns(JobDto)
-      .toAction(ChargeAction)
-      .returns(DoneDto)
-      .toFinish(ChargeWorkflowFinish),
-  ],
+  historyTtl: Ttl.Forever,
+  flow: [onStart(ChargeWorkflowStart).toAction(ChargeAction).toFinish(ChargeWorkflowFinish)],
 })
 export class ChargeWorkflow {}
 
@@ -157,11 +157,10 @@ export class OrderChargeWorkflowFinish {}
 @Workflow({
   name: "order-charge-workflow",
   version: "1.0.0",
+  historyTtl: Ttl.Forever,
   flow: [
-    start(OrderChargeWorkflowStart)
-      .returns(JobDto)
+    onStart(OrderChargeWorkflowStart)
       .toAction(OrderChargeAction)
-      .returns(DoneDto)
       .toFinish(OrderChargeWorkflowFinish),
   ],
 })

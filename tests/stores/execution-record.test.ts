@@ -1,8 +1,7 @@
-import { pauseAnswerRecordOfValue } from "@agboss/core/stores";
+import { pauseAnswerRecordOfValue, PauseRespondent } from "@agboss/core/stores";
 import {
   ComponentKind,
   ExecutionRecordStatus,
-  PauseAnswerer,
   PauseResolution,
   type PauseAnswerRecord,
 } from "@agboss/core";
@@ -58,13 +57,23 @@ const answerOf = (stepKey: string, askedAt: string): PauseAnswerRecord =>
       toolLoopIteration: 2,
       validationAttempts: 0,
     },
-    role: "refund-approval",
-    answerer: PauseAnswerer.Channel,
-    answeredBy: "manager-17",
+    target: "refund-tool-approval",
+    channel: "refund-approval-channel",
+    respondent: PauseRespondent.Delegate,
+    actor: { id: "manager-17" },
     resolution: PauseResolution.Replied,
     askedAt,
     resolvedAt: "2026-01-05T10:00:00.000Z",
     decision: { approved: true },
+    input: { text: "10 USD" },
+    trail: [
+      {
+        action: "opened",
+        at: askedAt,
+        target: "refund-tool-approval",
+        channel: "refund-approval-channel",
+      },
+    ],
   });
 
 describe("PostgresExecutionRecordRepository", () => {
@@ -395,7 +404,7 @@ describe("PostgresExecutionRecordRepository", () => {
     await records.savePauseAnswer("default", "root-log", earlier);
     await records.savePauseAnswer("default", "root-log", {
       ...earlier,
-      answeredBy: "someone else",
+      actor: { id: "someone else" },
     });
 
     const log = await records.findPauseAnswersByTenantIdAndRootExecutionId("default", "root-log");

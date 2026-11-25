@@ -74,7 +74,7 @@ describe("pauses of two tenants that share their ids", () => {
     await store().reassignByTenantIdAndPauseId(
       PAUSE,
       "moved",
-      { pauseId: "moved-to", assignee: "bob" },
+      { pauseId: "moved-to", assignees: ["bob"] },
       NINE,
       NO_RECIPIENTS,
     );
@@ -93,7 +93,7 @@ describe("pauses of two tenants that share their ids", () => {
     const made = await store().reassignByTenantIdAndPauseId(
       PAUSE,
       "numbered",
-      { pauseId: "numbered-to", assignee: "bob" },
+      { pauseId: "numbered-to", assignees: ["bob"] },
       NINE,
       NO_RECIPIENTS,
     );

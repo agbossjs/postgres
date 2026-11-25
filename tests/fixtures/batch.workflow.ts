@@ -4,20 +4,24 @@ import {
   ChildPlacement,
   ExecutionContext,
   listOf,
-  start,
+  onStart,
+  toWorkflow,
+  Ttl,
   Workflow,
   WorkflowFinish,
   WorkflowStart,
-  type Produced,
+  type ActionHandler,
+  type InputOf,
+  type OutputOf,
 } from "@agboss/core";
 import { DoneDto, JobDto, SummaryDto } from "./dto.js";
 import { atGate, emit } from "./process-log.js";
 
 /**
- * AC2 — a batch: one `item-workflow` child per job, queued with `ChildPlacement.AnyInstance` in
- * the PostgreSQL child queue. A child's step tells where it ran, then waits at its process's gate,
- * so with one step slot per instance a claimed child keeps its instance busy until the test opens
- * the gates.
+ * AC2 — a batch: one `item-workflow` child per job, queued in the PostgreSQL child queue because the
+ * child's own `placement` is `ChildPlacement.AnyWorker`. A child's step tells where it ran, then
+ * waits at its process's gate, so with one step slot per instance a claimed child keeps its
+ * instance busy until the test opens the gates.
  */
 
 @Action({
@@ -27,14 +31,14 @@ import { atGate, emit } from "./process-log.js";
   output: DoneDto,
   deps: [ApplicationContext, ExecutionContext],
 })
-export class ItemAction {
+export class ItemAction implements ActionHandler<ItemAction> {
   constructor(
     private readonly applicationContext: ApplicationContext,
     private readonly executionContext: ExecutionContext,
   ) {}
 
-  async execute(input: { readonly job: Produced<JobDto, unknown> }): Promise<DoneDto> {
-    const { name } = input.job.value;
+  async execute(input: InputOf<ItemAction>): Promise<OutputOf<ItemAction>> {
+    const { name } = input.job;
     const { instanceId } = this.applicationContext;
     const { executionId, root, tenant } = this.executionContext;
     const where = { executionId, rootExecutionId: root.executionId, tenantId: tenant.tenantId };
@@ -53,44 +57,43 @@ export class ItemWorkflowFinish {}
 @Workflow({
   name: "item-workflow",
   version: "1.0.0",
-  flow: [
-    start(ItemWorkflowStart)
-      .returns(JobDto)
-      .toAction(ItemAction)
-      .returns(DoneDto)
-      .toFinish(ItemWorkflowFinish),
-  ],
+  historyTtl: Ttl.Forever,
+  placement: ChildPlacement.AnyWorker,
+  flow: [onStart(ItemWorkflowStart).toAction(ItemAction).toFinish(ItemWorkflowFinish)],
 })
 export class ItemWorkflow {}
 
 @WorkflowStart({ name: "batch-workflow-start", description: "The jobs", input: listOf(JobDto) })
 export class BatchWorkflowStart {}
 
-@WorkflowFinish({
-  name: "batch-workflow-finish",
-  description: "Every job, done",
+@Action({
+  name: "batch-summary-action",
+  description: "Sums the jobs done up",
   input: { results: listOf(DoneDto) },
   output: SummaryDto,
 })
-export class BatchWorkflowFinish {
-  finish(input: { readonly results: readonly Produced<DoneDto, unknown>[] }): SummaryDto {
-    return { text: input.results.map((result) => result.value.name).join(", ") };
+export class BatchSummaryAction implements ActionHandler<BatchSummaryAction> {
+  execute(input: InputOf<BatchSummaryAction>): Promise<OutputOf<BatchSummaryAction>> {
+    return Promise.resolve({ text: input.results.map((result) => result.name).join(", ") });
   }
 }
+
+@WorkflowFinish({
+  name: "batch-workflow-finish",
+  description: "Every job, done",
+  output: SummaryDto,
+})
+export class BatchWorkflowFinish {}
 
 @Workflow({
   name: "batch-workflow",
   version: "1.0.0",
+  historyTtl: Ttl.Forever,
   flow: [
-    start(BatchWorkflowStart)
-      .returns(listOf(JobDto))
-      .toParallelWorkflows(ItemWorkflow, {
-        maxConcurrency: 6,
-        maxItems: 10,
-        placement: ChildPlacement.AnyInstance,
-      })
+    onStart(BatchWorkflowStart)
+      .forEachItem(toWorkflow(ItemWorkflow), { takeFirst: 10, maxConcurrency: 6 })
       .join()
-      .returns(listOf(DoneDto))
+      .toAction(BatchSummaryAction)
       .toFinish(BatchWorkflowFinish),
   ],
 })
