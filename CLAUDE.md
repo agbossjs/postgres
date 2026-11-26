@@ -43,9 +43,10 @@ PostgreSQL (`AGBOSS_POSTGRES_TEST_URL`) · api-extractor (`api/postgres.api.md`)
 
 ## Architecture
 
-- `src/connection/` — `PostgresConnection` (DI token, `deps: [ApplicationContext]`, or
-  `new PostgresConnection({ url })` in a script/test), its settings from the environment
-  (`postgresUrl: Secret`, `postgresPoolSize`, `postgresSchema`, `postgresSchemaSetup`), the connect bound (agbossjs/agboss#989: the URL's `connect_timeout`, else
+- `src/connection/` — `PostgresConnection` (DI token, `deps: [DATABASE_SETTINGS]`, or
+  `new PostgresConnection({ url })` in a script/test), its settings the application's `@DatabaseStorage`
+  (`PostgresDriver({ url, schema, poolSize, schemaSetup, timeouts })`) and nothing else — the environment is no
+  source of the connection (agbossjs/agboss#1324) —, the connect bound (agbossjs/agboss#989: the URL's `connect_timeout`, else
   `DEFAULT_CONNECT_TIMEOUT`, 10 s), the query helpers (rows
   as `unknown`, validated by each store) and the transaction helper (a pool of one never deadlocks).
 - `src/migrations/` — `migrations/NNNN_<name>.sql` read and checksummed, the history table, the

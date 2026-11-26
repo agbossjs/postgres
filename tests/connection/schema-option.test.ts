@@ -1,5 +1,5 @@
 /**
- * agbossjs/agboss#891 AC3: `PostgresConnectionSettings.schema` (`postgresSchema`) and
+ * agbossjs/agboss#891 AC3: `PostgresConnectionSettings.schema` (the driver's `schema`) and
  * `migratePostgres({ schema })` put an application in a schema of its own, so two applications on
  * one database are isolated — without changing a migration file, so the checksums the history keeps
  * stay those of every earlier release.
@@ -62,7 +62,7 @@ const leasesIn = (connection: PostgresConnection): PostgresExecutionLeaseReposit
   new PostgresExecutionLeaseRepository(
     connection,
     new StoreClock(StoreTimeSource.Test, new VirtualClock()),
-    new TestApplicationContext({}),
+    new TestApplicationContext(),
   );
 
 describe("agbossjs/agboss#891 AC3: one schema per application on one database", () => {
@@ -104,12 +104,12 @@ describe("agbossjs/agboss#891 AC3: one schema per application on one database", 
     expect([first, again, other]).toEqual([true, false, true]);
   });
 
-  it("AC3: the environment's postgresSchema is the connection's", async () => {
-    const application = new TestApplicationContext({
-      postgresUrl: revealing(serverUrl()),
-      postgresSchema: appB,
+  it("AC3: the driver's resolved schema is the connection's", async () => {
+    const connection = new PostgresConnection({
+      kind: "postgres",
+      url: revealing(serverUrl()),
+      schema: appB,
     });
-    const connection = new PostgresConnection(application);
     try {
       expect(await connection.schema()).toBe(appB);
     } finally {

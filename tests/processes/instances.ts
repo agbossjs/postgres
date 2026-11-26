@@ -16,7 +16,7 @@ const ROOT = fileURLToPath(new URL("../../", import.meta.url));
 /** The Ed25519 pair of the mesh peer `orders-application`: its private key signs a test's envelopes. */
 export const ORDERS_KEYS = generateKeyPairSync("ed25519");
 
-/** The environment of a process of the instances' application (an instance, a CLI command). */
+/** The process environment of a process of the instances' application (an instance, a CLI command). */
 export const processEnvOf = (url: string): NodeJS.ProcessEnv => ({
   ...process.env,
   AGBOSS_PROCESS_DATABASE_URL: url,

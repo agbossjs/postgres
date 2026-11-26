@@ -41,12 +41,12 @@ const leasesOn = (instanceId = "instance-1") => {
     leases: new PostgresExecutionLeaseRepository(
       connection,
       clock,
-      new TestApplicationContext({}, instanceId),
+      new TestApplicationContext(instanceId),
     ),
     records: new PostgresExecutionRecordRepository(
       connection,
       new VirtualClock(),
-      new TestApplicationContext({}, instanceId),
+      new TestApplicationContext(instanceId),
       new RandomIdGenerator(),
     ),
   };

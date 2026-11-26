@@ -37,7 +37,7 @@ describe.each(TEXTS)("a stored fenced effect result that is not JSON: %#", (text
     const leases = new PostgresExecutionLeaseRepository(
       connection,
       new StoreClock(StoreTimeSource.Test, clock),
-      new TestApplicationContext({}),
+      new TestApplicationContext(),
     );
     const lease = await leases.acquire(
       "default",

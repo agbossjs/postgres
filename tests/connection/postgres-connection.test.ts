@@ -11,7 +11,7 @@ import { migrateWith } from "../../src/migrations/migrate.js";
 import { freshSchema, onSchema, serverUrl, urlOnSchema } from "../support/database.js";
 import { migrationsFolder } from "../support/migration-folders.js";
 import { historyOf } from "../support/schema-dump.js";
-import { revealing, TestApplicationContext } from "../support/application-context.js";
+import { revealing } from "../support/application-context.js";
 
 const rejectionOf = async (call: Promise<unknown>): Promise<unknown> =>
   call.then(
@@ -34,14 +34,11 @@ async function withConnection<TResult>(
 }
 
 describe("PostgresConnection: one pool per application instance", () => {
-  it("is built from the application's environment: postgresUrl, postgresPoolSize", async () => {
+  it("is built from the driver's resolved settings: url, poolSize", async () => {
     const url = await freshSchema();
-    const application = new TestApplicationContext({
-      postgresUrl: revealing(url),
-      postgresPoolSize: 3,
-    });
+    const resolved = { kind: "postgres", url: revealing(url), poolSize: 3 };
 
-    await withConnection(new PostgresConnection(application), async (connection) => {
+    await withConnection(new PostgresConnection(resolved), async (connection) => {
       await connection.ping();
       expect(connection.pool.options.max).toBe(3);
       expect(await connection.schema()).toMatch(/^t_/);
@@ -112,17 +109,18 @@ describe("PostgresConnection.onInit: the schema check at start", () => {
     expect(error).toMatchObject({ code: "postgres.schema-missing", applied: 0, expected: 1 });
     expect(String(error)).toContain("run `npx agboss-postgres migrate` with POSTGRES_URL set");
     expect(String(error)).not.toContain("--url");
-    expect(String(error)).toContain("postgresSchemaSetup: SchemaSetup.MigrateOnStart");
+    expect(String(error)).toContain("PostgresDriver schemaSetup: SchemaSetup.MigrateOnStart");
   });
 
-  it("AC1: SchemaSetup.MigrateOnStart (postgresSchemaSetup): a missing schema is migrated at start", async () => {
+  it("AC1: SchemaSetup.MigrateOnStart (the driver's schemaSetup): a missing schema is migrated at start", async () => {
     const url = await freshSchema();
-    const application = new TestApplicationContext({
-      postgresUrl: revealing(url),
-      postgresSchemaSetup: SchemaSetup.MigrateOnStart,
-    });
+    const resolved = {
+      kind: "postgres",
+      url: revealing(url),
+      schemaSetup: SchemaSetup.MigrateOnStart,
+    };
 
-    await withConnection(new PostgresConnection(application), (connection) => connection.onInit());
+    await withConnection(new PostgresConnection(resolved), (connection) => connection.onInit());
 
     expect(await historyOf(url)).toHaveLength(1);
   });

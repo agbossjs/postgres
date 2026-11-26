@@ -135,7 +135,7 @@ async function answer(app: App, command: Command): Promise<void> {
   if (command.op === "close") process.exit(0);
 }
 
-const app = await createApp(ProcessApplication, { env: "process" });
+const app = await createApp(ProcessApplication);
 // the listener names its public URL in its Agent Card (agbossjs/agboss#808): built once listening
 const served: { listener?: ReturnType<typeof a2aHttpListener> } = {};
 const server = createServer((req, res) => served.listener?.(req, res));

@@ -30,7 +30,7 @@ const leasesOn = (clock: VirtualClock, instanceId: string) =>
   new PostgresExecutionLeaseRepository(
     connectionTo(database.url(), 1),
     new StoreClock(StoreTimeSource.Test, clock),
-    new TestApplicationContext({}, instanceId),
+    new TestApplicationContext(instanceId),
   );
 
 /** The sessions waiting on the session `pid`, directly or behind another waiter (a tuple lock). */

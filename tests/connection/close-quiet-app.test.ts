@@ -47,7 +47,7 @@ async function closedAgainstPausedServer(running: boolean): Promise<{
   const unhandled = watchUnhandled();
   const sockets = trackSockets(port);
   try {
-    const app = await createApp(StopApplication, { env: "stop" });
+    const app = await createApp(StopApplication);
     if (running) {
       app
         .execute(StopBatchStart, [{ name: "a" }, { name: "b" }] as never)
@@ -95,7 +95,7 @@ describe.skipIf(!HAS_DOCKER)("#954 AC3: an abandoned execute() settles with a ty
     const unhandled = watchUnhandled();
     const sockets = trackSockets(port);
     try {
-      const app = await createApp(StopApplication, { env: "stop" });
+      const app = await createApp(StopApplication);
       const outcome = app.execute(StopBatchStart, [{ name: "a" }, { name: "b" }] as never).then(
         (): unknown => "resolved",
         (error: unknown): unknown => error,

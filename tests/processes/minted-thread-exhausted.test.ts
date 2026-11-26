@@ -7,13 +7,8 @@
 import { createApp, IdGenerator, Injectable, ExecutionError } from "@agboss/core";
 import { generateKeyPairSync } from "node:crypto";
 import { beforeAll, describe, expect, it } from "vitest";
-import {
-  PostgresExecutionLeaseRepository,
-  PostgresExecutionRecordRepository,
-  PostgresFencedEffectRepository,
-  PostgresOutboundCallRepository,
-} from "../../src/index.js";
-import { storeLayoutOf } from "../fixtures/store-layout.application.js";
+import { PostgresExecutionRecordRepository } from "../../src/index.js";
+import { storageLayoutOf } from "../fixtures/store-layout.application.js";
 import { testDatabase } from "../support/database.js";
 
 const database = testDatabase();
@@ -39,16 +34,7 @@ beforeAll(() => {
 
 describe("agbossjs/agboss#613: a minted thread id that never finds a free one, on PostgreSQL", () => {
   it("through the core's check around the listed generator: ExecutionError.ThreadIdsExhausted naming the project's class", async () => {
-    const app = await createApp(
-      storeLayoutOf([
-        StuckIdGenerator,
-        PostgresExecutionLeaseRepository,
-        PostgresFencedEffectRepository,
-        PostgresOutboundCallRepository,
-        PostgresExecutionRecordRepository,
-      ]),
-      { env: "process" },
-    );
+    const app = await createApp(storageLayoutOf([StuckIdGenerator]));
     try {
       const records = app.resolve<PostgresExecutionRecordRepository>(
         PostgresExecutionRecordRepository,

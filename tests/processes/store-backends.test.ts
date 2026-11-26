@@ -5,9 +5,10 @@
  * the reverse — fails with `[application.store-backend-mismatch]`, naming both stores and both
  * backends, every violation at once. The all-PostgreSQL layout assembles, and so do PostgreSQL
  * leases with the in-memory rate limits and child queue (the core's defaults, unlisted) or a SQLite
- * audit log: no atomic step spans them. Built with the public `createApp`, on the test's own
- * schema (`tests/fixtures/store-layout.application.ts`); an application that assembles is closed
- * again.
+ * audit log: no atomic step spans them. A layout that lists the stores has no `@DatabaseStorage` to
+ * read a connection from: it assembles, and its start is refused by `PostgresSettingsError` before
+ * anything connects — that refusal is "assembled" here; the layout on the package's
+ * `PostgresDriver` is started once (`tests/fixtures/store-layout.application.ts`).
  */
 import {
   createApp,
@@ -30,11 +31,12 @@ import {
   PostgresOutboundCallRepository,
   POSTGRES_DURABLE_STORES,
   POSTGRES_STORES,
+  PostgresSettingsError,
 } from "../../src/index.js";
 import { CoordinationLeases } from "../fixtures/coordination-leases.js";
 import { testDatabase } from "../support/database.js";
 import { HeldPostgresExecutionLeaseRepository } from "../fixtures/held-stores.js";
-import { storeLayoutOf } from "../fixtures/store-layout.application.js";
+import { storageLayoutOf, storeLayoutOf } from "../fixtures/store-layout.application.js";
 
 const database = testDatabase();
 
@@ -47,14 +49,14 @@ beforeAll(() => {
 
 /** The store-backend violations of assembling `providers`, as `[code] message`. */
 async function backendViolationsOf(providers: readonly Provider[]): Promise<readonly string[]> {
-  const error: unknown = await createApp(storeLayoutOf(providers), { env: "process" }).then(
+  const error: unknown = await createApp(storeLayoutOf(providers)).then(
     async (app) => {
       await app.close();
       return undefined;
     },
     (thrown: unknown) => thrown,
   );
-  if (error === undefined) return [];
+  if (error === undefined || hasStoragelessStart(error)) return [];
   if (error instanceof Error && !(error instanceof ConfigError.GraphRules)) throw error;
   if (!(error instanceof ConfigError.GraphRules)) throw new Error("the assembly threw a non-error");
   return error.violations
@@ -62,10 +64,22 @@ async function backendViolationsOf(providers: readonly Provider[]): Promise<read
     .map((found) => `[${found.code}] ${found.message}`);
 }
 
-/** Assembles `providers` and closes the application: any assembly error is thrown. */
+/** `error`, and every `cause` under it. */
+const chainOf = (error: unknown): unknown[] =>
+  error instanceof Error ? [error, ...chainOf(error.cause)] : [error];
+
+/** Whether the start (not the assembly) was refused for want of a `@DatabaseStorage`. */
+const hasStoragelessStart = (error: unknown): boolean =>
+  chainOf(error).some((link) => link instanceof PostgresSettingsError);
+
+/** Assembles `providers`: any assembly error is thrown; the start's refusal, having no storage, is the assembly's success. */
 async function assembled(providers: readonly Provider[]): Promise<true> {
-  const app = await createApp(storeLayoutOf(providers), { env: "process" });
-  await app.close();
+  await createApp(storeLayoutOf(providers)).then(
+    (app) => app.close(),
+    (thrown: unknown) => {
+      if (!hasStoragelessStart(thrown)) throw thrown;
+    },
+  );
   return true;
 }
 
@@ -203,8 +217,13 @@ describe("agbossjs/agboss#891 AC3: the store bundles in providers", () => {
     );
   });
 
-  it("AC3: ...POSTGRES_STORES assembles and starts — a whole application on PostgreSQL", async () => {
+  it("AC3: ...POSTGRES_STORES assembles — a whole application on PostgreSQL", async () => {
     expect(await assembled([...POSTGRES_STORES])).toBe(true);
+  });
+
+  it("the package's PostgresDriver starts — a whole application on PostgreSQL, no store listed", async () => {
+    const app = await createApp(storageLayoutOf());
+    await app.close();
   });
 
   it("AC3: ...POSTGRES_DURABLE_STORES beside coordination leases and provide(EXECUTION_ID_STORE, …): no ambiguity, no mismatch", async () => {

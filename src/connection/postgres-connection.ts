@@ -1,14 +1,8 @@
-import {
-  ApplicationContext,
-  EnvironmentField,
-  Injectable,
-  type OnDestroy,
-  type OnInit,
-} from "@agboss/core";
+import { Injectable, type OnDestroy, type OnInit } from "@agboss/core";
 import pg from "pg";
 import { z } from "zod";
 import { migrationsIn } from "../migrations/files.js";
-import { PostgresConnectionClosedError } from "../errors.js";
+import { PostgresConnectionClosedError, PostgresSettingsError } from "../errors.js";
 import { trackedClientOf } from "./tracked-client.js";
 import { requiredTransaction } from "./ambient.js";
 import { once } from "./once.js";
@@ -20,23 +14,27 @@ import { TimedClient } from "./timed-client.js";
 import {
   checkedWatchLivenessOf,
   DEFAULT_WATCH_LIVENESS_SECONDS,
-  settingsOfEnvironment,
   type PostgresConnectionSettings,
 } from "./settings.js";
 import { DATABASE_SETTINGS, SchemaSetup, type ResolvedSettings } from "@agboss/core/stores";
 import { settingsOfResolved } from "./driver-settings.js";
 
 /**
- * The settings of a connection: the driver's resolved settings when the application names a
- * `@DatabaseStorage` of `PostgresDriver` (agbossjs/agboss#1321), else the environment's fields (until
- * they are removed), else the settings object a script or a test gave.
+ * The settings of a connection: the resolved settings of the application's `@DatabaseStorage` of
+ * `PostgresDriver` (agbossjs/agboss#1321), else the settings object a script or a test gave. An
+ * application with no PostgreSQL storage and no object is `PostgresSettingsError`: the
+ * environment is no source of the connection any more (agbossjs/agboss#1324).
  */
 function settingsOf(
-  source: ApplicationContext | PostgresConnectionSettings,
-  resolved: ResolvedSettings | undefined,
+  source: PostgresConnectionSettings | ResolvedSettings | undefined,
 ): PostgresConnectionSettings {
-  if (resolved?.kind === "postgres") return settingsOfResolved(resolved);
-  return source instanceof ApplicationContext ? settingsOfEnvironment(source.environment) : source;
+  if (source === undefined)
+    throw new PostgresSettingsError({
+      message:
+        "the PostgreSQL stores need the application's @DatabaseStorage({ driver: PostgresDriver({ url: secret(…) }) }) — the database they open",
+    });
+  if ("kind" in source) return settingsOfResolved(source);
+  return source;
 }
 
 const SchemaRow = z.object({ schema: z.string().nullable() });
@@ -80,30 +78,17 @@ export function listenerOf(
 }
 
 /**
- * The PostgreSQL database of one application instance: one `pg.Pool` (`postgresPoolSize`
- * connections, default 10) on the environment's `postgresUrl`, shared by every PostgreSQL store the
- * application lists — two instances open two pools to one database. Created by the container
- * (`deps: [ApplicationContext]`), or by a script or a test from its settings
- * (`new PostgresConnection({ url })`). Every connection of the pool works in the settings' `schema`
- * (`postgresSchema`; its `search_path`, agbossjs/agboss#891), else in the URL's `search_path`. At
+ * The PostgreSQL database of one application instance: one `pg.Pool` (`poolSize` connections,
+ * default 10) on the `url` of the application's `@DatabaseStorage({ driver: PostgresDriver({ url }) })`,
+ * shared by every PostgreSQL store the application lists — two instances open two pools to one
+ * database. Created by the container (`deps: [DATABASE_SETTINGS]`), or by a script or a test from
+ * its settings (`new PostgresConnection({ url })`). Every connection of the pool works in the
+ * settings' `schema` (its `search_path`, agbossjs/agboss#891), else in the URL's `search_path`. At
  * `onInit` it checks the schema (`SchemaSetup.MigrateOnStart` migrates it first) and, when the check
  * fails, ends the pool; at `onDestroy`, after its stores, it ends the pool. The DI token a subclass
  * of a PostgreSQL store names in its `deps`.
  */
-@Injectable({
-  deps: [ApplicationContext, DATABASE_SETTINGS],
-  // checked at the application's assembly (agbossjs/agboss#511): a contract without postgresUrl
-  // fails with [environment.missing-field] before anything starts
-  environmentFields: {
-    postgresUrl: EnvironmentField.secret(),
-    postgresPoolSize: EnvironmentField.integer({ optional: true }),
-    postgresWatchLivenessSeconds: EnvironmentField.integer({ optional: true }),
-    postgresCommandTimeoutMs: EnvironmentField.integer({ optional: true }),
-    postgresIdleInTransactionTimeoutMs: EnvironmentField.integer({ optional: true }),
-    postgresSchema: EnvironmentField.text({ optional: true }),
-    postgresSchemaSetup: EnvironmentField.text({ optional: true }),
-  },
-})
+@Injectable({ deps: [DATABASE_SETTINGS] })
 export class PostgresConnection implements OnInit, OnDestroy {
   /** The instance's pool: every store's statements, every transaction's connection. */
   readonly pool: pg.Pool;
@@ -112,14 +97,11 @@ export class PostgresConnection implements OnInit, OnDestroy {
   /** The pool's clients, from their making to their end (even one still connecting): what `onDestroy` drops by force. */
   readonly #clients = new Set<() => void>();
 
-  constructor(
-    source: ApplicationContext | PostgresConnectionSettings,
-    resolved?: ResolvedSettings,
-  ) {
+  constructor(source?: PostgresConnectionSettings | ResolvedSettings) {
     // a copy: the caller changing its object after this line must not bypass the checks below, nor
     // change what the pool, the start and the watch read later (agbossjs/agboss#1129)
     this.#settings = Object.freeze({
-      ...settingsOf(source, resolved),
+      ...settingsOf(source),
     });
     checkedWatchLivenessOf(this.#settings.watchLivenessSeconds);
     SETTINGS.set(this, this.#settings);

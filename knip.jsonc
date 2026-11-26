@@ -27,8 +27,6 @@
     "vitest.*.config.ts",
     // loaded by path: the instance each process test starts (tests/processes/instances.ts)
     "tests/processes/instance.ts",
-    // loaded by path: the environments of `--env <name>` next to their applications
-    "tests/fixtures/**/*.environment.ts",
     // loaded by path: the fixtures a nested vitest runs (`storeConformance` sabotage, #693)
     "tests/contracts/fixtures/*.conformance-fixture.ts",
   ],

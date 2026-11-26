@@ -1,3 +1,4 @@
+import type { ResolvedSettings } from "@agboss/core/stores";
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_COMMAND_TIMEOUT,
@@ -8,18 +9,23 @@ import {
   PostgresSettingsError,
   SchemaSetup,
 } from "../../src/index.js";
-import { searchPathOptionOf, settingsOfEnvironment } from "../../src/connection/settings.js";
+import { searchPathOptionOf } from "../../src/connection/settings.js";
+import { settingsOfResolved } from "../../src/connection/driver-settings.js";
 import { revealing } from "../support/application-context.js";
 
 const URL = "postgres://app:secret@db:5432/app";
 
-describe("agbossjs/agboss#928: the command timeout fields", () => {
-  it("postgresCommandTimeoutMs and postgresIdleInTransactionTimeoutMs are read when set", () => {
-    const settings = settingsOfEnvironment({
-      postgresUrl: revealing(URL),
-      postgresCommandTimeoutMs: 2500,
-      postgresIdleInTransactionTimeoutMs: 4000,
-    });
+const resolved = (fields: Record<string, unknown> = {}): ResolvedSettings => ({
+  kind: "postgres",
+  url: revealing(URL),
+  ...fields,
+});
+
+describe("agbossjs/agboss#928: the command timeout options", () => {
+  it("commandTimeout and idleInTransactionTimeout are read when set", () => {
+    const settings = settingsOfResolved(
+      resolved({ commandTimeout: 2500, idleInTransactionTimeout: 4000 }),
+    );
 
     expect(settings).toMatchObject({ commandTimeout: 2500, idleInTransactionTimeout: 4000 });
     expect(DEFAULT_COMMAND_TIMEOUT).toBe(10_000);
@@ -27,27 +33,23 @@ describe("agbossjs/agboss#928: the command timeout fields", () => {
   });
 
   it.each([0, -5, 99, 30_001, 1.5])(
-    "postgresCommandTimeoutMs %s is refused with PostgresSettingsError naming the field, never the URL",
+    "commandTimeout %s is refused with PostgresSettingsError naming the field, never the URL",
     (value) => {
-      const failure = (): unknown =>
-        settingsOfEnvironment({ postgresUrl: revealing(URL), postgresCommandTimeoutMs: value });
+      const failure = (): unknown => settingsOfResolved(resolved({ commandTimeout: value }));
 
       expect(failure).toThrow(PostgresSettingsError);
-      expect(failure).toThrow(/postgresCommandTimeoutMs must be a whole number of milliseconds/u);
+      expect(failure).toThrow(/commandTimeout must be a whole number of milliseconds/u);
       expect(failure).not.toThrow(/secret@db/u);
     },
   );
 
-  it("postgresIdleInTransactionTimeoutMs 0 is refused the same way", () => {
-    expect(() =>
-      settingsOfEnvironment({
-        postgresUrl: revealing(URL),
-        postgresIdleInTransactionTimeoutMs: 0,
-      }),
-    ).toThrow(/postgresIdleInTransactionTimeoutMs must be a whole number/u);
+  it("idleInTransactionTimeout 0 is refused the same way", () => {
+    expect(() => settingsOfResolved(resolved({ idleInTransactionTimeout: 0 }))).toThrow(
+      /idleInTransactionTimeout must be a whole number/u,
+    );
   });
 
-  it("a settings object is checked as the environment is: 0 and 30 001 fail at construction", () => {
+  it("a settings object is checked as the driver's are: 0 and 30 001 fail at construction", () => {
     for (const commandTimeout of [0, 30_001])
       expect(() => new PostgresConnection({ url: URL, commandTimeout })).toThrow(
         /commandTimeout must be a whole number of milliseconds/u,
@@ -81,95 +83,66 @@ describe("agbossjs/agboss#928: the command timeout fields", () => {
   });
 });
 
-describe("the environment fields of the PostgreSQL stores", () => {
-  it("postgresUrl is a Secret: its revealed value is the URL; the others are optional", () => {
-    expect(settingsOfEnvironment({ postgresUrl: revealing(URL) })).toEqual({
+describe("the settings of the PostgreSQL stores", () => {
+  it("the driver's url is a secret: its revealed value is the URL; the others are optional", () => {
+    expect(settingsOfResolved(resolved())).toEqual({
       url: URL,
       poolSize: undefined,
+      schema: undefined,
+      schemaSetup: undefined,
       watchLivenessSeconds: undefined,
       commandTimeout: undefined,
       idleInTransactionTimeout: undefined,
-      schema: undefined,
-      schemaSetup: undefined,
     });
     expect(DEFAULT_POOL_SIZE).toBe(10);
     expect(DEFAULT_WATCH_LIVENESS_SECONDS).toBe(10);
   });
 
-  it("agbossjs/agboss#891: postgresPoolSize, postgresSchema and postgresSchemaSetup are read when set", () => {
-    const settings = settingsOfEnvironment({
-      postgresUrl: revealing(URL),
-      postgresPoolSize: 3,
-      postgresSchema: "app_a",
-      postgresSchemaSetup: "migrate-on-start",
-    });
+  it("agbossjs/agboss#891: poolSize, schema and schemaSetup are read when set", () => {
+    const settings = settingsOfResolved(
+      resolved({ poolSize: 3, schema: "app_a", schemaSetup: SchemaSetup.MigrateOnStart }),
+    );
 
     expect(settings).toEqual({
       url: URL,
       poolSize: 3,
       watchLivenessSeconds: undefined,
+      commandTimeout: undefined,
+      idleInTransactionTimeout: undefined,
       schema: "app_a",
       schemaSetup: SchemaSetup.MigrateOnStart,
     });
   });
 
-  it("agbossjs/agboss#1104: postgresAllowLiveLeases is read when set, false by default", () => {
-    expect(
-      settingsOfEnvironment({ postgresUrl: revealing(URL), postgresAllowLiveLeases: true }),
-    ).toMatchObject({ allowLiveLeases: true });
-    expect(settingsOfEnvironment({ postgresUrl: revealing(URL) }).allowLiveLeases).toBeUndefined();
-  });
-
-  it("agbossjs/agboss#789: postgresWatchLivenessSeconds is read when set", () => {
-    expect(
-      settingsOfEnvironment({ postgresUrl: revealing(URL), postgresWatchLivenessSeconds: 6 }),
-    ).toMatchObject({ watchLivenessSeconds: 6 });
+  it("agbossjs/agboss#789: the watch's liveness is read in seconds", () => {
+    expect(settingsOfResolved(resolved({ watchLiveness: 6000 }))).toMatchObject({
+      watchLivenessSeconds: 6,
+    });
   });
 
   it("agbossjs/agboss#891: the search_path option names the schema quoted", () => {
     expect(searchPathOptionOf("app_a")).toBe('-c search_path="app_a"');
   });
 
-  it("a missing postgresUrl fails, naming the field and how to declare it", () => {
-    expect(() => settingsOfEnvironment({})).toThrow(PostgresSettingsError);
-    expect(() => settingsOfEnvironment({})).toThrow(
-      /postgresUrl is missing: declare postgresUrl!: Secret/,
-    );
+  it("no settings at all (an application with no PostgreSQL storage) fails, naming the storage to declare", () => {
+    const build = (): unknown => new PostgresConnection(undefined);
+
+    expect(build).toThrow(PostgresSettingsError);
+    expect(build).toThrow(/@DatabaseStorage\(\{ driver: PostgresDriver/);
   });
 
-  it("a postgresUrl that is a plain string, not a Secret, fails without printing it", () => {
-    const failure = (): unknown => settingsOfEnvironment({ postgresUrl: URL });
+  it("another driver's settings fail without printing a URL", () => {
+    const build = (): unknown => new PostgresConnection({ kind: "sqlite", path: "x" });
 
-    expect(failure).toThrow(/postgresUrl must be a Secret/);
-    expect(failure).not.toThrow(/secret@db/);
-  });
-
-  it("an empty postgresUrl fails", () => {
-    expect(() => settingsOfEnvironment({ postgresUrl: revealing("") })).toThrow(
-      "postgresUrl is empty",
-    );
+    expect(build).toThrow(PostgresSettingsError);
   });
 
   it.each([
-    [{ postgresPoolSize: 0 }, /postgresPoolSize must be at least 1/],
-    [{ postgresPoolSize: 2.5 }, /postgresPoolSize must be a whole number/],
-    [{ postgresPoolSize: "10" }, /postgresPoolSize must be a number/],
-    [{ postgresWatchLivenessSeconds: 1 }, /postgresWatchLivenessSeconds must be at least 2/],
-    [{ postgresWatchLivenessSeconds: 2.5 }, /postgresWatchLivenessSeconds must be a whole number/],
-    [{ postgresWatchLivenessSeconds: "5" }, /postgresWatchLivenessSeconds must be a number/],
-    [{ postgresSchemaSetup: true }, /postgresSchemaSetup must be one of: check, migrate-on-start/],
-    [
-      { postgresSchemaSetup: "migrate" },
-      /postgresSchemaSetup must be one of: check, migrate-on-start/,
-    ],
-    [{ postgresAllowLiveLeases: "true" }, /postgresAllowLiveLeases must be true or false/],
-    [{ postgresSchema: 1 }, /postgresSchema must be a text/],
-    [{ postgresSchema: "" }, /the schema name is empty/],
-    [{ postgresSchema: "App A" }, /plain lowercase identifier/],
-  ])("a mistyped field fails, naming it: %o", (fields, message) => {
-    expect(() => settingsOfEnvironment({ postgresUrl: revealing(URL), ...fields })).toThrow(
-      message,
-    );
+    [{ poolSize: 0 }, /the PostgreSQL driver's settings are wrong/],
+    [{ schema: "" }, /the schema name is empty/],
+    [{ schema: "App A" }, /plain lowercase identifier/],
+  ])("a wrong option fails: %o", (fields, message) => {
+    expect(() => settingsOfResolved(resolved(fields))).toThrow(message);
   });
 
   it("the error has its stable code", () => {

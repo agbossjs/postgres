@@ -14,7 +14,7 @@ const queueOf = (instanceId: string): PostgresChildExecutionQueueRepository =>
   new PostgresChildExecutionQueueRepository(
     connectionTo(database.url(), 3),
     new VirtualClock(),
-    new TestApplicationContext({}, instanceId),
+    new TestApplicationContext(instanceId),
     new RecordingLogger(),
   );
 
@@ -68,7 +68,7 @@ describe("PostgresChildExecutionQueueRepository: FOR UPDATE SKIP LOCKED", () => 
     const queue = new PostgresChildExecutionQueueRepository(
       connection,
       new VirtualClock(),
-      new TestApplicationContext({}, "instance-1"),
+      new TestApplicationContext("instance-1"),
       new RecordingLogger(),
     );
     // the queue after a batch of one (the frozen pod's job): analyzed at one row, then a batch
@@ -95,7 +95,7 @@ describe("PostgresChildExecutionQueueRepository: FOR UPDATE SKIP LOCKED", () => 
     const queue = new PostgresChildExecutionQueueRepository(
       connectionTo("postgres://postgres:pw@127.0.0.1:1/postgres"),
       new VirtualClock(),
-      new TestApplicationContext({}),
+      new TestApplicationContext(),
       new RecordingLogger(),
     );
 
@@ -109,7 +109,7 @@ describe("PostgresChildExecutionQueueRepository: one child's life", () => {
     const queue = new PostgresChildExecutionQueueRepository(
       connectionTo(database.url()),
       clock,
-      new TestApplicationContext({}, "instance-life"),
+      new TestApplicationContext("instance-life"),
       new RecordingLogger(),
     );
     const one = { ...child(900), executionId: "child-life", rootExecutionId: "root-life" };
@@ -137,7 +137,7 @@ describe("PostgresChildExecutionQueueRepository: one child's life", () => {
     const queue = new PostgresChildExecutionQueueRepository(
       connection,
       new VirtualClock(),
-      new TestApplicationContext({}, "instance-ping"),
+      new TestApplicationContext("instance-ping"),
       new RecordingLogger(),
     );
 

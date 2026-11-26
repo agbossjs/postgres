@@ -16,7 +16,7 @@ import {
 } from "../../src/migrations/live-leases.js";
 import { migrateWith, migratePostgres } from "../../src/migrations/migrate.js";
 import { checkSchema } from "../../src/migrations/schema-check.js";
-import { TestApplicationContext, revealing } from "../support/application-context.js";
+import { TestApplicationContext } from "../support/application-context.js";
 import { freshSchema, onSchema } from "../support/database.js";
 import { migrationsFolder } from "../support/migration-folders.js";
 import { historyOf } from "../support/schema-dump.js";
@@ -91,7 +91,7 @@ describe("#1104: a start that migrates and the live leases", () => {
 
     expect(error).toBeInstanceOf(PostgresLiveLeasesError);
     expect(error).toMatchObject({ code: "postgres.live-leases", count: 1, holders: ["old-pod"] });
-    expect(String(error)).toContain("postgresAllowLiveLeases");
+    expect(String(error)).toContain("allowLiveLeases: true");
     expect((await historyOf(url)).at(-1)).toBe(BASELINE_NEWEST);
   });
 
@@ -101,23 +101,6 @@ describe("#1104: a start that migrates and the live leases", () => {
     await startOf(url, { allowLiveLeases: true });
 
     expect((await historyOf(url)).at(-1)).toBe(NEWEST);
-  });
-
-  it("postgresAllowLiveLeases in the application's environment is read as the same override", async () => {
-    const url = await schemaWithLease(3_600_000);
-    const environment = {
-      postgresUrl: revealing(url),
-      postgresSchemaSetup: SchemaSetup.MigrateOnStart,
-      postgresAllowLiveLeases: true,
-    };
-    const connection = new PostgresConnection(new TestApplicationContext(environment));
-
-    // the package has no migration pending on a baseline database: the start goes on
-    // over the live lease (a later release's migration would apply, as in the test above)
-    await connection.onInit();
-    await connection.onDestroy();
-
-    expect((await historyOf(url)).at(-1)).toBe(BASELINE_NEWEST);
   });
 
   it("no migration pending: a restart with a live lease starts at once", async () => {
@@ -284,7 +267,7 @@ class OldInstance {
     const leases = new PostgresExecutionLeaseRepository(
       this.connection,
       new StoreClock(),
-      new TestApplicationContext({}, this.id),
+      new TestApplicationContext(this.id),
     );
     const held = await leases.acquire("default", "run-1", seconds(2));
     if (held === undefined) throw new Error("the old instance must take the lease");

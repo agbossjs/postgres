@@ -9,14 +9,9 @@
 import { createApp, IdGenerator, Injectable, KeyTextRule, ExecutionError } from "@agboss/core";
 import { generateKeyPairSync } from "node:crypto";
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
-import {
-  PostgresExecutionLeaseRepository,
-  PostgresExecutionRecordRepository,
-  PostgresFencedEffectRepository,
-  PostgresOutboundCallRepository,
-} from "../../src/index.js";
+import { PostgresExecutionRecordRepository } from "../../src/index.js";
 import { onSchema, testDatabase } from "../support/database.js";
-import { storeLayoutOf } from "../fixtures/store-layout.application.js";
+import { storageLayoutOf } from "../fixtures/store-layout.application.js";
 
 const database = testDatabase();
 
@@ -52,16 +47,7 @@ const threadRows = async (): Promise<number> =>
 
 describe("agbossjs/agboss#578: a minted thread id on PostgreSQL is a key's text", () => {
   it("x\\uD800, then x\\uDFFF: both refused before a row is written; a valid id makes its thread", async () => {
-    const app = await createApp(
-      storeLayoutOf([
-        PlannedIdGenerator,
-        PostgresExecutionLeaseRepository,
-        PostgresFencedEffectRepository,
-        PostgresOutboundCallRepository,
-        PostgresExecutionRecordRepository,
-      ]),
-      { env: "process" },
-    );
+    const app = await createApp(storageLayoutOf([PlannedIdGenerator]));
     try {
       const records = app.resolve<PostgresExecutionRecordRepository>(
         PostgresExecutionRecordRepository,

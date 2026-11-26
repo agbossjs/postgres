@@ -4,7 +4,7 @@
  * the process tests' application, which writes `.agboss/types.d.ts` — the flow types its workflows
  * compile against (`tsconfig.processes.json`). Never committed; run before lint and typecheck, as
  * the core's own `check:types`. The check assembles the application only: the database URL its
- * environment names is a placeholder, nothing connects; the mesh peer's key is a throwaway one.
+ * storage names is a placeholder, nothing connects; the mesh peer's key is a throwaway one.
  */
 import { execFileSync } from "node:child_process";
 import { generateKeyPairSync } from "node:crypto";
@@ -16,7 +16,7 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const cli = createRequire(join(ROOT, "package.json")).resolve("@agboss/cli/bin/agboss.js");
 execFileSync(
   process.execPath,
-  [cli, "check", "--application", "tests/fixtures/process.application.ts", "--env", "process"],
+  [cli, "check", "--application", "tests/fixtures/process.application.ts"],
   {
     cwd: ROOT,
     stdio: ["ignore", "ignore", "inherit"],

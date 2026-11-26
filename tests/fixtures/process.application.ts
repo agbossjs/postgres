@@ -4,7 +4,6 @@ import {
   BudgetPeriod,
   BudgetScope,
   DatabaseStorage,
-  EmptyEnvironment,
   env,
   Mesh,
   MeshInboundMode,
@@ -115,7 +114,6 @@ export class ProcessMesh {}
 @Application({
   name: "postgres-process-application",
   version: "1.0.0",
-  environment: EmptyEnvironment,
   storage: ProcessDatabaseStorage,
   workflows: [
     TakeoverWorkflow,

@@ -27,7 +27,7 @@ function stores() {
   return {
     effects: new PostgresFencedEffectRepository(connection, clock),
     calls: new PostgresOutboundCallRepository(connection, clock),
-    leases: new PostgresExecutionLeaseRepository(connection, clock, new TestApplicationContext({})),
+    leases: new PostgresExecutionLeaseRepository(connection, clock, new TestApplicationContext()),
   };
 }
 

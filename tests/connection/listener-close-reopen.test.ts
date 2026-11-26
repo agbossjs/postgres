@@ -86,13 +86,13 @@ describe("agbossjs/agboss#1129: close() waits for a reconnect in flight", () => 
     const watched = new PostgresChildExecutionQueueRepository(
       connection,
       clock,
-      new TestApplicationContext({}, "instance-2"),
+      new TestApplicationContext("instance-2"),
       logger,
     );
     const queued = new PostgresChildExecutionQueueRepository(
       connectionTo(database.url(), 2),
       clock,
-      new TestApplicationContext({}, "instance-1"),
+      new TestApplicationContext("instance-1"),
       new RecordingLogger(),
     );
     const clients = trackClients();

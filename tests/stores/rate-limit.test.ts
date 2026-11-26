@@ -17,7 +17,7 @@ const database = testDatabase();
 const instancesOn = (clock: VirtualClock, url = database.url()) =>
   ["instance-1", "instance-2"].map(
     (id) =>
-      new PostgresRateLimitRepository(connectionTo(url), clock, new TestApplicationContext({}, id)),
+      new PostgresRateLimitRepository(connectionTo(url), clock, new TestApplicationContext(id)),
   ) as [PostgresRateLimitRepository, PostgresRateLimitRepository];
 
 const LEASE = seconds(30);

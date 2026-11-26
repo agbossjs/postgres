@@ -52,7 +52,7 @@ function instanceOn(clock: Clock, time: Time, index: number) {
     leases: new PostgresExecutionLeaseRepository(
       connection,
       storeClock,
-      new TestApplicationContext({}, `instance-${String(index)}`),
+      new TestApplicationContext(`instance-${String(index)}`),
     ),
   };
 }

@@ -62,7 +62,7 @@ export function recordsOn(
   return new PostgresExecutionRecordRepository(
     connectionTo(url),
     clock,
-    new TestApplicationContext({}),
+    new TestApplicationContext(),
     ids,
   );
 }

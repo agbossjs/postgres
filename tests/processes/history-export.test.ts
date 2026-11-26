@@ -36,7 +36,7 @@ async function exportRecords(whose: readonly string[]): Promise<Exported[]> {
   const application = ["--application", "tests/fixtures/process.application.ts"];
   await promisify(execFile)(
     process.execPath,
-    [CLI, "records", "export", ...whose, "--out", out, ...application, "--env", "process"],
+    [CLI, "records", "export", ...whose, "--out", out, ...application],
     { cwd: ROOT, env: processEnvOf(database.url()) },
   );
   const lines = readFileSync(out, "utf8").split("\n").filter(Boolean);

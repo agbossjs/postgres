@@ -27,7 +27,7 @@ const leasesOn = (store: StoreClock, instanceId: string) =>
   new PostgresExecutionLeaseRepository(
     connectionTo(database.url()),
     store,
-    new TestApplicationContext({}, instanceId),
+    new TestApplicationContext(instanceId),
   );
 
 const WaitingRow = z.object({ waiting: z.number() });

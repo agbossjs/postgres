@@ -22,11 +22,10 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   PostgresExecutionAuditLogRepository,
   PostgresExecutionLeaseRepository,
-  PostgresFencedEffectRepository,
   PostgresOutboundCallRepository,
 } from "../../src/index.js";
 import { testDatabase } from "../support/database.js";
-import { storeLayoutOf } from "../fixtures/store-layout.application.js";
+import { storageLayoutOf } from "../fixtures/store-layout.application.js";
 import { effectKeyForTesting } from "@agboss/core/testing/contracts";
 
 const database = testDatabase();
@@ -34,13 +33,6 @@ const database = testDatabase();
 /** The tenant and the root whose rows a lone surrogate would read on PostgreSQL. */
 const TENANT = "t�";
 const ROOT = "r�";
-
-const POSTGRES_STORES = [
-  PostgresExecutionLeaseRepository,
-  PostgresFencedEffectRepository,
-  PostgresOutboundCallRepository,
-  PostgresExecutionAuditLogRepository,
-];
 
 let app: App;
 
@@ -103,7 +95,7 @@ beforeAll(async () => {
   process.env.AGBOSS_PROCESS_MESH_PEER_KEY = generateKeyPairSync("ed25519")
     .publicKey.export({ type: "spki", format: "pem" })
     .toString();
-  app = await createApp(storeLayoutOf(POSTGRES_STORES), { env: "process" });
+  app = await createApp(storageLayoutOf());
   const lease = await app
     .resolve(PostgresExecutionLeaseRepository)
     .acquire(TENANT, "r1", seconds(30));

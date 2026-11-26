@@ -36,7 +36,7 @@ const queueOf = (instanceId: string): PostgresChildExecutionQueueRepository =>
   new PostgresChildExecutionQueueRepository(
     connectionTo(namedUrl(), 2),
     clock,
-    new TestApplicationContext({}, instanceId),
+    new TestApplicationContext(instanceId),
     new RecordingLogger(),
   );
 

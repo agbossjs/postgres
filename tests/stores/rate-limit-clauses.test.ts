@@ -17,7 +17,7 @@ const limitsOn = (clock: VirtualClock): PostgresRateLimitRepository =>
   new PostgresRateLimitRepository(
     connectionTo(database.url()),
     clock,
-    new TestApplicationContext({}, "instance-1"),
+    new TestApplicationContext("instance-1"),
   );
 
 const slotsOf = async (key: string): Promise<number> =>

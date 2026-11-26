@@ -20,7 +20,7 @@ const leasesOn = (instanceId: string) =>
   new PostgresExecutionLeaseRepository(
     connectionTo(database.url()),
     new StoreClock(StoreTimeSource.Test, new VirtualClock()),
-    new TestApplicationContext({}, instanceId),
+    new TestApplicationContext(instanceId),
   );
 
 describe("the marks' statements", () => {

@@ -36,7 +36,7 @@ export class PostgresSchemaMissingError extends AGBossError {
 
   constructor(versions: SchemaVersions) {
     super(
-      `the PostgreSQL schema is at migration ${String(versions.applied)}, this package needs ${String(versions.expected)}: run \`${MIGRATE_COMMAND}\` with POSTGRES_URL set (add --schema <name> for the application's postgresSchema; or set postgresSchemaSetup: SchemaSetup.MigrateOnStart in the environment)`,
+      `the PostgreSQL schema is at migration ${String(versions.applied)}, this package needs ${String(versions.expected)}: run \`${MIGRATE_COMMAND}\` with POSTGRES_URL set (add --schema <name> for the driver's schema; or give PostgresDriver schemaSetup: SchemaSetup.MigrateOnStart)`,
       { cause: versions.cause },
     );
     this.applied = versions.applied;
@@ -111,8 +111,8 @@ export interface PostgresLiveLeasesErrorOptions {
  * running work. A schema upgrade is stop every old instance, then migrate, then deploy
  * (agbossjs/agboss#1104, ADR-0034): a running old instance writes rows the new schema's guarantees
  * do not cover. Nothing was applied. Stop the old instances (let their leases lapse) and run again;
- * `allowLiveLeases: true` / `--allow-live-leases` (the start's: the settings' `allowLiveLeases`, the
- * environment's `postgresAllowLiveLeases`) migrates anyway. An idle old instance holds no
+ * `allowLiveLeases: true` / `--allow-live-leases` (the start's: the connection settings'
+ * `allowLiveLeases`) migrates anyway. An idle old instance holds no
  * lease: this check does not see it.
  */
 export class PostgresLiveLeasesError extends AGBossError {
@@ -124,7 +124,7 @@ export class PostgresLiveLeasesError extends AGBossError {
 
   constructor(options: PostgresLiveLeasesErrorOptions) {
     super(
-      `${String(options.count)} live execution lease(s) held by ${options.holders.join(", ")}${options.count > options.holders.length ? " and others" : ""}: an instance of the previous version is still running — stop every old instance, run the migration, then deploy the new version (ADR-0034); to migrate anyway pass allowLiveLeases: true (agboss-postgres migrate --allow-live-leases; for a start with MigrateOnStart: allowLiveLeases in the connection's settings, postgresAllowLiveLeases in the environment)`,
+      `${String(options.count)} live execution lease(s) held by ${options.holders.join(", ")}${options.count > options.holders.length ? " and others" : ""}: an instance of the previous version is still running — stop every old instance, run the migration, then deploy the new version (ADR-0034); to migrate anyway pass allowLiveLeases: true (agboss-postgres migrate --allow-live-leases; for a start with MigrateOnStart: allowLiveLeases in the connection's settings)`,
       { cause: options.cause },
     );
     this.count = options.count;
@@ -139,9 +139,9 @@ export interface PostgresSettingsErrorOptions {
 }
 
 /**
- * The environment does not give what a PostgreSQL store needs: `postgresUrl` (a `Secret`), and
- * when set, `postgresPoolSize` (a whole number from 1), `postgresSchema` (a schema name: not empty,
- * no NUL, at most 63 bytes) and `postgresSchemaSetup` (a `SchemaSetup`).
+ * The settings do not give what a PostgreSQL store needs: no `PostgresDriver` storage or settings
+ * object, an empty `url`, a `poolSize` that is not a whole number from 1, a `schema` that is not a
+ * plain lowercase name (not empty, at most 63 bytes), a timeout or a watch liveness out of its range.
  */
 export class PostgresSettingsError extends AGBossError {
   static override readonly code = "postgres.settings-invalid" as const;

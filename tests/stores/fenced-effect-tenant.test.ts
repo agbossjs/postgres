@@ -27,7 +27,7 @@ function storesOn(): {
   const clock = new StoreClock(StoreTimeSource.Test, new VirtualClock());
   return {
     effects: new PostgresFencedEffectRepository(connection, clock),
-    leases: new PostgresExecutionLeaseRepository(connection, clock, new TestApplicationContext({})),
+    leases: new PostgresExecutionLeaseRepository(connection, clock, new TestApplicationContext()),
   };
 }
 

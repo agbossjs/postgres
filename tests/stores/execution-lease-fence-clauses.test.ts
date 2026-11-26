@@ -29,7 +29,7 @@ function storesOn(url = database.url()) {
   const connection = connectionTo(url);
   return {
     effects: new PostgresFencedEffectRepository(connection, clock),
-    leases: new PostgresExecutionLeaseRepository(connection, clock, new TestApplicationContext({})),
+    leases: new PostgresExecutionLeaseRepository(connection, clock, new TestApplicationContext()),
     calls: new PostgresOutboundCallRepository(connection, clock),
   };
 }

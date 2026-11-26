@@ -27,7 +27,7 @@ const leasesOn = (clock: VirtualClock, instanceId: string) =>
   new PostgresExecutionLeaseRepository(
     connectionTo(database.url(), 1),
     new StoreClock(StoreTimeSource.Test, clock),
-    new TestApplicationContext({}, instanceId),
+    new TestApplicationContext(instanceId),
   );
 
 /** The stored row of `root`: its epoch and whether it is finished. */

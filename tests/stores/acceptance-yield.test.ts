@@ -33,7 +33,7 @@ const leasesOn = (
   new Store(
     connectionTo(database.url()),
     new StoreClock(StoreTimeSource.Test, clock),
-    new TestApplicationContext({}, instanceId),
+    new TestApplicationContext(instanceId),
   );
 
 const rowOf = async (root: string): Promise<unknown> =>

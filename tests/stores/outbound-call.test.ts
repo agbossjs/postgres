@@ -38,7 +38,7 @@ const ROUNDS = 15;
 
 function instanceOn(clock: VirtualClock, index: number, poolSize = 2) {
   const connection = connectionTo(database.url(), poolSize);
-  const application = new TestApplicationContext({}, `instance-${String(index)}`);
+  const application = new TestApplicationContext(`instance-${String(index)}`);
   return {
     calls: new PostgresOutboundCallRepository(
       connection,

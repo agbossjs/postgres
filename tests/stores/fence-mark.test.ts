@@ -25,7 +25,7 @@ describe("the scope's mark", () => {
     const leases = new PostgresExecutionLeaseRepository(
       connection,
       clock,
-      new TestApplicationContext({}),
+      new TestApplicationContext(),
     );
     const effects = new PostgresFencedEffectRepository(connection, clock);
     const lease = await leases.acquire("default", "root-mark", hours(1));

@@ -35,7 +35,7 @@ function storesOn(connection: PostgresConnection, clock = new VirtualClock()) {
     leases: new PostgresExecutionLeaseRepository(
       connection,
       new StoreClock(StoreTimeSource.Test, clock),
-      new TestApplicationContext({}),
+      new TestApplicationContext(),
     ),
   };
 }

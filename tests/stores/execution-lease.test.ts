@@ -14,7 +14,7 @@ const leasesOn = (clock: VirtualClock, instanceId = "instance-1") =>
   new PostgresExecutionLeaseRepository(
     connectionTo(database.url()),
     new StoreClock(StoreTimeSource.Test, clock),
-    new TestApplicationContext({}, instanceId),
+    new TestApplicationContext(instanceId),
   );
 
 describe("PostgresExecutionLeaseRepository", () => {
@@ -73,7 +73,7 @@ describe("PostgresExecutionLeaseRepository", () => {
     const down = new PostgresExecutionLeaseRepository(
       connectionTo("postgres://postgres:pw@127.0.0.1:1/postgres"),
       new StoreClock(StoreTimeSource.Test, clock),
-      new TestApplicationContext({}),
+      new TestApplicationContext(),
     );
     const lease = {
       tenantId: "default",

@@ -12,15 +12,10 @@
 import { createApp, IdGenerator, Injectable, ExecutionError } from "@agboss/core";
 import { generateKeyPairSync } from "node:crypto";
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import {
-  PostgresExecutionLeaseRepository,
-  PostgresExecutionRecordRepository,
-  PostgresFencedEffectRepository,
-  PostgresOutboundCallRepository,
-} from "../../src/index.js";
+import {} from "../../src/index.js";
 import { ChargeWorkflowStart } from "../fixtures/charge.workflow.js";
 import { openGate } from "../fixtures/process-log.js";
-import { storeLayoutOf } from "../fixtures/store-layout.application.js";
+import { storageLayoutOf } from "../fixtures/store-layout.application.js";
 import { onSchema, testDatabase } from "../support/database.js";
 
 const database = testDatabase();
@@ -47,16 +42,7 @@ const opened: App[] = [];
 
 /** One application instance on the test's schema, with its own pool and its own generator. */
 async function instance(): Promise<App> {
-  const app = await createApp(
-    storeLayoutOf([
-      RestartingIdGenerator,
-      PostgresExecutionLeaseRepository,
-      PostgresFencedEffectRepository,
-      PostgresOutboundCallRepository,
-      PostgresExecutionRecordRepository,
-    ]),
-    { env: "process" },
-  );
+  const app = await createApp(storageLayoutOf([RestartingIdGenerator]));
   opened.push(app);
   return app;
 }

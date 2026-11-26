@@ -48,7 +48,7 @@ const storeOf = (instanceId: string, clock: Clock, time: Time) => {
   return new PostgresExecutionLeaseRepository(
     connectionTo(database.url(), 1),
     storeClock,
-    new TestApplicationContext({}, instanceId),
+    new TestApplicationContext(instanceId),
   );
 };
 

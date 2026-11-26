@@ -63,7 +63,7 @@ async function instances(): Promise<{
   const clock = new VirtualClock();
   const logger = new RecordingLogger();
   const queueOn = (conn: PostgresConnection, id: string, log: RecordingLogger) =>
-    new PostgresChildExecutionQueueRepository(conn, clock, new TestApplicationContext({}, id), log);
+    new PostgresChildExecutionQueueRepository(conn, clock, new TestApplicationContext(id), log);
   return {
     proxy,
     clock,

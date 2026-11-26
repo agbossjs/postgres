@@ -7,8 +7,7 @@ import { checkedSchemaOf, checkedTimeoutOf, type PostgresConnectionSettings } fr
 /**
  * The settings `PostgresDriver` resolved (agbossjs/agboss#1321f): its options with the `secret(…)`
  * of the URL revealed, the durations in `Milliseconds` (`DriverTimeouts`), read once at start. What
- * `PostgresConnection` makes its pool of when the application names a `@DatabaseStorage`; the
- * environment's `postgres…` fields are read only without one.
+ * `PostgresConnection` makes its pool of.
  */
 
 /** A `Secret` of the resolved settings: only `reveal()` gives its value. */

@@ -2,12 +2,11 @@
  * `@agboss/postgres` (#482, #483): AGBoss's stores on PostgreSQL — several application instances,
  * each its own process with no shared disk, share execution trees, budgets, history, rate limits
  * and mesh requests on one database: a whole application on PostgreSQL alone.
- * List the stores in `@Application({ providers })` — all of them `...POSTGRES_STORES`; the
- * environment gives `postgresUrl` (a `Secret`), optionally `postgresPoolSize`, `postgresSchema`,
- * `postgresSchemaSetup`, `postgresAllowLiveLeases`, `postgresWatchLivenessSeconds`, `postgresCommandTimeoutMs` and
- * `postgresIdleInTransactionTimeoutMs` (agbossjs/agboss#928). The schema is migrated explicitly: `agboss-postgres migrate [--schema
- * <name>]` with `POSTGRES_URL` set in its environment (a Kubernetes Job), or
- * `migratePostgres({ url, schema })` — never the URL on a command line.
+ * Name the database once: `@DatabaseStorage({ driver: PostgresDriver({ url: secret("POSTGRES_URL") }) })`
+ * (optionally `schema`, `poolSize`, `schemaSetup` and `timeouts`, agbossjs/agboss#928); its stores
+ * are the package's. The schema is migrated explicitly: `agboss-postgres migrate [--schema <name>]`
+ * with `POSTGRES_URL` set in its environment (a Kubernetes Job), or `migratePostgres({ url, schema })`
+ * — never the URL on a command line.
  */
 export { PostgresConnection } from "./connection/postgres-connection.js";
 export { PostgresDriver, type PostgresDriverOptions } from "./driver.js";

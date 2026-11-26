@@ -21,7 +21,7 @@ const leasesOn = (instanceId: string): PostgresExecutionLeaseRepository =>
   new PostgresExecutionLeaseRepository(
     connectionTo(database.url()),
     clock,
-    new TestApplicationContext({}, instanceId),
+    new TestApplicationContext(instanceId),
   );
 
 const rowOf = async (tenantId: string, root: string): Promise<string> =>

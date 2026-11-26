@@ -17,7 +17,7 @@ const queueOn = (url: string): PostgresChildExecutionQueueRepository =>
   new PostgresChildExecutionQueueRepository(
     connectionTo(url),
     new VirtualClock(),
-    new TestApplicationContext({}, "instance-clauses"),
+    new TestApplicationContext("instance-clauses"),
     new RecordingLogger(),
   );
 

@@ -1,4 +1,3 @@
-import type { Secret } from "@agboss/core";
 import { secret } from "@agboss/core";
 import { FaultStoreTime, type FaultStoreSet } from "@agboss/core/testing/faults";
 import {
@@ -27,12 +26,6 @@ import {
  * effect's ambient transaction (`requirePostgresTransaction()`).
  */
 
-/** The environment the stores read: the database, a small pool per pod. */
-export class PostgresFaultEnvironment {
-  postgresUrl!: Secret;
-  postgresPoolSize?: number;
-}
-
 /** The table of the fixture's business rows, created by each scenario's reset. */
 export const FAULT_BUSINESS_ROWS_DDL = "CREATE TABLE fault_business_rows (row text NOT NULL)";
 
@@ -56,9 +49,10 @@ export const faultStores: FaultStoreSet = {
     PostgresOutboundCallRepository,
     PostgresPausedExecutionRepository,
   ],
-  environment: {
-    contract: PostgresFaultEnvironment,
-    values: { postgresUrl: secret("AGBOSS_FAULT_DATABASE_URL"), postgresPoolSize: 4 },
+  // the database the pod's @DatabaseStorage names: the scenario's schema, a small pool per pod
+  storage: {
+    backend: "postgres",
+    settings: { kind: "postgres", url: secret("AGBOSS_FAULT_DATABASE_URL"), poolSize: 4 },
   },
   businessRows: {
     // the effect's ambient transaction (#1317c)

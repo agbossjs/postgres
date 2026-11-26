@@ -113,7 +113,7 @@ const bytesOf = (text: string): number[] => [...new TextEncoder().encode(text)];
 
 function instanceOn(clock: VirtualClock, index: number) {
   const connection = connectionTo(database.url(), 2);
-  const application = new TestApplicationContext({}, `instance-${String(index)}`);
+  const application = new TestApplicationContext(`instance-${String(index)}`);
   return {
     calls: new PostgresOutboundCallRepository(
       connection,

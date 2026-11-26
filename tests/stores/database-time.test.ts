@@ -36,7 +36,7 @@ const storeOf = (instanceId: string) =>
   new PostgresExecutionLeaseRepository(
     connectionTo(database.url(), 1),
     databaseTime,
-    new TestApplicationContext({}, instanceId),
+    new TestApplicationContext(instanceId),
   );
 
 /** The most 1 ms roundings (down, to a whole millisecond) of the database's clock add to a difference. */
