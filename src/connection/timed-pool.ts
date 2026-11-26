@@ -9,7 +9,7 @@ const isSubmittable = (value: unknown): boolean =>
  * `pool` whose promise `query` runs on a connection it checks out itself (agbossjs/agboss#928,
  * #1017). `pg.Pool.query` listens for the connection's `error` event and answers with that raw
  * error when the connection drops under a statement — before the `TimedClient` can read it as
- * `StoreOutcomeUnknownError`. Here the statement's own rejection is the answer. A connection that
+ * `StoreError.OutcomeUnknown`. Here the statement's own rejection is the answer. A connection that
  * is stuck, lost or past trust (an unknown outcome, postgres#113) is not given back: a caller
  * waiting for the pool gets another. A query config (`{ text, values }`) is read as its text is;
  * the callback forms and a submittable go to the pool as they are (it answers a submittable with its

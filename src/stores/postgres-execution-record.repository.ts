@@ -1,7 +1,6 @@
 import {
   ApplicationContext,
   Clock,
-  ThreadIdsExhaustedError,
   ExecutionRecordRepository,
   ExecutionRecordStatus,
   IdGenerator,
@@ -16,6 +15,7 @@ import {
   type Turn,
   type TurnOutcome,
   type VersionScore,
+  ExecutionError,
 } from "@agboss/core";
 import {
   idGeneratorNameOf,
@@ -64,7 +64,7 @@ export class PostgresExecutionRecordRepository extends ExecutionRecordRepository
   /**
    * A new thread (agbossjs/agboss#550): a caller's own id is kept as it is (the first one keeps it);
    * a minted one the tenant has already — an `IdGenerator` that repeats its ids — is never handed
-   * out: the next one is minted, at most `MINTED_THREAD_TRIES` times, then `ThreadIdsExhaustedError`
+   * out: the next one is minted, at most `MINTED_THREAD_TRIES` times, then `ExecutionError.ThreadIdsExhausted`
    * (agbossjs/agboss#613).
    */
   async createThread(thread: NewThread): Promise<string> {
@@ -76,7 +76,7 @@ export class PostgresExecutionRecordRepository extends ExecutionRecordRepository
       const id = this.idGenerator.newThreadId();
       if (await writes.createThread(this.connection.pool, thread, id, this.clock.now())) return id;
     }
-    throw new ThreadIdsExhaustedError({
+    throw new ExecutionError.ThreadIdsExhausted({
       generator: idGeneratorNameOf(this.idGenerator),
       tries: MINTED_THREAD_TRIES,
     });

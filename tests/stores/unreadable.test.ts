@@ -1,20 +1,20 @@
-import { StoredNamesUnreadableError } from "@agboss/core/stores";
 import { describe, expect, it } from "vitest";
 import { parsedOrUnreadable } from "../../src/stores/unreadable.js";
+import { StoreError } from "@agboss/core/stores";
 
 /** What `parsedOrUnreadable` refuses with: the record, the ids, the field, the cause's message. */
-const messageOf = (error: StoredNamesUnreadableError): string =>
+const messageOf = (error: StoreError.UnreadableRecord): string =>
   error.cause instanceof Error ? error.cause.message : "no cause";
 
 function refusalOf(
   text: string,
   ids: Readonly<Record<string, string | undefined>>,
   reviver?: (key: string, value: unknown) => unknown,
-): StoredNamesUnreadableError {
+): StoreError.UnreadableRecord {
   try {
     parsedOrUnreadable("a record", text, ids, reviver);
   } catch (error) {
-    if (error instanceof StoredNamesUnreadableError) return error;
+    if (error instanceof StoreError.UnreadableRecord) return error;
     throw error;
   }
   throw new Error("it was read");
@@ -30,7 +30,7 @@ describe("agbossjs/agboss#1213: parsedOrUnreadable names what it refuses", () =>
     const refusal = refusalOf("{", { threadId: "t1", runId: undefined, step: "s2" });
 
     expect(refusal).toMatchObject({
-      code: "stored.unreadable",
+      code: "store.unreadable-record",
       record: "a record",
       ids: "threadId t1, step s2",
       fields: "(the text)",

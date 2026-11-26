@@ -1,14 +1,10 @@
 /**
  * agbossjs/agboss#928 (postgres#96): every statement of the pool is bounded, a command that does
- * not answer is `StoreCallTimeoutError` (source Command), a connection lost under a COMMIT or a
- * single write is `StoreOutcomeUnknownError` (source Transport, agbossjs/agboss#1017), and a session
+ * not answer is `StoreError.CallTimeout` (source Command), a connection lost under a COMMIT or a
+ * single write is `StoreError.OutcomeUnknown` (source Transport, agbossjs/agboss#1017), and a session
  * idle in a transaction is ended by the server so a frozen holder's row locks are freed.
  */
-import {
-  StoreCallTimeoutError,
-  StoreOutcomeSource,
-  StoreOutcomeUnknownError,
-} from "@agboss/core/stores";
+import { StoreOutcomeSource, StoreError, isStoreOutcomeUnknown } from "@agboss/core/stores";
 import pg from "pg";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { PostgresConnection, PostgresMeshRequestRepository } from "../../src/index.js";
@@ -82,7 +78,7 @@ const settle = async (work: Promise<unknown>): Promise<unknown> =>
   );
 
 describe("AC1: a statement that does not answer in the command timeout", () => {
-  it("a write waiting on a row lock is cancelled by the server: StoreCallTimeoutError (command), cause 57014, and the connection serves again", async () => {
+  it("a write waiting on a row lock is cancelled by the server: StoreError.CallTimeout (command), cause 57014, and the connection serves again", async () => {
     const connection = connected();
     const holder = await session();
     await holder.query("BEGIN");
@@ -91,7 +87,7 @@ describe("AC1: a statement that does not answer in the command timeout", () => {
     const failure = await settle(connection.pool.query("UPDATE ct_rows SET v = 5 WHERE id = 1"));
     await holder.query("ROLLBACK");
 
-    expect(failure).toBeInstanceOf(StoreCallTimeoutError);
+    expect(failure).toBeInstanceOf(StoreError.CallTimeout);
     expect(failure).toMatchObject({
       code: "store.call-timeout",
       source: StoreOutcomeSource.Command,
@@ -118,12 +114,12 @@ describe("AC1: a statement that does not answer in the command timeout", () => {
     );
     await holder.query("ROLLBACK");
 
-    expect(failure).toBeInstanceOf(StoreCallTimeoutError);
+    expect(failure).toBeInstanceOf(StoreError.CallTimeout);
     expect(connection.pool.totalCount).toBe(1);
     expect(await valueOf()).toBe(0);
   });
 
-  it("a silent server: pg's client-side timeout is StoreCallTimeoutError, the socket is destroyed, nothing is rolled back behind it, the pool serves again", async () => {
+  it("a silent server: pg's client-side timeout is StoreError.CallTimeout, the socket is destroyed, nothing is rolled back behind it, the pool serves again", async () => {
     const { url, proxy } = await proxied();
     const connection = connected({ url });
     await connection.ping();
@@ -133,7 +129,7 @@ describe("AC1: a statement that does not answer in the command timeout", () => {
       inPoolTransaction(connection.pool, (client) => client.query("SELECT 1")),
     );
 
-    expect(failure).toBeInstanceOf(StoreCallTimeoutError);
+    expect(failure).toBeInstanceOf(StoreError.CallTimeout);
     expect(failure).toMatchObject({ source: StoreOutcomeSource.Command, timeout: 300 });
     expect((failure as Error).cause).toMatchObject({ message: "Query read timeout" });
     expect(connection.pool.totalCount).toBe(0);
@@ -144,7 +140,7 @@ describe("AC1: a statement that does not answer in the command timeout", () => {
 });
 
 describe("agbossjs/agboss#1017: an answer lost in transport", () => {
-  it("a COMMIT whose answer is lost is StoreOutcomeUnknownError (transport), and the commit is in the database", async () => {
+  it("a COMMIT whose answer is lost is StoreError.OutcomeUnknown (transport), and the commit is in the database", async () => {
     const { url, proxy } = await proxied();
     const connection = connected({ url });
     await connection.ping();
@@ -156,8 +152,8 @@ describe("agbossjs/agboss#1017: an answer lost in transport", () => {
       ),
     );
 
-    expect(failure).toBeInstanceOf(StoreOutcomeUnknownError);
-    expect(failure).not.toBeInstanceOf(StoreCallTimeoutError);
+    expect(failure).toBeInstanceOf(StoreError.OutcomeUnknown);
+    expect(failure).not.toBeInstanceOf(StoreError.CallTimeout);
     expect(failure).toMatchObject({ source: StoreOutcomeSource.Transport });
     expect(await valueOf()).toBe(7);
   });
@@ -187,7 +183,7 @@ describe("agbossjs/agboss#1017: an answer lost in transport", () => {
     );
 
     expect(failure).toBeInstanceOf(Error);
-    expect(failure).not.toBeInstanceOf(StoreOutcomeUnknownError);
+    expect(isStoreOutcomeUnknown(failure)).toBe(false);
     expect(await valueOf()).toBe(8);
   });
 
@@ -200,7 +196,7 @@ describe("agbossjs/agboss#1017: an answer lost in transport", () => {
     const failure = await settle(connection.pool.query("SELECT v FROM ct_rows WHERE id = 1"));
 
     expect(failure).toBeInstanceOf(Error);
-    expect(failure).not.toBeInstanceOf(StoreOutcomeUnknownError);
+    expect(isStoreOutcomeUnknown(failure)).toBe(false);
   });
 });
 
@@ -229,7 +225,7 @@ describe("a session idle in a transaction", () => {
     const failure = await frozen;
     // inside a transaction before its COMMIT: a known outcome, rolled back with the session
     expect(failure).toBeInstanceOf(Error);
-    expect(failure).not.toBeInstanceOf(StoreOutcomeUnknownError);
+    expect(isStoreOutcomeUnknown(failure)).toBe(false);
   });
 });
 
@@ -259,7 +255,7 @@ describe("a retention's delete runs under the long timeout", () => {
     await new Promise((resolve) => setTimeout(resolve, 1600));
     await holder.query("ROLLBACK");
 
-    expect(ordinary).toBeInstanceOf(StoreCallTimeoutError);
+    expect(ordinary).toBeInstanceOf(StoreError.CallTimeout);
     await expect(deleting).resolves.toBeUndefined();
   });
 });

@@ -1,8 +1,4 @@
-import {
-  StoreCallTimeoutError,
-  StoreOutcomeSource,
-  StoreOutcomeUnknownError,
-} from "@agboss/core/stores";
+import { StoreOutcomeSource, StoreError, isStoreOutcomeUnknown } from "@agboss/core/stores";
 import { describe, expect, it } from "vitest";
 import { isLostConnection, outcomeOf } from "../../src/connection/outcome.js";
 
@@ -47,7 +43,7 @@ describe("agbossjs/agboss#1017, agbossjs/postgres#113: which statement errors le
           source: StoreOutcomeSource.Transport,
           cause: error,
         });
-      expect(outcomeOf(error, COMMIT)).toBeInstanceOf(StoreOutcomeUnknownError);
+      expect(outcomeOf(error, COMMIT)).toBeInstanceOf(StoreError.OutcomeUnknown);
     },
   );
 
@@ -63,7 +59,7 @@ describe("agbossjs/agboss#1017, agbossjs/postgres#113: which statement errors le
     "%j, a value that is no Error, at a COMMIT or a write: unknown",
     (value) => {
       for (const statement of [COMMIT, WRITE])
-        expect(outcomeOf(value, statement)).toBeInstanceOf(StoreOutcomeUnknownError);
+        expect(outcomeOf(value, statement)).toBeInstanceOf(StoreError.OutcomeUnknown);
       expect(outcomeOf(value, IN_TRANSACTION)).toBe(value);
     },
   );
@@ -78,11 +74,11 @@ describe("agbossjs/agboss#1017, agbossjs/postgres#113: which statement errors le
       expect(outcomeOf(error, statement)).toBe(error);
   });
 
-  it("a command timeout of either kind is StoreCallTimeoutError (command) on every statement, reads included", () => {
+  it("a command timeout of either kind is StoreError.CallTimeout (command) on every statement, reads included", () => {
     for (const error of [withCode("57014"), new Error("Query read timeout")])
       for (const statement of [COMMIT, WRITE, IN_TRANSACTION, READ])
         expect(outcomeOf(error, statement)).toMatchObject({
-          code: StoreCallTimeoutError.code,
+          code: StoreError.CallTimeout.code,
           source: StoreOutcomeSource.Command,
           timeout: 10_000,
           cause: error,
@@ -104,7 +100,7 @@ describe("agbossjs/postgres#113: which errors lose the connection (not given bac
   ])("%s inside a transaction (known) loses the connection, itself or as the cause", (code) => {
     const error = outcomeOf(withCode(code), IN_TRANSACTION);
 
-    expect(error).not.toBeInstanceOf(StoreOutcomeUnknownError);
+    expect(isStoreOutcomeUnknown(error)).toBe(false);
     expect(isLostConnection(error)).toBe(true);
     expect(isLostConnection(new Error("x", { cause: error }))).toBe(true);
   });
@@ -119,13 +115,13 @@ describe("agbossjs/postgres#113: which errors lose the connection (not given bac
   it("a COMMIT or write of unknown outcome is a lost connection; a command timeout or another source is not", () => {
     const unknown = outcomeOf(withCode("XX000"), COMMIT);
     const timeout = outcomeOf(withCode("57014"), COMMIT);
-    const other = new StoreOutcomeUnknownError({
+    const other = new StoreError.OutcomeUnknown({
       store: "PostgresConnection",
       operation: "COMMIT",
       source: StoreOutcomeSource.Framework,
     });
 
-    expect(unknown).toBeInstanceOf(StoreOutcomeUnknownError);
+    expect(unknown).toBeInstanceOf(StoreError.OutcomeUnknown);
     expect(isLostConnection(unknown)).toBe(true);
     expect(isLostConnection(timeout)).toBe(false);
     expect(isLostConnection(other)).toBe(false);

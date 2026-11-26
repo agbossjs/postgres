@@ -40,7 +40,7 @@ export function checkedWatchLivenessOf(seconds: number | undefined): number | un
  * How long a store command may run when the environment does not set `postgresCommandTimeoutMs`
  * (agbossjs/agboss#928): the server cancels a statement past it (`statement_timeout`), the client
  * gives up on a silent server a second later (`query_timeout`). Below the framework's own 15 s
- * bound, so a command that does not answer ends as `StoreCallTimeoutError` with the driver's error
+ * bound, so a command that does not answer ends as `StoreError.CallTimeout` with the driver's error
  * as its cause, never as the framework's give-up.
  */
 export const DEFAULT_COMMAND_TIMEOUT = 10_000;
@@ -111,7 +111,7 @@ export interface PostgresConnectionSettings {
   /**
    * How long a store command may run, in ms (agbossjs/agboss#928; default `DEFAULT_COMMAND_TIMEOUT`,
    * 10 000; 100 to 30 000): the pool's `statement_timeout`, and `query_timeout` a second later. A
-   * command past it fails as `StoreCallTimeoutError` (`store.call-timeout`, source `Command`), its
+   * command past it fails as `StoreError.CallTimeout` (`store.call-timeout`, source `Command`), its
    * outcome unknown. Another value (0, a negative or a fractional number) is a `PostgresSettingsError`.
    */
   readonly commandTimeout?: number;

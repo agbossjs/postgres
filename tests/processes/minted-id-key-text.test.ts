@@ -2,17 +2,11 @@
  * agbossjs/agboss#578 on PostgreSQL: a thread id the application's own `IdGenerator` mints is held
  * to the key-text rules at the mint — `x\uD800` and `x\uDFFF` would both be `x�` in the
  * database's UTF-8, one thread, one tree. The PostgreSQL record store mints through the generator
- * the application's container gives it, so it refuses with `InvalidMintedIdError` (the generator,
+ * the application's container gives it, so it refuses with `ExecutionError.InvalidMintedId` (the generator,
  * the method and the rule, never the id) before any row is written; a valid id still makes its
  * thread. Built with the public `createApp` on the test's own schema.
  */
-import {
-  createApp,
-  IdGenerator,
-  Injectable,
-  InvalidMintedIdError,
-  KeyTextRule,
-} from "@agboss/core";
+import { createApp, IdGenerator, Injectable, KeyTextRule, ExecutionError } from "@agboss/core";
 import { generateKeyPairSync } from "node:crypto";
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 import {
@@ -79,7 +73,7 @@ describe("agbossjs/agboss#578: a minted thread id on PostgreSQL is a key's text"
       const second = await records.createThread(thread).catch((error: unknown) => error);
 
       for (const refused of [first, second]) {
-        expect(refused).toBeInstanceOf(InvalidMintedIdError);
+        expect(refused).toBeInstanceOf(ExecutionError.InvalidMintedId);
         expect(refused).toMatchObject({
           generator: "PlannedIdGenerator",
           method: "newThreadId",

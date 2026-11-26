@@ -8,13 +8,13 @@
  */
 import {
   createApp,
-  DtoValidationError,
   ExecutionAuditEventKind,
   LeaseTakeoverReason,
   OutboundCallStatus,
   type App,
   type ExecutionLease,
   type LeaseTakeoverRecord,
+  ValidationError,
 } from "@agboss/core";
 import { seconds } from "@agboss/core/units";
 import { generateKeyPairSync } from "node:crypto";
@@ -149,7 +149,7 @@ describe("agbossjs/agboss#568, #580 on PostgreSQL: a key's text at the operator'
     async (tenantId) => {
       for (const [read, made] of readsOf(tenantId, "r1")) {
         const error = await rejectionOf(made);
-        expect(error, read).toBeInstanceOf(DtoValidationError);
+        expect(error, read).toBeInstanceOf(ValidationError.DtoInvalid);
         const { message } = error as Error;
         expect(message, read).toContain("tenantId");
         expect(message, read).toContain("(lone-surrogate)");
@@ -163,7 +163,7 @@ describe("agbossjs/agboss#568, #580 on PostgreSQL: a key's text at the operator'
     async (rootExecutionId) => {
       for (const [read, made] of readsOf("default", rootExecutionId).slice(0, 2)) {
         const error = await rejectionOf(made);
-        expect(error, read).toBeInstanceOf(DtoValidationError);
+        expect(error, read).toBeInstanceOf(ValidationError.DtoInvalid);
         const { message } = error as Error;
         expect(message, read).toContain("rootExecutionId");
         expect(message, read).toContain("(lone-surrogate)");

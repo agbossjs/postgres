@@ -4,7 +4,6 @@
  * answer is unknown only outside one), the long timeout of a retention's transaction, the socket of
  * a statement pg gave up on, and the pool's connections after a loss.
  */
-import { StoreCallTimeoutError, StoreOutcomeUnknownError } from "@agboss/core/stores";
 import pg from "pg";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { PostgresConnection } from "../../src/index.js";
@@ -12,6 +11,7 @@ import { TimedClient } from "../../src/connection/timed-client.js";
 import { inLongTransaction, inPoolTransaction } from "../../src/connection/transaction.js";
 import { BlackholeProxy } from "../support/blackhole-proxy.js";
 import { onSchema, serverUrl, testDatabase } from "../support/database.js";
+import { StoreError, isStoreOutcomeUnknown } from "@agboss/core/stores";
 
 const database = testDatabase();
 const opened: PostgresConnection[] = [];
@@ -110,16 +110,16 @@ describe("the forms of a statement", () => {
     expect(valued.error).toBeUndefined();
   });
 
-  it("a query config is timed as its text is: past the command timeout, StoreCallTimeoutError", async () => {
+  it("a query config is timed as its text is: past the command timeout, StoreError.CallTimeout", async () => {
     const connection = connected();
     const client = await timedClientOf(connection);
     const own = await settle(client.query({ text: "SELECT pg_sleep(1)" }));
     client.release();
     const pooled = await settle(connection.pool.query({ text: "SELECT pg_sleep(1)" }));
 
-    expect(own).toBeInstanceOf(StoreCallTimeoutError);
+    expect(own).toBeInstanceOf(StoreError.CallTimeout);
     expect(own).toMatchObject({ operation: "SELECT pg_sleep(1)" });
-    expect(pooled).toBeInstanceOf(StoreCallTimeoutError);
+    expect(pooled).toBeInstanceOf(StoreError.CallTimeout);
     await expect(
       connection.pool.query({ text: "SELECT $1::int AS n", values: [7] }),
     ).resolves.toMatchObject({ rows: [{ n: 7 }] });
@@ -222,7 +222,7 @@ describe("the transaction it tracks: a lost answer is unknown only outside one",
     const connection = connected(url);
     await inPoolTransaction(connection.pool, (client) => client.query("SELECT 1"));
 
-    expect(await lostWrite(connection, proxy, 11)).toBeInstanceOf(StoreOutcomeUnknownError);
+    expect(await lostWrite(connection, proxy, 11)).toBeInstanceOf(StoreError.OutcomeUnknown);
   });
 
   it("after a COMMIT that failed the session is out of the transaction too", async () => {
@@ -235,7 +235,7 @@ describe("the transaction it tracks: a lost answer is unknown only outside one",
     client.release();
 
     expect(commit).toMatchObject({ code: "23505" });
-    expect(await lostWrite(connection, proxy, 12)).toBeInstanceOf(StoreOutcomeUnknownError);
+    expect(await lostWrite(connection, proxy, 12)).toBeInstanceOf(StoreError.OutcomeUnknown);
   });
 
   it("a statement that only names begin does not start one", async () => {
@@ -243,7 +243,7 @@ describe("the transaction it tracks: a lost answer is unknown only outside one",
     const connection = connected(url);
     await connection.pool.query("SELECT'begin' AS word");
 
-    expect(await lostWrite(connection, proxy, 13)).toBeInstanceOf(StoreOutcomeUnknownError);
+    expect(await lostWrite(connection, proxy, 13)).toBeInstanceOf(StoreError.OutcomeUnknown);
   });
 
   it("a statement that fails inside one does not end it: the transaction is aborted, not over", async () => {
@@ -258,7 +258,7 @@ describe("the transaction it tracks: a lost answer is unknown only outside one",
 
       expect(failed).toMatchObject({ code: "42703" });
       expect(lost).toBeInstanceOf(Error);
-      expect(lost).not.toBeInstanceOf(StoreOutcomeUnknownError);
+      expect(isStoreOutcomeUnknown(lost)).toBe(false);
     } finally {
       client.release(true);
     }
@@ -277,7 +277,7 @@ describe("the transaction it tracks: a lost answer is unknown only outside one",
     );
 
     expect(failure).toBeInstanceOf(Error);
-    expect(failure).not.toBeInstanceOf(StoreOutcomeUnknownError);
+    expect(isStoreOutcomeUnknown(failure)).toBe(false);
   });
 });
 
@@ -296,7 +296,7 @@ describe("the long timeout of a transaction (a retention's delete)", () => {
       await client.query("ROLLBACK");
       const after = await settle(client.query("SELECT pg_sleep(1)"));
 
-      expect(cancelled).toBeInstanceOf(StoreCallTimeoutError);
+      expect(cancelled).toBeInstanceOf(StoreError.CallTimeout);
       expect(cancelled).toMatchObject({ timeout: 2000, cause: { code: "57014" } });
       expect(after).toMatchObject({ timeout: 300, cause: { code: "57014" } });
     } finally {
@@ -326,9 +326,9 @@ describe("a connection lost or stuck", () => {
       const stuck = await settle(client.query("SELECT 1"));
       const next = await settle(client.query("SELECT 2"));
 
-      expect(stuck).toBeInstanceOf(StoreCallTimeoutError);
+      expect(stuck).toBeInstanceOf(StoreError.CallTimeout);
       expect(next).toBeInstanceOf(Error);
-      expect(next).not.toBeInstanceOf(StoreCallTimeoutError);
+      expect(next).not.toBeInstanceOf(StoreError.CallTimeout);
     } finally {
       client.release(true);
     }
@@ -351,7 +351,7 @@ describe("a connection lost or stuck", () => {
       const stuck = settle(stuckCall(connection.pool));
       const waiting = connection.pool.query("SELECT 4 AS four");
 
-      expect(await stuck).toBeInstanceOf(StoreCallTimeoutError);
+      expect(await stuck).toBeInstanceOf(StoreError.CallTimeout);
       await expect(waiting).resolves.toMatchObject({ rows: [{ four: 4 }] });
     },
   );
@@ -385,7 +385,7 @@ describe("a connection lost or stuck", () => {
 
       expect(again).toBe(client);
       expect(count).toBe(listeners);
-      expect(single).toBeInstanceOf(StoreOutcomeUnknownError);
+      expect(single).toBeInstanceOf(StoreError.OutcomeUnknown);
       expect(inside).toBeInstanceOf(Error);
       expect(uncaught).toEqual([]);
     } finally {

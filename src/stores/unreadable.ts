@@ -1,9 +1,9 @@
-import { StoredNamesUnreadableError } from "@agboss/core/stores";
+import { StoreError } from "@agboss/core/stores";
 
 /**
  * The text as JSON (#906 D4, #1121). A parser's message quotes the text it failed on (`startInput`,
  * the caller's PII): a failure is refused as a record that fails its schema is, with
- * `StoredNamesUnreadableError` (`code: "stored.unreadable"`) naming `what` and the store's own keys
+ * `StoreError.UnreadableRecord` (`code: "store.unreadable-record"`) naming `what` and the store's own keys
  * of the row, `ids`, never a tenant. The `cause` is a `SyntaxError` of the parse without the text.
  * (The core's `parsedStoredJson` does the same: use it once the pin holds it, #1064.)
  */
@@ -18,7 +18,7 @@ export function parsedOrUnreadable(
   } catch (error) {
     const position =
       error instanceof Error ? /at position (\d+)/.exec(error.message)?.[1] : undefined;
-    throw new StoredNamesUnreadableError({
+    throw new StoreError.UnreadableRecord({
       record: what,
       ids: Object.entries(ids)
         .flatMap(([key, id]) => (id === undefined ? [] : [`${key} ${id}`]))

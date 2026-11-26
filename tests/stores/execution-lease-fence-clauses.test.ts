@@ -1,10 +1,5 @@
 import { effectKeyForTesting } from "@agboss/core/testing/contracts";
-import {
-  ExecutionCancelFencedError,
-  StoreClock,
-  StoreTimeSource,
-  ExecutionError,
-} from "@agboss/core";
+import { StoreClock, StoreTimeSource, ExecutionError } from "@agboss/core";
 import { OutboundCallLeaseState } from "@agboss/core/stores";
 import { VirtualClock } from "@agboss/core/testing";
 import { hours, seconds } from "@agboss/core/units";
@@ -74,7 +69,7 @@ describe("the fence of two trees that share a root id", () => {
       .runOnce(keyOf("tenant-a", "root-cancel", own?.token ?? 0), () => ({ receipt: "r" }))
       .catch((error: unknown) => error);
 
-    expect(written).not.toBeInstanceOf(ExecutionCancelFencedError);
+    expect(written).not.toBeInstanceOf(ExecutionError.CancelFenced);
     expect(written).toMatchObject({ result: { receipt: "r" } });
   });
 

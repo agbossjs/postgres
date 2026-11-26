@@ -1,11 +1,4 @@
-import {
-  ExecutionCancelFencedError,
-  ExecutionPauseFencedError,
-  ExecutionStopFencedError,
-  InterruptMode,
-  StoreClock,
-  StoreTimeSource,
-} from "@agboss/core";
+import { ExecutionError, InterruptMode, StoreClock, StoreTimeSource } from "@agboss/core";
 import { effectKeyForTesting } from "@agboss/core/testing/contracts";
 import { VirtualClock } from "@agboss/core/testing";
 import { hours } from "@agboss/core/units";
@@ -66,7 +59,7 @@ describe("the stop fence", () => {
       .catch((error: unknown) => error);
 
     expect(kept.token).toBe(token);
-    expect(refused).toBeInstanceOf(ExecutionStopFencedError);
+    expect(refused).toMatchObject({ code: "execution.stopped.fenced" });
   });
 
   it("a replay is not a new effect: the stored result comes back under a stop", async () => {
@@ -117,7 +110,7 @@ describe("the stop fence", () => {
       } as never)
       .catch((error: unknown) => error);
 
-    expect(refused).toBeInstanceOf(ExecutionStopFencedError);
+    expect(refused).toMatchObject({ code: "execution.stopped.fenced" });
   });
 });
 
@@ -134,7 +127,7 @@ describe("the pause fence", () => {
     const second = await leases.acquire("default", "pause-fence-1", hours(1));
     const resumed = await effects.runOnce(keyOf("pause-fence-1", second?.token ?? 0), write);
 
-    expect(stale).toBeInstanceOf(ExecutionPauseFencedError);
+    expect(stale).toMatchObject({ code: "execution.paused.fenced" });
     expect(resumed.token).toBe(2);
   });
 
@@ -164,7 +157,7 @@ describe("the pause fence", () => {
       write,
     );
 
-    expect(refused).toBeInstanceOf(ExecutionPauseFencedError);
+    expect(refused).toMatchObject({ code: "execution.paused.fenced" });
     expect(after.token).toBe(child?.token);
   });
 
@@ -177,6 +170,6 @@ describe("the pause fence", () => {
       .runOnce(keyOf("pause-fence-3", lease?.token ?? 0), write)
       .catch((error: unknown) => error);
 
-    expect(refused).toBeInstanceOf(ExecutionCancelFencedError);
+    expect(refused).toBeInstanceOf(ExecutionError.CancelFenced);
   });
 });

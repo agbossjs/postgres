@@ -56,7 +56,7 @@ describe("PostgresCostLedgerRepository: the save's clauses", () => {
 
     await expect(
       ledger.saveAll([counter], [entry("fresh", AFTER), entry("stale", BEFORE)]),
-    ).rejects.toMatchObject({ code: "cost-ledger.entry-expired" });
+    ).rejects.toMatchObject({ code: "store.ledger-entry-expired" });
 
     expect(await heldIds(url)).toEqual([]);
     // no counter is written either, not even at zero

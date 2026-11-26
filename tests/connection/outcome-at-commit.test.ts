@@ -2,11 +2,11 @@
  * agbossjs/postgres#113 (agbossjs/agboss#1017's whitelist rule), on a real PostgreSQL through a TCP
  * proxy: a COMMIT, or a single write outside a transaction, whose connection is killed before the
  * server sees it, killed after the server applied it, or whose answer is replaced by a pooler's
- * protocol error (08P01) or by garbage, is `StoreOutcomeUnknownError` — and the database shows
+ * protocol error (08P01) or by garbage, is `StoreError.OutcomeUnknown` — and the database shows
  * which it was. The server's own abort (a deferred unique violation at COMMIT, a unique violation
  * of a single write) stays known. Red with the blacklist classifier: 08P01 and garbage were known.
  */
-import { StoreOutcomeSource, StoreOutcomeUnknownError } from "@agboss/core/stores";
+import { StoreOutcomeSource, StoreError, isStoreOutcomeUnknown } from "@agboss/core/stores";
 import pg from "pg";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { PostgresConnection } from "../../src/index.js";
@@ -98,7 +98,7 @@ async function written(
 }
 
 const expectUnknown = (error: unknown): void => {
-  expect(error).toBeInstanceOf(StoreOutcomeUnknownError);
+  expect(error).toBeInstanceOf(StoreError.OutcomeUnknown);
   expect(error).toMatchObject({ source: StoreOutcomeSource.Transport });
 };
 
@@ -149,7 +149,7 @@ describe("agbossjs/postgres#113: a COMMIT whose connection dies or whose answer 
       ),
     );
 
-    expect(error).not.toBeInstanceOf(StoreOutcomeUnknownError);
+    expect(isStoreOutcomeUnknown(error)).toBe(false);
     expect(error).toMatchObject({ code: "23505" });
     expect(await hasRow("oc_once", 5)).toBe(false);
   });
@@ -189,7 +189,7 @@ describe("agbossjs/postgres#113: a single write outside a transaction, the same 
 
     const error = await settle(connection.pool.query("INSERT INTO oc_rows VALUES (14)"));
 
-    expect(error).not.toBeInstanceOf(StoreOutcomeUnknownError);
+    expect(isStoreOutcomeUnknown(error)).toBe(false);
     expect(error).toMatchObject({ code: "23505" });
   });
 });

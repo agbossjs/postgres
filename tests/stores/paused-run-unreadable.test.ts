@@ -1,10 +1,10 @@
-import { StoredNamesUnreadableError } from "@agboss/core/stores";
 import { VirtualClock } from "@agboss/core/testing";
 import { describe, expect, it } from "vitest";
 import { PostgresPausedExecutionRepository } from "../../src/index.js";
 import { onSchema, testDatabase } from "../support/database.js";
 import { pausedRun } from "./stored-rows.fixtures.js";
 import { connectionTo } from "../support/stores.js";
+import { StoreError } from "@agboss/core/stores";
 
 /**
  * agbossjs/agboss#906 D4: a stored run that cannot be read (as the SQLite store reads it) is refused by its ids and
@@ -97,8 +97,8 @@ describe("agbossjs/agboss#906 D4: PostgreSQL paused runs", () => {
     expect(error.message).toContain("a stored paused run is not readable");
     expect(error.message).toContain("threadId thread-1");
     expect(error.message).toContain("runId run-1");
-    expect(error).toBeInstanceOf(StoredNamesUnreadableError);
-    expect(error).toMatchObject({ code: "stored.unreadable", record: "paused run" });
+    expect(error).toBeInstanceOf(StoreError.UnreadableRecord);
+    expect(error).toMatchObject({ code: "store.unreadable-record", record: "paused run" });
     // the cause is the parse's SyntaxError without the text it quotes
     expect(error.cause).toBeInstanceOf(SyntaxError);
     for (let link: unknown = error; link instanceof Error; link = link.cause) {

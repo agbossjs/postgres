@@ -345,10 +345,10 @@ bounded by the command timeout, below.
 **Every command is bounded** (agbossjs/agboss#928): each connection of the pool runs under
 `statement_timeout` = `postgresCommandTimeoutMs` (default 10 s, lock waits included) and the client
 gives up a second later (`query_timeout`) on a server that does not answer. A command past it fails
-as `StoreCallTimeoutError` (`store.call-timeout`, source `Command`, the driver's error as the
+as `StoreError.CallTimeout` (`store.call-timeout`, source `Command`, the driver's error as the
 cause): its outcome is unknown — under a lease the holder hands the tree over, elsewhere the caller
 gets the error. A COMMIT, or a single write outside a transaction, that does not
-prove it had no effect is `StoreOutcomeUnknownError` (source `Transport`, agbossjs/agboss#1017,
+prove it had no effect is `StoreError.OutcomeUnknown` (source `Transport`, agbossjs/agboss#1017,
 below); a statement inside a transaction before its COMMIT, or a read, stays an ordinary error. After a client-side timeout the socket is destroyed and no
 `ROLLBACK` queues behind the hung statement. Retention deletes (`delete…Before`) run under
 `LONG_COMMAND_TIMEOUT` (5 min). A session idle in a transaction is ended by the server after
@@ -367,7 +367,7 @@ whitelist, and only these are a definite failure, rethrown as they are:
   whose SQLSTATE class is 09, 21, 22, 23, 25 (except 25P03 and 25P04), 2F, 38, 40 (except 40003), 42,
   44 or P0.
 
-Everything else is `StoreOutcomeUnknownError`: every other SQLSTATE (08007, 08P01, XX000, 53100,
+Everything else is `StoreError.OutcomeUnknown`: every other SQLSTATE (08007, 08P01, XX000, 53100,
 53200, 57P01, 58030, …), a socket, TLS or stream error, a pg framing error, an error with no code,
 anything that is not a `pg.DatabaseError`. 25P03 (`idle_in_transaction_session_timeout`) and 25P04
 (`transaction_timeout`) end the session from a timer, possibly after the commit record is durable, and
@@ -377,7 +377,7 @@ is the server's word that the transaction rolled back. The **one-statement rule*
 string of several statements may `COMMIT` inside itself before it raises, so their server error is
 unknown, whatever its class. A connection of unknown outcome is ended at once and never handed out
 again; every later statement on it, `PostgresSaver`'s `ROLLBACK` included, rejects with the same
-outcome. A command timeout is `StoreCallTimeoutError`, whatever the statement.
+outcome. A command timeout is `StoreError.CallTimeout`, whatever the statement.
 
 **A long fenced work can cost the tree its lease** (agbossjs/agboss#1334): a fenced write holds its
 tree's root lease row for the whole transaction (`FOR SHARE` for a child's, `FOR UPDATE` on its own

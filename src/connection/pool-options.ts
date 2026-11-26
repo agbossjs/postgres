@@ -13,8 +13,8 @@ import { CLIENT_TIMEOUT_MARGIN, type TimedClientConfig } from "./timed-client.js
 
 /**
  * The options of the instance's pool (agbossjs/agboss#928): every connection is a `TimedClient`
- * (the `Client` `PostgresConnection` adds to them) that reads a command timeout as `StoreCallTimeoutError` and a lost answer as
- * `StoreOutcomeUnknownError` (`outcome.ts`); the server cancels a statement past the command
+ * (the `Client` `PostgresConnection` adds to them) that reads a command timeout as `StoreError.CallTimeout` and a lost answer as
+ * `StoreError.OutcomeUnknown` (`outcome.ts`); the server cancels a statement past the command
  * timeout (`statement_timeout`, lock waits included), the client gives up on a silent server a
  * second later (`query_timeout`), and a session idle in a transaction is ended
  * (`idle_in_transaction_session_timeout`) so a frozen holder's row locks are freed. Settings out of

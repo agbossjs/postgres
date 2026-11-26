@@ -1,7 +1,6 @@
 import { inspect } from "node:util";
 import { effectKeyForTesting } from "@agboss/core/testing/contracts";
 import { StoreClock, StoreTimeSource } from "@agboss/core";
-import { StoredNamesUnreadableError } from "@agboss/core/stores";
 import { VirtualClock } from "@agboss/core/testing";
 import { hours } from "@agboss/core/units";
 import { describe, expect, it } from "vitest";
@@ -12,10 +11,11 @@ import {
 import { testDatabase } from "../support/database.js";
 import { TestApplicationContext } from "../support/application-context.js";
 import { connectionTo } from "../support/stores.js";
+import { StoreError } from "@agboss/core/stores";
 
 /**
  * agbossjs/agboss#1166: a fenced effect's stored result (a `text` column, the work's result as JSON)
- * that is no JSON is the coded `StoredNamesUnreadableError` on its replay, and quotes no stored
+ * that is no JSON is the coded `StoreError.UnreadableRecord` on its replay, and quotes no stored
  * text (agbossjs/agboss#906 D4-b).
  */
 const database = testDatabase();
@@ -63,9 +63,9 @@ describe.each(TEXTS)("a stored fenced effect result that is not JSON: %#", (text
         (thrown: unknown) => thrown,
       );
 
-    expect(error).toBeInstanceOf(StoredNamesUnreadableError);
+    expect(error).toBeInstanceOf(StoreError.UnreadableRecord);
     expect(error).toMatchObject({
-      code: "stored.unreadable",
+      code: "store.unreadable-record",
       record: "fenced effect result",
       ids: "name charge",
     });

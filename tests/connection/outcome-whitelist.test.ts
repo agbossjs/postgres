@@ -6,7 +6,7 @@
  * or a statement pg never sent, is known at a COMMIT or a write; everything else is unknown there.
  * Flipping any row's class or code in `known-failure.ts` turns its rows red.
  */
-import { StoreOutcomeSource, StoreOutcomeUnknownError } from "@agboss/core/stores";
+import { StoreOutcomeSource, StoreError } from "@agboss/core/stores";
 import pg from "pg";
 import { describe, expect, it } from "vitest";
 import { type FailedStatement, outcomeOf } from "../../src/connection/outcome.js";
@@ -106,7 +106,7 @@ describe("agbossjs/postgres#113: a server abort of a whitelisted class is known 
       for (const severity of ["FATAL", "PANIC", "", "error"])
         for (const statement of EFFECTFUL)
           expect(outcomeOf(serverError(code, severity), statement)).toBeInstanceOf(
-            StoreOutcomeUnknownError,
+            StoreError.OutcomeUnknown,
           );
     },
   );
@@ -115,7 +115,7 @@ describe("agbossjs/postgres#113: a server abort of a whitelisted class is known 
     const error = serverError("23505");
     error.severity = undefined;
 
-    expect(outcomeOf(error, COMMIT)).toBeInstanceOf(StoreOutcomeUnknownError);
+    expect(outcomeOf(error, COMMIT)).toBeInstanceOf(StoreError.OutcomeUnknown);
   });
 });
 
@@ -125,7 +125,7 @@ describe("agbossjs/postgres#113: any other server error at a COMMIT or a write i
 
     for (const statement of EFFECTFUL) {
       const read = outcomeOf(error, statement);
-      expect(read).toBeInstanceOf(StoreOutcomeUnknownError);
+      expect(read).toBeInstanceOf(StoreError.OutcomeUnknown);
       expect(read).toMatchObject({ source: StoreOutcomeSource.Transport, cause: error });
     }
   });
@@ -146,14 +146,14 @@ describe("agbossjs/postgres#113: any other server error at a COMMIT or a write i
     ["a whitelisted class with a space", "23 05"],
     ["an empty code", ""],
   ])("a server error whose code is %s, at a COMMIT: unknown", (_name, code) => {
-    expect(outcomeOf(serverError(code), COMMIT)).toBeInstanceOf(StoreOutcomeUnknownError);
+    expect(outcomeOf(serverError(code), COMMIT)).toBeInstanceOf(StoreError.OutcomeUnknown);
   });
 
   it("a whitelisted code on an error that is not the server's answer, at a COMMIT: unknown", () => {
     for (const code of ["23505", "40001", "40P01", "25P02", "42P06"]) {
       const error = Object.assign(new Error(`not the server ${code}`), { code });
-      expect(outcomeOf(error, COMMIT)).toBeInstanceOf(StoreOutcomeUnknownError);
-      expect(outcomeOf(error, WRITE)).toBeInstanceOf(StoreOutcomeUnknownError);
+      expect(outcomeOf(error, COMMIT)).toBeInstanceOf(StoreError.OutcomeUnknown);
+      expect(outcomeOf(error, WRITE)).toBeInstanceOf(StoreError.OutcomeUnknown);
     }
   });
 });
@@ -175,7 +175,7 @@ describe("agbossjs/postgres#113: a statement that can commit inside itself is ne
     "%j fails with a whitelisted server abort: unknown (an inner COMMIT may have applied)",
     (sql) => {
       for (const code of ["23505", "P0001", "22012"])
-        expect(outcomeOf(serverError(code), write(sql))).toBeInstanceOf(StoreOutcomeUnknownError);
+        expect(outcomeOf(serverError(code), write(sql))).toBeInstanceOf(StoreError.OutcomeUnknown);
     },
   );
 

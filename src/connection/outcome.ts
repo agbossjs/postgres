@@ -1,8 +1,4 @@
-import {
-  StoreCallTimeoutError,
-  StoreOutcomeSource,
-  StoreOutcomeUnknownError,
-} from "@agboss/core/stores";
+import { StoreOutcomeSource, StoreError } from "@agboss/core/stores";
 import type { Milliseconds } from "@agboss/core/units";
 import { isKnownFailure, isOneStatement } from "./known-failure.js";
 
@@ -96,7 +92,7 @@ export interface FailedStatement {
 export function outcomeOf(error: unknown, statement: FailedStatement): unknown {
   const operation = operationOf(statement.sql);
   if (isCommandTimeout(error))
-    return new StoreCallTimeoutError({
+    return new StoreError.CallTimeout({
       store: "PostgresConnection",
       operation,
       timeout: statement.timeout as Milliseconds,
@@ -106,7 +102,7 @@ export function outcomeOf(error: unknown, statement: FailedStatement): unknown {
   const isEffectful =
     isCommit(statement.sql) || (!statement.isInTransaction && isWrite(statement.sql));
   if (isEffectful && !isKnownFailure(error, statement.sql))
-    return new StoreOutcomeUnknownError({
+    return new StoreError.OutcomeUnknown({
       store: "PostgresConnection",
       operation,
       source: StoreOutcomeSource.Transport,
@@ -133,5 +129,5 @@ export function isLostConnection(error: unknown): boolean {
 }
 
 /** Whether `error` is a statement's unknown outcome read from its transport (not a command timeout). */
-export const isUnknownTransport = (error: unknown): error is StoreOutcomeUnknownError =>
-  error instanceof StoreOutcomeUnknownError && error.source === StoreOutcomeSource.Transport;
+export const isUnknownTransport = (error: unknown): error is StoreError.OutcomeUnknown =>
+  error instanceof StoreError.OutcomeUnknown && error.source === StoreOutcomeSource.Transport;

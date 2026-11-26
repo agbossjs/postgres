@@ -11,7 +11,6 @@
  */
 import {
   createApp,
-  GraphRuleError,
   InMemoryFencedEffectRepository,
   InMemoryOutboundCallRepository,
   SqliteExecutionAuditLogRepository,
@@ -21,6 +20,7 @@ import {
   EXECUTION_ID_STORE,
   provide,
   type Provider,
+  ConfigError,
 } from "@agboss/core";
 import { generateKeyPairSync } from "node:crypto";
 import { beforeAll, describe, expect, it } from "vitest";
@@ -55,8 +55,8 @@ async function backendViolationsOf(providers: readonly Provider[]): Promise<read
     (thrown: unknown) => thrown,
   );
   if (error === undefined) return [];
-  if (error instanceof Error && !(error instanceof GraphRuleError)) throw error;
-  if (!(error instanceof GraphRuleError)) throw new Error("the assembly threw a non-error");
+  if (error instanceof Error && !(error instanceof ConfigError.GraphRules)) throw error;
+  if (!(error instanceof ConfigError.GraphRules)) throw new Error("the assembly threw a non-error");
   return error.violations
     .filter((found) => found.code.startsWith("application.store-backend"))
     .map((found) => `[${found.code}] ${found.message}`);

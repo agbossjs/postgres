@@ -1,10 +1,5 @@
 import { effectKeyForTesting } from "@agboss/core/testing/contracts";
-import {
-  ExecutionCancelFencedError,
-  StoreClock,
-  StoreTimeSource,
-  IdempotencyRunStatus,
-} from "@agboss/core";
+import { ExecutionError, StoreClock, StoreTimeSource, IdempotencyRunStatus } from "@agboss/core";
 import { VirtualClock } from "@agboss/core/testing";
 import { hours } from "@agboss/core/units";
 import pg from "pg";
@@ -110,7 +105,7 @@ describe("agbossjs/agboss#909, #1117: the cancel's fence is the root lease row's
     const later = await effects
       .runOnce(keyOf(root, lease?.token ?? 0, "later"), () => ({ receipt: "r2" }))
       .catch((error: unknown) => error);
-    expect(later).toBeInstanceOf(ExecutionCancelFencedError);
+    expect(later).toBeInstanceOf(ExecutionError.CancelFenced);
   });
 
   it("a fencing transaction that starts while a cancel holds the root's row waits for it and reads the committed mark", async () => {
@@ -138,7 +133,7 @@ describe("agbossjs/agboss#909, #1117: the cancel's fence is the root lease row's
       );
       await client.query("COMMIT");
 
-      expect(await write).toBeInstanceOf(ExecutionCancelFencedError);
+      expect(await write).toBeInstanceOf(ExecutionError.CancelFenced);
     } finally {
       await client.end();
     }
@@ -223,7 +218,7 @@ describe("agbossjs/agboss#909, #1117: the cancel's fence is the root lease row's
     const later = await effects
       .runOnce(keyFor("later"), () => ({ receipt: "r2" }))
       .catch((error: unknown) => error);
-    expect(later).toBeInstanceOf(ExecutionCancelFencedError);
+    expect(later).toBeInstanceOf(ExecutionError.CancelFenced);
   });
 
   it("a cancel of one tree never waits for another tree's open transaction", async () => {
@@ -331,6 +326,6 @@ describe("agbossjs/agboss#1117: the cancel's mark is permanent", () => {
       .runOnce(keyFor("later"), () => ({ receipt: "r2" }))
       .catch((error: unknown) => error);
 
-    expect(later).toBeInstanceOf(ExecutionCancelFencedError);
+    expect(later).toBeInstanceOf(ExecutionError.CancelFenced);
   });
 });

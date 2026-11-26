@@ -5,11 +5,11 @@
  * so its step-keyed charge (`execution-1:charge-action:1:charge`) found the first order's stored
  * result and "replayed" its receipt — the second order never charged. Now every minted execution
  * id is kept in `agboss_execution_ids` before anything else of its tree is written: the repeat is
- * `DuplicateExecutionIdError`, nothing of it reaches the gateway, the first tree is untouched; of
+ * `ExecutionError.DuplicateExecutionId`, nothing of it reaches the gateway, the first tree is untouched; of
  * two instances minting one id at once, one tree runs. Built with the public `createApp` on the
  * test's own schema, each instance its own pool.
  */
-import { createApp, DuplicateExecutionIdError, IdGenerator, Injectable } from "@agboss/core";
+import { createApp, IdGenerator, Injectable, ExecutionError } from "@agboss/core";
 import { generateKeyPairSync } from "node:crypto";
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import {
@@ -112,7 +112,9 @@ describe("agbossjs/agboss#591 on PostgreSQL: a repeated execution id never repla
     const repeated = await charge(restarted, "order-B");
 
     expect(charged).toMatchObject({ result: { executionId: "execution-1" } });
-    expect(repeated).toMatchObject({ error: expect.any(DuplicateExecutionIdError) as unknown });
+    expect(repeated).toMatchObject({
+      error: expect.any(ExecutionError.DuplicateExecutionId) as unknown,
+    });
     expect(String((repeated as { error: unknown }).error)).not.toContain("execution-1");
     expect(await charges()).toEqual([
       { order_id: "order-A", idempotency_key: "execution-1:charge-action:1:charge" },
@@ -134,7 +136,9 @@ describe("agbossjs/agboss#591 on PostgreSQL: a repeated execution id never repla
 
     const refused = outcomes.filter((outcome) => "error" in outcome);
     expect(refused).toHaveLength(1);
-    expect(refused[0]).toMatchObject({ error: expect.any(DuplicateExecutionIdError) as unknown });
+    expect(refused[0]).toMatchObject({
+      error: expect.any(ExecutionError.DuplicateExecutionId) as unknown,
+    });
     expect(await charges()).toHaveLength(1);
   });
 });

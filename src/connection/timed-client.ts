@@ -1,6 +1,6 @@
 import pg from "pg";
-import type { StoreOutcomeUnknownError } from "@agboss/core/stores";
 import { isClientTimeout, isCommit, isUnknownTransport, outcomeOf } from "./outcome.js";
+import { StoreError } from "@agboss/core/stores";
 
 /**
  * The command timeout of the pool's connections, in ms (agbossjs/agboss#928): `pg.Pool` hands it to
@@ -32,8 +32,8 @@ const isTimedQuery = (value: unknown): value is TimedQuery =>
 
 /**
  * A `pg.Client` whose promise `query` reads its failure (agbossjs/agboss#928, #1017): a command
- * timeout is `StoreCallTimeoutError` (source `Command`), a connection lost under a COMMIT or a
- * single write is `StoreOutcomeUnknownError` (source `Transport`), anything else the driver's own
+ * timeout is `StoreError.CallTimeout` (source `Command`), a connection lost under a COMMIT or a
+ * single write is `StoreError.OutcomeUnknown` (source `Transport`), anything else the driver's own
  * error (`outcome.ts`). After pg's client-side timeout the connection is still stuck on the
  * statement: its socket is destroyed, so nothing queues behind it and the pool never reuses it.
  * Every store, every transaction and LangGraph's `PostgresSaver` run on these clients.
@@ -43,7 +43,7 @@ export class TimedClient extends pg.Client {
   #isInTransaction = false;
   #longTimeout: number | undefined;
   /** The unknown outcome this connection ended with: every later statement rejects with it. */
-  #poisonedBy: StoreOutcomeUnknownError | undefined;
+  #poisonedBy: StoreError.OutcomeUnknown | undefined;
 
   readonly #driverQuery: (...args: unknown[]) => unknown;
 
@@ -132,7 +132,7 @@ export class TimedClient extends pg.Client {
    * and every later statement on it (a caller's own ROLLBACK, LangGraph's `PostgresSaver`'s)
    * rejects with this outcome, never with an error that hides it.
    */
-  #poison(outcome: StoreOutcomeUnknownError): void {
+  #poison(outcome: StoreError.OutcomeUnknown): void {
     this.#poisonedBy = outcome;
     void this.end();
   }

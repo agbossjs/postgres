@@ -204,7 +204,7 @@ describe("PostgresCostLedgerRepository: pruning (agbossjs/agboss#771)", () => {
 
     for (const outcome of outcomes)
       if (outcome.status === "rejected")
-        expect(outcome.reason).toMatchObject({ code: "cost-ledger.entry-expired" });
+        expect(outcome.reason).toMatchObject({ code: "store.ledger-entry-expired" });
     expect((await first.findUsageByCounter(day("race"))).spent).toBe(5);
     const held = await onSchema(url, "SELECT count(*)::int AS n FROM agboss_cost_entries");
     expect(held.rows).toEqual([{ n: 0 }]);

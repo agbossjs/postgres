@@ -1,7 +1,6 @@
 import { inLongTransaction } from "../connection/transaction.js";
 import {
   BudgetScope,
-  CostLedgerEntryExpiredError,
   CostLedgerRepository,
   Injectable,
   type BudgetAccount,
@@ -10,7 +9,7 @@ import {
   type CostCounter,
   type LedgerEntry,
 } from "@agboss/core";
-import { assertLedgerCutoff, assertLedgerEntries } from "@agboss/core/stores";
+import { assertLedgerCutoff, assertLedgerEntries, StoreError } from "@agboss/core/stores";
 import { usd } from "@agboss/core/units";
 import { z } from "zod";
 import { PostgresConnection } from "../connection/postgres-connection.js";
@@ -206,7 +205,7 @@ export class PostgresCostLedgerRepository extends CostLedgerRepository {
     // without its mark the ledger cannot tell a pruned entry: nothing was added (agbossjs/agboss#771)
     if (!answer.marked) throw new PostgresLedgerMarkMissingError();
     if (answer.expired !== null)
-      throw new CostLedgerEntryExpiredError({
+      throw new StoreError.LedgerEntryExpired({
         ledgerIds: answer.expired,
         prunedBefore: answer.pruned_before,
       });
@@ -214,7 +213,7 @@ export class PostgresCostLedgerRepository extends CostLedgerRepository {
 
   async deleteByMadeAtBefore(cutoff: Date): Promise<void> {
     // a cutoff that is no date would lower the mark: refused with the ledger's code,
-    // cost-ledger.cutoff-invalid (agbossjs/agboss#817, agbossjs/agboss#869)
+    // store.ledger-cutoff-invalid (agbossjs/agboss#817, agbossjs/agboss#869)
     assertLedgerCutoff(cutoff);
     await inLongTransaction(this.connection.pool, (client) => changesOf(client, PRUNE, [cutoff]));
   }

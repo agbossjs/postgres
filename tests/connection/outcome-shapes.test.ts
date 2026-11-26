@@ -1,8 +1,4 @@
-import {
-  StoreCallTimeoutError,
-  StoreOutcomeSource,
-  StoreOutcomeUnknownError,
-} from "@agboss/core/stores";
+import { StoreOutcomeSource, StoreError } from "@agboss/core/stores";
 import { describe, expect, it } from "vitest";
 import {
   type FailedStatement,
@@ -42,7 +38,7 @@ describe("agbossjs/agboss#1213: what a failed statement is called", () => {
   it("a command timeout names the connection, the operation and the timeout", () => {
     const error = outcomeOf(withCode("57014"), statement("UPDATE   t SET v = 1", false));
 
-    expect(error).toBeInstanceOf(StoreCallTimeoutError);
+    expect(error).toBeInstanceOf(StoreError.CallTimeout);
     expect(error).toMatchObject({
       store: "PostgresConnection",
       operation: "UPDATE t SET",
@@ -54,7 +50,7 @@ describe("agbossjs/agboss#1213: what a failed statement is called", () => {
   it("an unknown transport outcome names the connection and the operation", () => {
     const error = outcomeOf(withCode("ECONNRESET"), statement("DELETE   FROM t WHERE 1", false));
 
-    expect(error).toBeInstanceOf(StoreOutcomeUnknownError);
+    expect(error).toBeInstanceOf(StoreError.OutcomeUnknown);
     expect(error).toMatchObject({
       store: "PostgresConnection",
       operation: "DELETE FROM t",
@@ -69,7 +65,7 @@ describe("agbossjs/agboss#1213: the statement's own words decide whether it may 
   it.each(["commit", "  COMMIT", "\n\tEnd", " end transaction", "COMMIT PREPARED 'x'"])(
     "%j inside a transaction is a COMMIT: unknown",
     (sql) => {
-      expect(outcomeOf(lost, statement(sql, true))).toBeInstanceOf(StoreOutcomeUnknownError);
+      expect(outcomeOf(lost, statement(sql, true))).toBeInstanceOf(StoreError.OutcomeUnknown);
     },
   );
 
@@ -104,7 +100,7 @@ describe("agbossjs/agboss#1213: the statement's own words decide whether it may 
     "insert into t values (1)",
     "WITH x AS (SELECT 1) DELETE FROM t",
   ])("%j outside a transaction may be a write: unknown", (sql) => {
-    expect(outcomeOf(lost, statement(sql, false))).toBeInstanceOf(StoreOutcomeUnknownError);
+    expect(outcomeOf(lost, statement(sql, false))).toBeInstanceOf(StoreError.OutcomeUnknown);
   });
 });
 
@@ -146,7 +142,7 @@ describe("agbossjs/agboss#1213: which values are a transport error", () => {
     const error = new AggregateError([new Error("boom"), withCode("ETIMEDOUT")]);
 
     expect(outcomeOf(error, statement("UPDATE t SET v = 1", false))).toBeInstanceOf(
-      StoreOutcomeUnknownError,
+      StoreError.OutcomeUnknown,
     );
     expect(isLostConnection(error)).toBe(true);
   });

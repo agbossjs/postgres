@@ -1,14 +1,10 @@
-import {
-  ExecutionPauseFencedError,
-  ExecutionStopFencedError,
-  InterruptMode,
-  type NewStatusTransition,
-} from "@agboss/core";
-import { ExecutionCancelFencedError, cancelTreeOf, type EffectKey } from "@agboss/core/stores";
+import { InterruptMode, type NewStatusTransition } from "@agboss/core";
+import { cancelFencedOf, cancelTreeOf, type EffectKey } from "@agboss/core/stores";
 import { z } from "zod";
 import type { PoolClient } from "pg";
 import { changesOf, firstRowOf } from "../connection/query.js";
 import { appendStatus } from "./status-log.js";
+import { pauseFencedOf, stopFencedOf } from "./interrupt-fence.js";
 import { storeNow } from "./store-time.js";
 
 /**
@@ -106,9 +102,9 @@ const FenceRow = z.object({
  * an effect — the key's lookup, all on the tree's ROOT row (locked `FOR SHARE`, so a child's key is
  * checked against its root): a pause fenced the root lease through a token (#1341c) — a write of the
  * root's lease at or below it is stale, and so is a child's while the root's current token is the
- * fenced one → `ExecutionPauseFencedError`; an `Immediate` stop with no cancel (#1341b) →
+ * fenced one → `ExecutionPauseFencedError` (`pauseFencedOf`); an `Immediate` stop with no cancel (#1341b) →
  * `ExecutionStopFencedError`; a cancel request and a key that is not an undo's →
- * `ExecutionCancelFencedError`. Nothing written or sent.
+ * `ExecutionError.CancelFenced`. Nothing written or sent.
  */
 export async function checkCancel(
   client: PoolClient,
@@ -124,10 +120,9 @@ export async function checkCancel(
   if (fenced !== null) {
     const isStale =
       key.leaseExecutionId === tree.rootExecutionId ? key.token <= fenced : fenced >= row.token;
-    if (isStale) throw ExecutionPauseFencedError.of(key);
+    if (isStale) throw pauseFencedOf(key);
   }
-  if (!row.is_cancelled && row.stop_mode === InterruptMode.Immediate)
-    throw ExecutionStopFencedError.of(key);
+  if (!row.is_cancelled && row.stop_mode === InterruptMode.Immediate) throw stopFencedOf(key);
   if (key.isCompensation === true) return;
-  if (row.is_cancelled) throw ExecutionCancelFencedError.of(key);
+  if (row.is_cancelled) throw cancelFencedOf(key);
 }
