@@ -342,6 +342,13 @@ CREATE INDEX IF NOT EXISTS agboss_pauses_open ON agboss_pauses (seq) WHERE (stat
 CREATE INDEX IF NOT EXISTS agboss_pauses_pending_by_expiry ON agboss_pauses (expires_at) WHERE ((status = 'pending'::text) AND (expires_at IS NOT NULL));
 CREATE INDEX IF NOT EXISTS agboss_pauses_pending_by_reminder ON agboss_pauses (remind_at) WHERE ((status = 'pending'::text) AND (remind_at IS NOT NULL));
 CREATE INDEX IF NOT EXISTS agboss_pauses_reassigned_unsent ON agboss_pauses (((record ->> 'askedAt'::text)) COLLATE "C", tenant_id COLLATE "C", pause_id COLLATE "C") WHERE ((status = 'pending'::text) AND (record ? 'reassignedFrom'::text) AND ((record ->> 'isSent'::text) = 'false'::text));
+-- listPauses on the pause's own JSON (agbossjs/agboss#1307e): the cross-tenant look by status; an
+-- assignee (any member of a pool: the GIN reads `@>` on the record's `assignees` array); an external
+-- reference; a channel with the status scan. The record is the pause's body: no column, no rewrite.
+CREATE INDEX IF NOT EXISTS agboss_pauses_by_status ON agboss_pauses (status, seq);
+CREATE INDEX IF NOT EXISTS agboss_pauses_by_assignee ON agboss_pauses USING gin (((record -> 'assignees')) jsonb_path_ops);
+CREATE INDEX IF NOT EXISTS agboss_pauses_by_external_ref ON agboss_pauses (((record ->> 'externalRef')), seq);
+CREATE INDEX IF NOT EXISTS agboss_pauses_by_channel ON agboss_pauses (((record ->> 'channel')), status, seq);
 
 CREATE TABLE IF NOT EXISTS agboss_rate_limit_keys (
     limit_key text NOT NULL,

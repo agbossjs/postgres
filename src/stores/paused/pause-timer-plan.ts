@@ -1,64 +1,90 @@
-import { PauseStatus, type PauseRecord, type PauseTrailRecord } from "@agboss/core";
+import type { PauseRecord, PauseTrailRecord } from "@agboss/core";
 import {
+  isSeenAs,
   PauseExpiryBound,
   PauseNoticeKind,
-  type PauseDeadlineChange,
   type PauseRecipients,
+  type PauseTimeoutChange,
 } from "@agboss/core/stores";
 import { noticesOf, type PlannedNotice } from "./pause-notice-plan.js";
+import { countOf, isOpenAt, isWithinCap } from "./pause-open.js";
 
 /**
  * What a deadline change and a send make of a pause (agbossjs/agboss#942, #1099, #1307), restated
- * from the core's pure transitions (`pause-transitions.ts`), which no public entry exports yet.
+ * from the core's pure transitions (`pause-timeout-change.ts`, `pause-transitions.ts`), which no
+ * public entry exports yet. The plan is made over the record read under the pause's row lock, so the
+ * checks below are atomic with the write that follows.
  */
 
-/** The entry a deadline change adds to the chain of custody: who moved it, when, to what. */
+/** The entry a deadline change adds to the chain of custody: who moved it, when, to what, why. */
 function timeoutChangedEntryOf(
   pause: PauseRecord,
-  extension: PauseDeadlineChange,
+  change: PauseTimeoutChange,
   at: Date,
 ): PauseTrailRecord {
   return {
     action: "timeout-changed",
     at: at.toISOString(),
-    ...(extension.actor === undefined ? {} : { actor: extension.actor }),
+    ...(change.actor === undefined ? {} : { actor: change.actor }),
     target: pause.target,
     ...(pause.channel === undefined ? {} : { channel: pause.channel }),
     ...(pause.assignees === undefined ? {} : { assignees: pause.assignees }),
-    expiresAt: extension.expiresAt,
+    ...(change.expiresAt === undefined ? {} : { expiresAt: change.expiresAt }),
     ...(pause.externalRef === undefined ? {} : { externalRef: pause.externalRef }),
+    ...(change.reason === undefined ? {} : { reason: change.reason }),
   };
 }
 
 /**
- * A pending pause's deadline moved: never to a past time (I3), never earlier or equal (#1099), only
- * from the deadline the caller read, and never past `maxExtensions` entries of its chain of custody.
+ * Whether the change applies to the pause now: open at `at`, over the deadline the caller read (absent:
+ * none) and the pause as it was read, to none or to a time after `at` (never to a past time, I3), within
+ * the cap the record holds (`maxExpiresAt`), and under the count of changes the record's own
+ * `escalationLimits.maxExtensions` allows — never the caller's say, never the configuration's.
  */
-export function extendPlan(
+function isChangeable(pause: PauseRecord, change: PauseTimeoutChange, at: Date): boolean {
+  if (!isOpenAt(pause, at)) return false;
+  if (pause.expiresAt !== change.previousExpiresAt || !isSeenAs(pause, change.seen)) return false;
+  if (change.expiresAt !== undefined && change.expiresAt <= at.toISOString()) return false;
+  if (!isWithinCap(pause.maxExpiresAt, change.expiresAt)) return false;
+  return countOf(pause, "timeout-changed") < (pause.escalationLimits.maxExtensions ?? Infinity);
+}
+
+/**
+ * The source of the deadline after a change: the pause's own — except one set exactly to the deadline
+ * the pause was made under, which keeps that deadline's source.
+ */
+function boundOf(pause: PauseRecord, change: PauseTimeoutChange): PauseExpiryBound {
+  const { expiryBound } = pause;
+  const isBound = change.expiresAt !== undefined && change.expiresAt === pause.boundAt;
+  return isBound && expiryBound !== undefined ? expiryBound : PauseExpiryBound.Pause;
+}
+
+/**
+ * A pending pause's deadline changed (`app.setPauseTimeout`): later, earlier, set or taken away —
+ * never to a past time (I3), only from the deadline the caller read and only while the pause is as it
+ * was read; `undefined` when it does not apply. The notice names its own change: its `expiresAt` and
+ * `previousExpiresAt` each only when there was one, the `actor` and the masked `changeReason`.
+ */
+export function timeoutChangePlan(
   pause: PauseRecord,
-  extension: PauseDeadlineChange,
+  change: PauseTimeoutChange,
   at: Date,
   recipients: PauseRecipients,
 ): { readonly pause: PauseRecord; readonly notices: readonly PlannedNotice[] } | undefined {
-  const { expiresAt } = pause;
-  if (pause.status !== PauseStatus.Pending || expiresAt === undefined) return undefined;
-  if (expiresAt <= at.toISOString()) return undefined;
-  if (expiresAt !== extension.previousExpiresAt) return undefined;
-  if (![expiresAt, at.toISOString()].every((floor) => extension.expiresAt > floor))
-    return undefined;
-  const changes = pause.trail.filter((entry) => entry.action === "timeout-changed").length;
-  if (extension.maxExtensions !== undefined && changes >= extension.maxExtensions) return undefined;
+  if (!isChangeable(pause, change, at)) return undefined;
   return {
     pause: {
       ...pause,
-      expiresAt: extension.expiresAt,
-      expiryBound: PauseExpiryBound.Pause,
-      remindAt: extension.remindAt,
-      trail: [...pause.trail, timeoutChangedEntryOf(pause, extension, at)],
+      expiresAt: change.expiresAt,
+      expiryBound: boundOf(pause, change),
+      remindAt: change.remindAt,
+      trail: [...pause.trail, timeoutChangedEntryOf(pause, change, at)],
     },
-    notices: noticesOf(recipients, PauseNoticeKind.Extended, at, {
-      expiresAt: extension.expiresAt,
-      previousExpiresAt: expiresAt,
+    notices: noticesOf(recipients, PauseNoticeKind.TimeoutChanged, at, {
+      ...(change.expiresAt === undefined ? {} : { expiresAt: change.expiresAt }),
+      ...(pause.expiresAt === undefined ? {} : { previousExpiresAt: pause.expiresAt }),
+      ...(change.actor === undefined ? {} : { actor: change.actor }),
+      ...(change.reason === undefined ? {} : { changeReason: change.reason }),
     }),
   };
 }

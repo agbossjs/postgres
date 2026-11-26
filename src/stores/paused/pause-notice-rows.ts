@@ -21,6 +21,9 @@ const NoticeRow = z.object({
   closedAt: z.string().optional(),
   expiresAt: z.string().optional(),
   previousExpiresAt: z.string().optional(),
+  // `timeout-changed`: who changed the deadline and why, written with the notice so a late delivery names its own change
+  actor: z.object({ id: z.string(), orgId: z.string().optional() }).optional(),
+  changeReason: z.string().optional(),
   assignees: z.array(z.string()).optional(),
   previousAssignees: z.array(z.string()).optional(),
   previousTarget: z.string().optional(),

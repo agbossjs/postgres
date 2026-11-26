@@ -135,26 +135,59 @@ export class PauseScans {
   }
 
   /** One tenant's pauses `filter` selects, after the cursor. */
-  async ofTenant(
+  ofTenant(
     tenantId: string,
     filter: PauseFilter,
     after: string,
     limit: number,
   ): Promise<PausePage> {
+    return this.#page(tenantId, filter, after, limit);
+  }
+
+  /** Every tenant's pauses `filter` selects, after the cursor (`app.listPauses({ allTenants: true })`). */
+  ofAllTenants(filter: PauseFilter, after: string, limit: number): Promise<PausePage> {
+    return this.#page(undefined, filter, after, limit);
+  }
+
+  /**
+   * The page of the pauses `filter` selects — of `tenantId`, or (none given) of every tenant — by
+   * `seq`. Only the conditions the filter names are in the statement, so each reads its own index:
+   * the tenant's by `agboss_pauses_by_tenant`, an assignee by the GIN on the record's `assignees`
+   * (`@>`: any member of a pool matches), an external reference and a channel by theirs, a status
+   * alone by `agboss_pauses_by_status`.
+   */
+  async #page(
+    tenantId: string | undefined,
+    filter: PauseFilter,
+    after: string,
+    limit: number,
+  ): Promise<PausePage> {
+    const values: unknown[] = [after];
+    const clauses = ["seq > $1::bigint"];
+    const add = (clause: (placeholder: string) => string, value: unknown): void => {
+      values.push(value);
+      clauses.push(clause(`$${String(values.length)}`));
+    };
+    if (tenantId !== undefined) add((at) => `tenant_id = ${at}`, tenantId);
+    add((at) => `status = ANY(${at}::text[])`, [...filter.statuses]);
+    if (filter.target !== undefined) add((at) => `target = ${at}::text`, filter.target);
+    if (filter.expiresBefore !== undefined)
+      add(
+        (at) => `expires_at IS NOT NULL AND expires_at < ${at}::timestamptz`,
+        filter.expiresBefore,
+      );
+    if (filter.channel !== undefined)
+      add((at) => `(record ->> 'channel') = ${at}::text`, filter.channel);
+    if (filter.assignee !== undefined)
+      add((at) => `(record -> 'assignees') @> jsonb_build_array(${at}::text)`, filter.assignee);
+    if (filter.externalRef !== undefined)
+      add((at) => `(record ->> 'externalRef') = ${at}::text`, filter.externalRef);
+    values.push(limit + 1);
     const rows = await rowsOf(
       this.pool,
-      `SELECT record, seq FROM agboss_pauses WHERE tenant_id = $1 AND seq > $2::bigint
-         AND status = ANY($3::text[]) AND ($4::text IS NULL OR target = $4)
-         AND ($5::timestamptz IS NULL OR (expires_at IS NOT NULL AND expires_at < $5))
-         ORDER BY seq LIMIT $6`,
-      [
-        tenantId,
-        after,
-        [...filter.statuses],
-        filter.target ?? null,
-        filter.expiresBefore ?? null,
-        limit + 1,
-      ],
+      `SELECT record, seq FROM agboss_pauses WHERE ${clauses.join(" AND ")}
+         ORDER BY seq LIMIT $${String(values.length)}`,
+      values,
     );
     return pageOf(rows, limit);
   }

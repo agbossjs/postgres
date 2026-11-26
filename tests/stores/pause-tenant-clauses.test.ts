@@ -11,6 +11,7 @@ import {
   RECIPIENTS,
   expiringPauseOf,
   instanceOn,
+  seenNowOf,
   pauseOf,
 } from "./pause-fixtures.js";
 
@@ -74,7 +75,7 @@ describe("pauses of two tenants that share their ids", () => {
     await store().reassignByTenantIdAndPauseId(
       PAUSE,
       "moved",
-      { pauseId: "moved-to", assignees: ["bob"] },
+      { pauseId: "moved-to", assignees: ["bob"], seen: await seenNowOf(store(), PAUSE, "moved") },
       NINE,
       NO_RECIPIENTS,
     );
@@ -93,7 +94,11 @@ describe("pauses of two tenants that share their ids", () => {
     const made = await store().reassignByTenantIdAndPauseId(
       PAUSE,
       "numbered",
-      { pauseId: "numbered-to", assignees: ["bob"] },
+      {
+        pauseId: "numbered-to",
+        assignees: ["bob"],
+        seen: await seenNowOf(store(), PAUSE, "numbered"),
+      },
       NINE,
       NO_RECIPIENTS,
     );
@@ -124,10 +129,14 @@ describe("pauses of two tenants that share their ids", () => {
       await store().findOrCreateByStepKey({ ...expiringPauseOf("timed"), tenantId });
     const later = new Date("2026-01-05T11:00:00.000Z");
 
-    await store().extendByTenantIdAndPauseId(
+    await store().changeTimeoutByTenantIdAndPauseId(
       PAUSE,
       "timed",
-      { expiresAt: later.toISOString(), previousExpiresAt: DEADLINE.toISOString() },
+      {
+        expiresAt: later.toISOString(),
+        previousExpiresAt: DEADLINE.toISOString(),
+        seen: await seenNowOf(store(), PAUSE, "timed"),
+      },
       NINE,
       RECIPIENTS,
     );

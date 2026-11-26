@@ -10,6 +10,7 @@ import {
   RECIPIENTS,
   expiringPauseOf,
   instanceOn,
+  seenNowOf,
   pauseOf,
 } from "./pause-fixtures.js";
 
@@ -99,13 +100,14 @@ async function pausesWithManyNotices(count: number): Promise<void> {
     await store.findOrCreateByStepKey(expiringPauseOf(id));
     await store.markSentByTenantIdAndPauseId("default", id, RECIPIENTS);
     for (const hour of [11, 12, 13])
-      await store.extendByTenantIdAndPauseId(
+      await store.changeTimeoutByTenantIdAndPauseId(
         "default",
         id,
         {
           expiresAt: `2026-01-05T${String(hour)}:00:00.000Z`,
           previousExpiresAt:
             hour === 11 ? DEADLINE.toISOString() : `2026-01-05T${String(hour - 1)}:00:00.000Z`,
+          seen: await seenNowOf(store, "default", id),
         },
         MID,
         RECIPIENTS,

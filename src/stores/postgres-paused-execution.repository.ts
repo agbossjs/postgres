@@ -2,11 +2,12 @@ import { Clock, Injectable, type PauseCancellation, type PauseRecord } from "@ag
 import type {
   PauseAnswer,
   PauseExpiry,
-  PauseDeadlineChange,
   PauseNoticeFacts,
   PauseNoticeKind,
   PauseReassignmentChange,
   PauseRecipients,
+  PauseSeen,
+  PauseTimeoutChange,
   PauseUntakenResolution,
 } from "@agboss/core/stores";
 import { PostgresConnection } from "../connection/postgres-connection.js";
@@ -25,7 +26,7 @@ import { PostgresPauseQueryRepository } from "./postgres-pause-queries.repositor
  * in one `READ COMMITTED` transaction with the notices it writes: a notice is never without its
  * change nor a change without its notice. Delivery claims a mailbox with `FOR UPDATE SKIP LOCKED`,
  * so two instances never claim one. With `PostgresCheckpointSaver` a pause made on one instance is
- * resumed on any. Listed in `@Application({ providers })` with `postgresUrl`.
+ * resumed on any. On the application's `@DatabaseStorage({ driver: PostgresDriver({ url }) })`.
  */
 @Injectable({ deps: [PostgresConnection, Clock] })
 export class PostgresPausedExecutionRepository extends PostgresPauseQueryRepository {
@@ -49,6 +50,7 @@ export class PostgresPausedExecutionRepository extends PostgresPauseQueryReposit
     answer: PauseAnswer,
     at: Date,
     recipients: PauseRecipients,
+    seen?: PauseSeen,
   ): Promise<PauseRecord | undefined> {
     return new PauseChanges(this.connection.pool).resolve(
       tenantId,
@@ -56,6 +58,7 @@ export class PostgresPausedExecutionRepository extends PostgresPauseQueryReposit
       answer,
       at,
       recipients,
+      seen,
     );
   }
 
@@ -64,8 +67,9 @@ export class PostgresPausedExecutionRepository extends PostgresPauseQueryReposit
     pauseId: string,
     answer: PauseAnswer,
     at: Date,
+    seen: PauseSeen,
   ): Promise<boolean> {
-    return new PauseChanges(this.connection.pool).decide(tenantId, pauseId, answer, at);
+    return new PauseChanges(this.connection.pool).decide(tenantId, pauseId, answer, at, seen);
   }
 
   cancelByTenantIdAndPauseId(
@@ -120,14 +124,14 @@ export class PostgresPausedExecutionRepository extends PostgresPauseQueryReposit
     return reassigned(this.connection.pool, { tenantId, pauseId }, replacement, at, recipients);
   }
 
-  extendByTenantIdAndPauseId(
+  changeTimeoutByTenantIdAndPauseId(
     tenantId: string,
     pauseId: string,
-    change: PauseDeadlineChange,
+    change: PauseTimeoutChange,
     at: Date,
     recipients: PauseRecipients,
   ): Promise<PauseRecord | undefined> {
-    return new PauseTimerChanges(this.connection.pool).extend(
+    return new PauseTimerChanges(this.connection.pool).changeTimeout(
       tenantId,
       pauseId,
       change,

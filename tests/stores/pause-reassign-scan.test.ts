@@ -7,6 +7,7 @@ import {
   RECIPIENTS,
   expiringPauseOf,
   instanceOn,
+  seenNowOf,
 } from "./pause-fixtures.js";
 
 /**
@@ -24,7 +25,7 @@ describe("the replacement of a reassigned pause", () => {
     const made = await store().reassignByTenantIdAndPauseId(
       "default",
       "old",
-      { pauseId: "new", assignees: ["bob"] },
+      { pauseId: "new", assignees: ["bob"], seen: await seenNowOf(store(), "default", "old") },
       NINE,
       RECIPIENTS,
     );
@@ -54,7 +55,11 @@ describe("the unsent replacements scan", () => {
       await store().reassignByTenantIdAndPauseId(
         "default",
         `from-${id}`,
-        { pauseId: id, assignees: ["bob"] },
+        {
+          pauseId: id,
+          assignees: ["bob"],
+          seen: await seenNowOf(store(), "default", `from-${id}`),
+        },
         NINE,
         RECIPIENTS,
       );

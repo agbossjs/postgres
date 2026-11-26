@@ -61,6 +61,16 @@ export abstract class PostgresPauseQueryRepository extends PostgresPausedRunRepo
     );
   }
 
+  async findPageOfAllTenants(
+    filter: PauseFilter,
+    limit: number,
+    after?: string,
+  ): Promise<PausePage> {
+    assertScanLimit(limit);
+    assertPauseFilter(filter);
+    return new PauseScans(this.connection.pool).ofAllTenants(filter, seqOfCursor(after), limit);
+  }
+
   async findClosedByResolvedAtBefore(
     cutoff: Date,
     limit: number,

@@ -24,77 +24,42 @@ npm install @agboss/postgres
 Peer dependency: `@agboss/core` `^0.1.1` (released together). Dependencies: `pg`,
 `@langchain/langgraph-checkpoint-postgres`, `zod`.
 
-## 1. List the stores
+## 1. Name the database
 
-Every coordination store has a PostgreSQL implementation. List them in the application's
-`providers`, in place of the in-memory defaults or the SQLite stores — all of them at once with
-`POSTGRES_STORES` (agbossjs/agboss#891; `agboss describe` still names each one):
-
-```ts
-import { POSTGRES_STORES } from "@agboss/postgres";
-
-// @Application({ …, providers: [...POSTGRES_STORES] })
-```
-
-`POSTGRES_DURABLE_STORES` is the same set without the leases, the child queue, the rate limits and
-the two stores that check the lease in their own transaction (fenced effects, outbound calls): what
-goes beside `@agboss/redis`'s coordination stores, the leases' execution ids kept here —
-`providers: [...POSTGRES_DURABLE_STORES, ...REDIS_COORDINATION_STORES, provide(EXECUTION_ID_STORE,
-PostgresExecutionLeaseRepository)]` (no second lease store: the token's class is created under the
-token only). Or one by one:
-
-<!-- snippet-context
-declare class DeskWorkflow {}
--->
+An application names its storage, and `PostgresDriver` brings `PostgresConnection` and every store of
+the package, its options read once when the application starts (the URL a `secret(…)`, never printed;
+every duration a `Milliseconds`). That is the only source of the connection: the application's
+environment is not read (agbossjs/agboss#1324), and a store class listed in `providers` beside a
+storage is `[storage.providers-conflict]`.
 
 ```ts
-import { Application } from "@agboss/core";
-import { hours } from "@agboss/core/units";
-import {
-  PostgresA2ADirectMessageRepository,
-  PostgresA2ATaskRepository,
-  PostgresCheckpointSaver,
-  PostgresChildExecutionQueueRepository,
-  PostgresCostLedgerRepository,
-  PostgresExecutionHistoryRepository,
-  PostgresExecutionAuditLogRepository,
-  PostgresExecutionLeaseRepository,
-  PostgresExecutionRecordRepository,
-  PostgresExecutionTreeRepository,
-  PostgresFencedEffectRepository,
-  PostgresMeshRequestRepository,
-  PostgresOutboundCallRepository,
-  PostgresPausedExecutionRepository,
-  PostgresRateLimitRepository,
-} from "@agboss/postgres";
-import { AppEnvironment } from "./environments/app.environment.js";
+import { DatabaseStorage, secret } from "@agboss/core";
+import { minutes, seconds } from "@agboss/core/units";
+import { PostgresDriver } from "@agboss/postgres";
 
-@Application({
-  name: "desk",
-  version: "1.0.0",
-  environment: AppEnvironment,
-  workflows: [DeskWorkflow],
-  retention: { executionRecords: hours(24 * 30) }, // 30 days of the history `agboss records export` reads
-  providers: [
-    PostgresA2ADirectMessageRepository, // direct A2A replies: a resend to another pod gets the same reply
-    PostgresA2ATaskRepository, // A2A tasks: a message resent to another pod gets the same task
-    PostgresCheckpointSaver, // LangGraph's PostgresSaver on the shared pool
-    PostgresChildExecutionQueueRepository, // ChildPlacement.AnyInstance children
-    PostgresCostLedgerRepository, // budgets: every pod's spend in one counter
-    PostgresExecutionHistoryRepository, // agboss records export, from any pod
-    PostgresExecutionAuditLogRepository, // the audit log: app.auditLogOf
-    PostgresExecutionLeaseRepository, // who moves a tree, fenced by its token
-    PostgresExecutionRecordRepository, // threads, records, scores, summaries
-    PostgresExecutionTreeRepository, // a tree's keys (saveIfAbsent)
-    PostgresFencedEffectRepository, // with PostgresExecutionLeaseRepository: it reads its leases
-    PostgresMeshRequestRepository, // a mesh request retried on another pod runs once
-    PostgresOutboundCallRepository, // OutboundCalls: intents, reconciled on any pod
-    PostgresPausedExecutionRepository, // pauses, answered on any instance
-    PostgresRateLimitRepository, // maxConcurrentCalls, per-minute windows, 429 pauses, breakers
-  ],
+@DatabaseStorage({
+  driver: PostgresDriver({
+    url: secret("POSTGRES_URL"),
+    schema: "desk",
+    poolSize: 20,
+    timeouts: { commandTimeout: seconds(10), watchLiveness: seconds(20) },
+  }),
+  auditLogTtl: minutes(60 * 24 * 30),
+  ledgerEntriesTtl: minutes(60 * 24 * 90),
 })
-export class DeskApplication {}
+export class DeskDatabase {}
 ```
+
+`agboss migrate db` migrates the schema of the application's driver (`PostgresDriver`'s `migrate`):
+it refuses with `StoreError.LiveLeases` while a lease is live, unless the command says
+`--allow-live-leases`. A `@ClusterStorage` of another backend (Redis) takes the coordination stores'
+place; the lease store stays the application's durable one. `POSTGRES_STORES` is every store the
+driver brings and `POSTGRES_DURABLE_STORES` the same without the leases, the child queue, the rate
+limits and the two stores that check the lease in their own transaction (fenced effects, outbound
+calls) — for a driver of your own over the same classes (`defineStorageDriver`); `agboss describe`
+names each store the storage provides.
+
+The stores of the driver:
 
 | Store                                   | Core contract                   | Tables                                                                                               |
 | --------------------------------------- | ------------------------------- | ---------------------------------------------------------------------------------------------------- |
@@ -139,8 +104,8 @@ less a 1 s margin. Under `testWith` and the contract suites the test's clock is 
 **One backend.** `PostgresExecutionLeaseRepository`, `PostgresFencedEffectRepository` and
 `PostgresOutboundCallRepository` declare `static store = { backend: "postgres" }` (agbossjs/agboss#526, #825): a
 fenced effect or an outbound call checks its lease in its own transaction, so assembly requires its
-store and the application's lease store to declare the same backend. List the three together; a
-mixed layout — PostgreSQL leases with in-memory or SQLite fenced effects or outbound calls, or
+store and the application's lease store to declare the same backend. The driver brings the three together; a
+mixed layout (one listed by hand beside another backend's) — PostgreSQL leases with in-memory or SQLite fenced effects or outbound calls, or
 PostgreSQL fencing stores with any other lease store — fails with
 `[application.store-backend-mismatch]`, naming both stores and both backends. A subclass inherits
 `"postgres"`; one on another database declares `"postgres:<database>"` on all three. Rate limits,
@@ -149,7 +114,7 @@ own, on another database, see the Wiki's
 [Your own store](https://github.com/agbossjs/agboss/wiki/Your-own-store).
 
 A component injects the application's `Idempotency` (agbossjs/agboss#1317: never this store's class
-— the store is the application's, listed in its `providers`). `runOnce`'s `execute` is handed no
+— the store is the application's, brought by its storage). `runOnce`'s `execute` is handed no
 transaction: a repository writes through the connection's `requireTransaction()` — this
 transaction, rolled back with the effect on any uncaught error — and may `await` its statements:
 
@@ -223,9 +188,9 @@ const { result } = await idempotency.sendOnce({
 });
 ```
 
-List `PostgresOutboundCallRepository` with `PostgresExecutionLeaseRepository`: it reads its leases.
-`PostgresConnection` need not be listed — the container creates it for the stores that use it
-(agbossjs/agboss#526); list it only when a component of yours injects it. Under a business key, a
+The driver brings `PostgresOutboundCallRepository` with the `PostgresExecutionLeaseRepository` it
+reads. `PostgresConnection` need not be listed — the storage provides it (agbossjs/agboss#526);
+inject it only in a component of yours. Under a business key, a
 pending intent found under another execution's lease asks `leaseStateOf`: a live lease is a call in
 flight (`OutboundCallInFlightError`); an expired one is closed by that check, in
 the same transaction — released and marked `superseded`, so its holder can neither renew it nor
@@ -255,83 +220,27 @@ const [takeover] = await app.auditLogOf({ tenantId: "default", rootExecutionId }
 //   previousHolderInstanceId: "<A>", previousToken: 1, token: 2, … }
 ```
 
-### Or by the driver (agbossjs/agboss#1321)
+## 2. The settings
 
-An application that names its storage lists the driver, not the stores: `PostgresDriver` brings
-`PostgresConnection` and every store, its options read once when the application starts (the URL a
-`secret(…)`, never printed; every duration a `Milliseconds`). The environment's `postgres…` fields
-below are read only by an application without a `@DatabaseStorage`.
+`PostgresDriver`'s options are what `PostgresConnection` reads (the resolved settings of the
+application's `@DatabaseStorage`); a script or a test builds a connection from a settings object
+(`new PostgresConnection({ url, poolSize, … })`, `PostgresConnectionSettings`).
 
-```ts
-import { DatabaseStorage, secret } from "@agboss/core";
-import { minutes, seconds } from "@agboss/core/units";
-import { PostgresDriver } from "@agboss/postgres";
+| Option                              | Type           | Default                                         | What                                                                         |
+| ----------------------------------- | -------------- | ----------------------------------------------- | ---------------------------------------------------------------------------- |
+| `url`                               | `SecretRef`    | —                                               | the database: `postgres://user:password@host:5432/db`                        |
+| `poolSize`                          | `number`       | `DEFAULT_POOL_SIZE` (`10`)                      | the most connections this instance's pool opens                              |
+| `timeouts.watchLiveness`            | `Milliseconds` | `DEFAULT_WATCH_LIVENESS_SECONDS` (`10` s)       | the longest a silently dead `LISTEN` connection goes unnoticed (2 to 3600 s) |
+| `timeouts.commandTimeout`           | `Milliseconds` | `DEFAULT_COMMAND_TIMEOUT` (`10000`)             | how long a store command may run (100 ms to 30 s; 0 is refused)              |
+| `timeouts.idleInTransactionTimeout` | `Milliseconds` | `DEFAULT_IDLE_IN_TRANSACTION_TIMEOUT` (`10000`) | how long a session may idle inside a transaction (100 ms to 30 s)            |
+| `schema`                            | `string`       | the URL's `search_path`, `DEFAULT_SCHEMA`       | the schema of the stores' tables (one per application)                       |
+| `schemaSetup`                       | `SchemaSetup`  | `SchemaSetup.Check`                             | what the start does with the schema (Migrations, below)                      |
 
-@DatabaseStorage({
-  driver: PostgresDriver({
-    url: secret("POSTGRES_URL"),
-    schema: "desk",
-    poolSize: 20,
-    timeouts: { commandTimeout: seconds(10), watchLiveness: seconds(20) },
-  }),
-  auditLogTtl: minutes(60 * 24 * 30),
-  ledgerEntriesTtl: minutes(60 * 24 * 90),
-})
-export class DeskDatabase {}
-```
-
-`agboss migrate db` migrates the schema of the application's driver (`PostgresDriver`'s `migrate`):
-it refuses with `StoreError.LiveLeases` while a lease is live, unless the command says
-`--allow-live-leases`.
-
-## 2. The environment
-
-`PostgresConnection` declares the fields it reads, so the core checks them at assembly:
-
-| Field                                | Type          | Default                                         | What                                                                       |
-| ------------------------------------ | ------------- | ----------------------------------------------- | -------------------------------------------------------------------------- |
-| `postgresUrl`                        | `Secret`      | —                                               | the database: `postgres://user:password@host:5432/db`                      |
-| `postgresPoolSize`                   | `number`      | `DEFAULT_POOL_SIZE` (`10`)                      | the most connections this instance's pool opens                            |
-| `postgresWatchLivenessSeconds`       | `number`      | `DEFAULT_WATCH_LIVENESS_SECONDS` (`10`)         | the longest a silently dead `LISTEN` connection goes unnoticed (2 to 3600) |
-| `postgresCommandTimeoutMs`           | `number`      | `DEFAULT_COMMAND_TIMEOUT` (`10000`)             | how long a store command may run, ms (100 to 30 000; 0 is refused)         |
-| `postgresIdleInTransactionTimeoutMs` | `number`      | `DEFAULT_IDLE_IN_TRANSACTION_TIMEOUT` (`10000`) | how long a session may idle inside a transaction, ms (100 to 30 000)       |
-| `postgresSchema`                     | `string`      | the URL's `search_path`, `DEFAULT_SCHEMA`       | the schema of the stores' tables (one per application)                     |
-| `postgresSchemaSetup`                | `SchemaSetup` | `SchemaSetup.Check`                             | what the start does with the schema (Migrations, below)                    |
-| `postgresAllowLiveLeases`            | `boolean`     | `false`                                         | `MigrateOnStart` migrates over live leases (Migrations, below)             |
-
-```ts file=environments/app.environment.ts
-// environments/app.environment.ts — the contract
-import type { Secret } from "@agboss/core";
-import type { SchemaSetup } from "@agboss/postgres";
-
-export class AppEnvironment {
-  postgresUrl!: Secret; // required as soon as one PostgreSQL store is listed
-  postgresPoolSize?: number;
-  postgresWatchLivenessSeconds?: number;
-  postgresCommandTimeoutMs?: number;
-  postgresIdleInTransactionTimeoutMs?: number;
-  postgresSchema?: string;
-  postgresSchemaSetup?: SchemaSetup;
-  postgresAllowLiveLeases?: boolean;
-}
-```
-
-```ts file=environments/prod.environment.ts
-// environments/prod.environment.ts — the values
-import { secret } from "@agboss/core";
-import type { AppEnvironment } from "./app.environment.js";
-
-export const environment: AppEnvironment = {
-  postgresUrl: secret("POSTGRES_URL"),
-  postgresPoolSize: 20,
-  postgresSchema: "desk",
-};
-```
-
-A contract without `postgresUrl` fails the application's assembly, before anything connects:
-`[environment.missing-field] PostgresExecutionLeaseRepository needs postgresUrl: Secret in
-AppEnvironment (read by PostgresConnection)`. A value of the wrong kind (a plain string for the URL,
-a pool size of 0) fails the start with `PostgresSettingsError`, naming the field, never the URL.
+An application with no `@DatabaseStorage` of `PostgresDriver` that starts a PostgreSQL store fails
+the start with `PostgresSettingsError`, naming the storage to declare, before anything connects. A
+value out of range (a pool size of 0, a schema that is no identifier) fails the same way, naming the
+option, never the URL. `allowLiveLeases` is the migrate command's flag, or a field of a settings
+object (`new PostgresConnection({ url, schemaSetup, allowLiveLeases: true })`).
 
 **No connection waits forever** (agbossjs/agboss#989): a statement waits for its connection — a free
 one of the pool, or a new one up to the server's first answer — at most the URL's `connect_timeout`
@@ -343,7 +252,7 @@ for the child queue's `LISTEN` connection and for `migratePostgres`. A statement
 bounded by the command timeout, below.
 
 **Every command is bounded** (agbossjs/agboss#928): each connection of the pool runs under
-`statement_timeout` = `postgresCommandTimeoutMs` (default 10 s, lock waits included) and the client
+`statement_timeout` = the `commandTimeout` (default 10 s, lock waits included) and the client
 gives up a second later (`query_timeout`) on a server that does not answer. A command past it fails
 as `StoreError.CallTimeout` (`store.call-timeout`, source `Command`, the driver's error as the
 cause): its outcome is unknown — under a lease the holder hands the tree over, elsewhere the caller
@@ -352,7 +261,7 @@ prove it had no effect is `StoreError.OutcomeUnknown` (source `Transport`, agbos
 below); a statement inside a transaction before its COMMIT, or a read, stays an ordinary error. After a client-side timeout the socket is destroyed and no
 `ROLLBACK` queues behind the hung statement. Retention deletes (`delete…Before`) run under
 `LONG_COMMAND_TIMEOUT` (5 min). A session idle in a transaction is ended by the server after
-`postgresIdleInTransactionTimeoutMs` (default 10 s): a frozen holder's row lock is freed, so
+`idleInTransactionTimeout` (default 10 s): a frozen holder's row lock is freed, so
 `app.cancel` and a takeover are not held by it; a fenced work that idles longer between its
 statements fails rolled back, a known outcome. Migrations run on their own connections with no
 command timeout.
@@ -389,12 +298,12 @@ child's, that blocks the renewals for about three ticks (roughly 20 s or more of
 costs the tree its lease: the holder stops at its fence and the tree is recovered after the lease
 lapses. Safety holds, every fence stands; what is lost is liveness. A leased call that waits on the
 same row (`fence.renewNow()` before an outbound send, a write of the root's own under its lease)
-ends at `postgresCommandTimeoutMs` with an unknown outcome and hands the tree over;
-`postgresCommandTimeoutMs` does not move the 5 s renewal bound. Keep the work short and do the slow
+ends at the `commandTimeout` with an unknown outcome and hands the tree over;
+the `commandTimeout` does not move the 5 s renewal bound. Keep the work short and do the slow
 part outside it. A session idle inside the transaction is ended earlier, by
-`postgresIdleInTransactionTimeoutMs`.
+`idleInTransactionTimeout`.
 
-**One schema per application** (agbossjs/agboss#891): `postgresSchema` (or
+**One schema per application** (agbossjs/agboss#891): the driver's `schema` (or
 `PostgresConnectionSettings.schema`) puts every connection of the pool in that schema
 (`options: -c search_path="<schema>"`), so two applications share one database without seeing each
 other's rows; migrate it with `--schema <name>` (it is created when missing). The name is a plain
@@ -411,14 +320,14 @@ back.
 
 **A connection that dies silently** (agbossjs/agboss#789) — a half-open TCP connection behind a NAT
 or a load balancer: no FIN, no RST, the wake-ups just stop — is noticed within
-`postgresWatchLivenessSeconds` (default 10 s): the connection runs a `SELECT 1` every half of it
+`timeouts.watchLiveness` (default 10 s): the connection runs a `SELECT 1` every half of it
 (5 s) and the answer is due within the other half; TCP keepalive is on as well. A connection that
 does not answer is dropped, `child-queue.watch-connection-lost` is logged at `warn`, and the watch
 listens again on a new one after its first pause (1 s), waking the claimers once — so a child queued
 during the gap waits for neither the sweep nor the next `NOTIFY`: the worst case is the bound, plus
 1 s, plus a connection (a new connection that is swallowed too is dropped at the bound and tried
 again, 2 s later, doubling up to 30 s). The cost is one `SELECT 1` per instance per 5 s on an empty queue. The bound of a settings object
-(`watchLivenessSeconds`) is checked as the environment's is: a whole number from 2 to 3600, else
+(`watchLivenessSeconds`) is checked as the driver's is: a whole number from 2 to 3600, else
 `PostgresSettingsError` at construction (agbossjs/agboss#1029).
 Behind a transaction-mode pooler (PgBouncer `pool_mode = transaction`) a `LISTEN` hears
 nothing: the children are still claimed, at the sweep — point the URL at the server or a
@@ -546,7 +455,7 @@ the database's clock) — a stopped single instance's own leases do — and if o
 is still live it fails to start with `PostgresLiveLeasesError`: stop the old pods first. Nothing
 pending, no look: a normal restart is unaffected. `allowLiveLeases: true` in the connection's
 settings (`new PostgresConnection({ url, schemaSetup, allowLiveLeases: true })`), or
-`postgresAllowLiveLeases: true` in the application's environment, migrates over live leases, for an
+or `agboss migrate db --allow-live-leases`, migrates over live leases, for an
 operator who accepts the risk. One protection does not depend on any of this: a pause an old instance inserts
 after `0033` still has its channel (the column is generated from the record), so a channel-filtered
 page finds it.
@@ -601,15 +510,15 @@ const report = await migratePostgres({ url, schema: "desk", signal });
 // { schema: "desk", applied: [{ version: 12, name: "mesh_requests" }], version: 12, checkpointMigrations: 0 }
 ```
 
-**The start's setup** (`postgresSchemaSetup`, the core's `SchemaSetup`, shared with
-`@agboss/mongodb`; agbossjs/agboss#891, was the flag `postgresMigrateOnStart`). At `onInit`,
+**The start's setup** (the driver's `schemaSetup`, the core's `SchemaSetup`, shared with
+`@agboss/mongodb`; agbossjs/agboss#891). At `onInit`,
 `PostgresConnection` compares the database with the package:
 
-| The database is…   | `SchemaSetup.MigrateOnStart`                                            | `SchemaSetup.Check` (the default)                                |
-| ------------------ | ----------------------------------------------------------------------- | ---------------------------------------------------------------- |
-| at this version    | starts                                                                  | starts                                                           |
-| missing or older   | migrates it, then starts (an older schema: after the live leases lapse) | `PostgresSchemaMissingError`, naming the command and the setting |
-| newer (a rollback) | `PostgresSchemaTooNewError`                                             | `PostgresSchemaTooNewError`: migrations are never rolled back    |
+| The database is…   | `SchemaSetup.MigrateOnStart`                                            | `SchemaSetup.Check` (the default)                               |
+| ------------------ | ----------------------------------------------------------------------- | --------------------------------------------------------------- |
+| at this version    | starts                                                                  | starts                                                          |
+| missing or older   | migrates it, then starts (an older schema: after the live leases lapse) | `PostgresSchemaMissingError`, naming the command and the option |
+| newer (a rollback) | `PostgresSchemaTooNewError`                                             | `PostgresSchemaTooNewError`: migrations are never rolled back   |
 
 A start that fails here ends the pool before it rejects: no connection is left open.
 `MigrateOnStart` suits a single instance or a development database; with several pods, prefer the
@@ -625,6 +534,52 @@ Job, so a pod never waits on another's migration at start and needs no right to 
 | --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `0001_baseline_0_1_1` | the whole 0.1.1 schema (agbossjs/agboss#1321c): the leases, records, trees, pauses and notices, queue, fenced effects, outbound calls, audit log, cost ledger, history, rate limits, mesh requests, A2A tasks and direct messages, execution ids and the Turn tables — 0.1.0's migrations 0001-0035 squashed; no 0.1.0 database is migrated. Each store train that changes a table adds the next numbered file, when the train is cut. |
 | LangGraph             | `checkpoints`, `checkpoint_blobs`, `checkpoint_writes`, `checkpoint_migrations`                                                                                                                                                                                                                                                                                                                                                        |
+
+## Pauses (agbossjs/agboss#1307)
+
+A pause is one row of `agboss_pauses`: the record as `jsonb`, and the columns its queries filter on
+(`status`, `resolved_at`, `expires_at`, `remind_at`, the generated `target`). Every change of a
+pending pause is a compare-and-set over the row (`UPDATE … WHERE status = …`), in the transaction
+of the notices it writes.
+
+- **The limits a pause carries.** The record holds `firstAskedAt`, `maxExpiresAt` (absent: no cap on
+  the total wait) and `escalationLimits` (`maxExtensions`, `maxReassignments`; `{}`: none), written
+  by the core when the pause is opened and only ever narrowed by a move to another target. A store
+  never reads a limit from the change or from the application's configuration: the counts and the cap
+  are the record's, judged in the transaction that reads it under its row lock and writes the change.
+  A reassignment's replacement is the core's `replacementPause` over that read, so the narrowing is
+  of the record the write is made over. A deadline a change sets past the cap, or none at all under a
+  cap, is refused with the write. Absent optional fields are absent in the JSON, never `null`; the
+  instants are the text `toISOString()` writes (milliseconds, `Z`), kept verbatim in the `jsonb` and
+  read back strictly: a row without `firstAskedAt` or `escalationLimits` (written by an earlier build)
+  is `StoreError.UnreadableRecord`, never read as "no limit".
+- **Changes are made over the pause as it was read** (`seen`: the trail's length, the assignees, the
+  deadline, `isSent`, compared by the core's `isSeenAs`). `reassign…` and `changeTimeout…` take it
+  and a change without one applies to nothing; `decide…` takes it (required) and applies only while
+  the deadline is absent or after `at`; `resolve…` takes it when the answer was permitted over a pause.
+  The pause is row-locked and read first, so of an answer and an in-place reassignment, or of two
+  racing changes, exactly one wins.
+- **A deadline can move both ways, be set or be taken away** (`changeTimeoutByTenantIdAndPauseId`):
+  the `expires_at` and `remind_at` columns take NULL and the partial scan indexes skip such a row. The
+  chain's entry carries the actor and the reason; its notice (`timeout-changed`) carries `expiresAt`
+  and `previousExpiresAt` each only when there was one, the `actor` and the masked `changeReason`,
+  kept in the mailbox JSON so a late delivery names its own change.
+- **A pause changed in place during its first send** gets its `reassigned` notice (channel and
+  listeners) from the `markSent` that follows; its `opened` carries the deadline the channel was asked
+  with.
+- **Listing** (`app.listPauses`): `findPageByTenantId` and `findPageOfAllTenants` (the same filter
+  and cursor, no tenant clause) filter `statuses`, `target`, `expiresBefore`, `channel`, `assignee`
+  (any member of a pool) and `externalRef` on the record's own JSON, each on an index
+  (`agboss_pauses_by_status`, `…_by_channel`, a GIN on the record's `assignees`, `…_by_external_ref`).
+- **A mailbox row that does not read** (a notice kind no code writes any more, damage) is set aside
+  as dead with the problem `unreadable mailbox` when it is claimed; the claim of the others goes on.
+
+Rows written before these changes: an open pause without `firstAskedAt` / `escalationLimits`, or with
+a component of kind `"question"` / `"reply-interpreter"`, is unreadable after the upgrade, and a
+mailbox with a notice of kind `"extended"` is set aside when claimed. There is no automatic rewrite:
+filling the fields from the trail (`firstAskedAt` = the first entry's `at`, `escalationLimits` `{}`)
+would loosen limits a target had set, so drain the open pauses (answer or cancel them) before the
+upgrade, or rewrite them by hand knowing that.
 
 ## Text with a NUL character
 
@@ -645,33 +600,33 @@ All operations run at `READ COMMITTED`. Losing the connection rejects the operat
 rules then apply — a failed renewal past `confirmedUntil` aborts the execution's signal and hands
 the tree over, so a pod never moves a tree whose lease it could not renew.
 
-| Store         | Operation            | How                                                                                                                                |
-| ------------- | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| Lease         | `acquire`            | `INSERT … ON CONFLICT DO UPDATE … WHERE NOT finished AND (released OR expires_at <= $now)` → token + 1, `takenOverFrom` if expired |
-| Lease         | `retire`             | `UPDATE … SET released, finished WHERE holder AND token`: refused by every later `acquire`; a later `release` keeps it finished    |
-| Lease         | `renew` / `release`  | `UPDATE … WHERE holder AND token` (a renewal also `expires_at > $now`, #534); 0 rows: lost                                         |
-| Lease         | `yield` / `reclaim`  | `UPDATE … WHERE holder AND token AND expires_at > $now`: `yielded = true` (the time left) / token + 1; 0 rows: lost                |
-| Record        | `completeIfStatus`   | `UPDATE … WHERE status = $expected`                                                                                                |
-| Tree          | `saveIfAbsent`       | `INSERT … ON CONFLICT DO NOTHING RETURNING`                                                                                        |
-| Child queue   | claim                | `WITH … AS MATERIALIZED (SELECT … FOR UPDATE SKIP LOCKED LIMIT 1) UPDATE … FROM` — chosen once (agbossjs/agboss#720)               |
-| Child queue   | `saveIfAbsent`       | `WITH saved AS (INSERT … ON CONFLICT DO UPDATE … RETURNING) SELECT pg_notify('agboss_child_queued', current_schema()) FROM saved`  |
-| Child queue   | `watchQueued`        | `LISTEN agboss_child_queued` on a connection of its own (agbossjs/agboss#777): its schema's notifications wake the claimers        |
-| Paused        | `Pending → …`        | `UPDATE … WHERE status = 'pending' RETURNING` (none → `NotPausedError` from the core)                                              |
-| Fenced effect | `runOnce`            | one transaction: lease row `FOR UPDATE`, mark upsert, key lookup, `await work(client)`, insert                                     |
-| Fenced effect | business key         | the same, the key's identity serialized by `pg_advisory_xact_lock` first (no lease row covers two trees)                           |
-| Outbound call | `saveIfAbsent`       | one transaction: lease row `FOR UPDATE`, mark upsert, `INSERT … ON CONFLICT DO NOTHING` (unique by step / key)                     |
-| Outbound call | `mark*`              | the same checks, then one `UPDATE … WHERE status AND attempt AND attempt_owner` as read: a compare-and-set                         |
-| Outbound call | `leaseStateOf`       | one transaction: lease row `FOR UPDATE`; held → Live, expired at the token → closed (`superseded`), else Ended                     |
-| Audit log     | `save`               | append-only `INSERT`; read `ORDER BY occurred_at, id` (one moment: the order saved)                                                |
-| Cost ledger   | `saveAll`            | one `INSERT … ON CONFLICT DO UPDATE SET spent_usd = spent_usd + $cost` of every counter, in key order                              |
-| Cost ledger   | `findSpentByCounter` | `SELECT` of the counter's row; no other locking (the core accepts a small overrun on a race, nothing reserved)                     |
-| History       | `save`               | upsert of the root's row (`jsonb` record); reads by tenant, id, thread, period (`LIMIT`/`OFFSET`), oldest first                    |
-| Rate limit    | `acquire`            | one transaction: the key's row `FOR UPDATE`, then sweep expired + `INSERT … WHERE count(valid) < max`                              |
-| Rate limit    | `renew` / `release`  | `UPDATE … WHERE slot_id AND expires_at > $now` (0 rows: expired) / `DELETE`                                                        |
-| Rate limit    | `addToWindow`        | the key's row `FOR UPDATE`, old buckets forgotten, sum, add to this millisecond's bucket if within the limit                       |
-| Rate limit    | `pauseUntil`         | upsert keeping `GREATEST(paused_until, $until)`: a 429 pause or an open breaker, seen by every pod                                 |
-| Mesh request  | `saveIfAbsent`       | `INSERT … ON CONFLICT DO NOTHING` by (tenant, peer, idempotency key); `deleteByCreatedAtBefore` for the sweep                      |
-| Checkpoints   | —                    | LangGraph's `PostgresSaver` on the shared pool                                                                                     |
+| Store         | Operation            | How                                                                                                                                                |
+| ------------- | -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Lease         | `acquire`            | `INSERT … ON CONFLICT DO UPDATE … WHERE NOT finished AND (released OR expires_at <= $now)` → token + 1, `takenOverFrom` if expired                 |
+| Lease         | `retire`             | `UPDATE … SET released, finished WHERE holder AND token`: refused by every later `acquire`; a later `release` keeps it finished                    |
+| Lease         | `renew` / `release`  | `UPDATE … WHERE holder AND token` (a renewal also `expires_at > $now`, #534); 0 rows: lost                                                         |
+| Lease         | `yield` / `reclaim`  | `UPDATE … WHERE holder AND token AND expires_at > $now`: `yielded = true` (the time left) / token + 1; 0 rows: lost                                |
+| Record        | `completeIfStatus`   | `UPDATE … WHERE status = $expected`                                                                                                                |
+| Tree          | `saveIfAbsent`       | `INSERT … ON CONFLICT DO NOTHING RETURNING`                                                                                                        |
+| Child queue   | claim                | `WITH … AS MATERIALIZED (SELECT … FOR UPDATE SKIP LOCKED LIMIT 1) UPDATE … FROM` — chosen once (agbossjs/agboss#720)                               |
+| Child queue   | `saveIfAbsent`       | `WITH saved AS (INSERT … ON CONFLICT DO UPDATE … RETURNING) SELECT pg_notify('agboss_child_queued', current_schema()) FROM saved`                  |
+| Child queue   | `watchQueued`        | `LISTEN agboss_child_queued` on a connection of its own (agbossjs/agboss#777): its schema's notifications wake the claimers                        |
+| Paused        | `Pending → …`        | `UPDATE … WHERE status = 'pending' [AND deadline] RETURNING`, over the row locked and compared with `seen` (none → `NotPausedError` from the core) |
+| Fenced effect | `runOnce`            | one transaction: lease row `FOR UPDATE`, mark upsert, key lookup, `await work(client)`, insert                                                     |
+| Fenced effect | business key         | the same, the key's identity serialized by `pg_advisory_xact_lock` first (no lease row covers two trees)                                           |
+| Outbound call | `saveIfAbsent`       | one transaction: lease row `FOR UPDATE`, mark upsert, `INSERT … ON CONFLICT DO NOTHING` (unique by step / key)                                     |
+| Outbound call | `mark*`              | the same checks, then one `UPDATE … WHERE status AND attempt AND attempt_owner` as read: a compare-and-set                                         |
+| Outbound call | `leaseStateOf`       | one transaction: lease row `FOR UPDATE`; held → Live, expired at the token → closed (`superseded`), else Ended                                     |
+| Audit log     | `save`               | append-only `INSERT`; read `ORDER BY occurred_at, id` (one moment: the order saved)                                                                |
+| Cost ledger   | `saveAll`            | one `INSERT … ON CONFLICT DO UPDATE SET spent_usd = spent_usd + $cost` of every counter, in key order                                              |
+| Cost ledger   | `findSpentByCounter` | `SELECT` of the counter's row; no other locking (the core accepts a small overrun on a race, nothing reserved)                                     |
+| History       | `save`               | upsert of the root's row (`jsonb` record); reads by tenant, id, thread, period (`LIMIT`/`OFFSET`), oldest first                                    |
+| Rate limit    | `acquire`            | one transaction: the key's row `FOR UPDATE`, then sweep expired + `INSERT … WHERE count(valid) < max`                                              |
+| Rate limit    | `renew` / `release`  | `UPDATE … WHERE slot_id AND expires_at > $now` (0 rows: expired) / `DELETE`                                                                        |
+| Rate limit    | `addToWindow`        | the key's row `FOR UPDATE`, old buckets forgotten, sum, add to this millisecond's bucket if within the limit                                       |
+| Rate limit    | `pauseUntil`         | upsert keeping `GREATEST(paused_until, $until)`: a 429 pause or an open breaker, seen by every pod                                                 |
+| Mesh request  | `saveIfAbsent`       | `INSERT … ON CONFLICT DO NOTHING` by (tenant, peer, idempotency key); `deleteByCreatedAtBefore` for the sweep                                      |
+| Checkpoints   | —                    | LangGraph's `PostgresSaver` on the shared pool                                                                                                     |
 
 ## Tests
 
@@ -698,7 +653,8 @@ Each test file works in a schema of its own (`t_<random>`), dropped after it.
   against the real database, two instances with two pools, and the store set's cases (the three
   fencing stores declare one backend). Nothing is left out.
 - **Backends at assembly** (`tests/processes/store-backends.test.ts`) — mixed layouts fail with
-  `[application.store-backend-mismatch]`; the all-PostgreSQL layout assembles.
+  `[application.store-backend-mismatch]`; the all-PostgreSQL layout assembles, and the layout on
+  `PostgresDriver` starts.
 - **Two real processes** (`tests/processes/`) — each instance is a separate `node` process with its
   own pool, running the application of `tests/fixtures/` on the test's schema, driven by JSON lines
   on stdin and stdout. The processes share nothing but the database; a step that must stay busy

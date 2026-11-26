@@ -13,6 +13,7 @@ import {
   RECIPIENTS,
   expiringPauseOf,
   instanceOn,
+  seenNowOf,
   pauseOf,
 } from "./pause-fixtures.js";
 
@@ -178,7 +179,7 @@ describe("the retention's removal of closed pauses", () => {
     await store().reassignByTenantIdAndPauseId(
       "default",
       "old",
-      { pauseId: "new", assignees: ["bob"] },
+      { pauseId: "new", assignees: ["bob"], seen: await seenNowOf(store(), "default", "old") },
       NINE,
       RECIPIENTS,
     );

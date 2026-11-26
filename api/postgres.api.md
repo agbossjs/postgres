@@ -94,7 +94,6 @@ import { Page } from '@agboss/core/stores';
 import type { PauseAnswer } from '@agboss/core/stores';
 import { PauseAnswerRecord } from '@agboss/core';
 import { PauseCancellation } from '@agboss/core';
-import type { PauseDeadlineChange } from '@agboss/core/stores';
 import { PausedExecution } from '@agboss/core';
 import { PausedExecutionRepository } from '@agboss/core';
 import type { PauseExpiry } from '@agboss/core/stores';
@@ -110,6 +109,8 @@ import type { PauseRecipients } from '@agboss/core/stores';
 import { PauseRecord } from '@agboss/core';
 import type { PauseRequest } from '@agboss/core';
 import type { PauseScanAfter } from '@agboss/core/stores';
+import type { PauseSeen } from '@agboss/core/stores';
+import type { PauseTimeoutChange } from '@agboss/core/stores';
 import type { PauseUntakenResolution } from '@agboss/core/stores';
 import { PendingWrite } from '@langchain/langgraph-checkpoint';
 import pg from 'pg';
@@ -287,7 +288,7 @@ export class PostgresChildExecutionQueueRepository extends ChildExecutionQueueRe
 
 // @public
 export class PostgresConnection implements OnInit, OnDestroy {
-    constructor(source: ApplicationContext | PostgresConnectionSettings, resolved?: ResolvedSettings);
+    constructor(source?: PostgresConnectionSettings | ResolvedSettings);
     onDestroy(): Promise<void>;
     onInit(): Promise<void>;
     ping(): Promise<void>;
@@ -623,13 +624,13 @@ export class PostgresPausedExecutionRepository extends PostgresPauseQueryReposit
     // (undocumented)
     cancelByTenantIdAndPauseId(tenantId: string, pauseId: string, resolution: PauseCancellation, at: Date, recipients: PauseRecipients): Promise<PauseRecord | undefined>;
     // (undocumented)
+    changeTimeoutByTenantIdAndPauseId(tenantId: string, pauseId: string, change: PauseTimeoutChange, at: Date, recipients: PauseRecipients): Promise<PauseRecord | undefined>;
+    // (undocumented)
     closeUntakenByTenantIdAndPauseId(tenantId: string, pauseId: string, resolution: PauseUntakenResolution, at: Date, recipients: PauseRecipients): Promise<PauseRecord | undefined>;
     // (undocumented)
-    decideByTenantIdAndPauseId(tenantId: string, pauseId: string, answer: PauseAnswer, at: Date): Promise<boolean>;
+    decideByTenantIdAndPauseId(tenantId: string, pauseId: string, answer: PauseAnswer, at: Date, seen: PauseSeen): Promise<boolean>;
     // (undocumented)
     expireByTenantIdAndPauseId(tenantId: string, pauseId: string, expiry: PauseExpiry, at: Date, recipients: PauseRecipients): Promise<PauseRecord | undefined>;
-    // (undocumented)
-    extendByTenantIdAndPauseId(tenantId: string, pauseId: string, change: PauseDeadlineChange, at: Date, recipients: PauseRecipients): Promise<PauseRecord | undefined>;
     // (undocumented)
     markSentByTenantIdAndPauseId(tenantId: string, pauseId: string, recipients: PauseRecipients, externalRef?: string): Promise<boolean>;
     // (undocumented)
@@ -639,7 +640,7 @@ export class PostgresPausedExecutionRepository extends PostgresPauseQueryReposit
     // (undocumented)
     remindByTenantIdAndPauseId(tenantId: string, pauseId: string, at: Date, recipients: PauseRecipients): Promise<boolean>;
     // (undocumented)
-    resolveByTenantIdAndPauseId(tenantId: string, pauseId: string, answer: PauseAnswer, at: Date, recipients: PauseRecipients): Promise<PauseRecord | undefined>;
+    resolveByTenantIdAndPauseId(tenantId: string, pauseId: string, answer: PauseAnswer, at: Date, recipients: PauseRecipients, seen?: PauseSeen): Promise<PauseRecord | undefined>;
 }
 
 // @public
@@ -684,6 +685,8 @@ export abstract class PostgresPauseQueryRepository extends PostgresPausedRunRepo
     findOpenAfter(after: string | undefined, limit: number): Promise<PausePage>;
     // (undocumented)
     findPageByTenantId(tenantId: string, filter: PauseFilter, limit: number, after?: string): Promise<PausePage>;
+    // (undocumented)
+    findPageOfAllTenants(filter: PauseFilter, limit: number, after?: string): Promise<PausePage>;
     // (undocumented)
     findPendingByExpiresAtBefore(at: Date, limit: number, after?: PauseScanAfter): Promise<readonly PauseRecord[]>;
     // (undocumented)
@@ -968,6 +971,7 @@ export type StepIndexResult = "built" | "present" | "skipped";
 // src/stores/postgres-pause-queries.repository.ts - (ae-undocumented) Missing documentation for "findPendingByRemindAtBefore".
 // src/stores/postgres-pause-queries.repository.ts - (ae-undocumented) Missing documentation for "findOpenAfter".
 // src/stores/postgres-pause-queries.repository.ts - (ae-undocumented) Missing documentation for "findPageByTenantId".
+// src/stores/postgres-pause-queries.repository.ts - (ae-undocumented) Missing documentation for "findPageOfAllTenants".
 // src/stores/postgres-pause-queries.repository.ts - (ae-undocumented) Missing documentation for "findClosedByResolvedAtBefore".
 // src/stores/postgres-pause-queries.repository.ts - (ae-undocumented) Missing documentation for "deleteByResolvedAtBefore".
 // src/stores/postgres-pause-queries.repository.ts - (ae-undocumented) Missing documentation for "findPendingUnsentReassignedBefore".
@@ -985,7 +989,7 @@ export type StepIndexResult = "built" | "present" | "skipped";
 // src/stores/postgres-paused-execution.repository.ts - (ae-undocumented) Missing documentation for "expireByTenantIdAndPauseId".
 // src/stores/postgres-paused-execution.repository.ts - (ae-undocumented) Missing documentation for "closeUntakenByTenantIdAndPauseId".
 // src/stores/postgres-paused-execution.repository.ts - (ae-undocumented) Missing documentation for "reassignByTenantIdAndPauseId".
-// src/stores/postgres-paused-execution.repository.ts - (ae-undocumented) Missing documentation for "extendByTenantIdAndPauseId".
+// src/stores/postgres-paused-execution.repository.ts - (ae-undocumented) Missing documentation for "changeTimeoutByTenantIdAndPauseId".
 // src/stores/postgres-paused-execution.repository.ts - (ae-undocumented) Missing documentation for "remindByTenantIdAndPauseId".
 // src/stores/postgres-paused-execution.repository.ts - (ae-undocumented) Missing documentation for "noticeOnceByTenantIdAndPauseId".
 // src/stores/postgres-paused-runs.repository.ts - (ae-undocumented) Missing documentation for "connection".

@@ -36,7 +36,7 @@ const questionPauseOf = (pauseId: string, stepKey: string): PauseRecord => ({
   channel: "ship-question",
   component: {
     name: "ship-question",
-    kind: ComponentKind.Question,
+    kind: ComponentKind.ExternalTask,
     promptHash: undefined,
     schemaHash: "ddb0c5dd",
   },
@@ -61,7 +61,7 @@ describe("PostgresPausedExecutionRepository", () => {
       expect.objectContaining({ pauseId: "p-question", input: { name: "box-1" } }),
     ]);
     expect(await pauses.findByTenantIdAndPauseId("default", "p-question")).toMatchObject({
-      component: { kind: ComponentKind.Question },
+      component: { kind: ComponentKind.ExternalTask },
       status: PauseStatus.Resolved,
       answer: { decision: { verdict: "yes" } },
     });

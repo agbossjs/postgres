@@ -1,4 +1,10 @@
-import { PauseClosedReason, PauseResolution, PauseStatus, type PauseRecord } from "@agboss/core";
+import {
+  PauseClosedReason,
+  PauseResolution,
+  PauseStatus,
+  type PauseRecord,
+  type PauseTrailRecord,
+} from "@agboss/core";
 import {
   closedAtOf,
   pauseClosedReasonOf,
@@ -71,9 +77,28 @@ function instantOf(text: string | undefined): Date {
 }
 
 /**
- * The notices of a pause whose channel was just asked: `opened` to the listeners; for a replacement a
- * reassignment made, `reassigned` to the listeners instead (its channel was sent it, the old pause's
- * channel was told `closed`), naming what it moved from — the entry before its own in the chain.
+ * A pause the channel was just sent that was changed in place meanwhile: its `opened` entry (the
+ * first of its trail, what the channel was asked with) and the first `reassigned` entry after it. A
+ * replacement's own `reassigned` entry is told by `openingNotices`; `undefined` when the pause was
+ * not changed in place.
+ */
+function inPlaceChangeOf(
+  pause: PauseRecord,
+): { readonly asked: PauseTrailRecord; readonly changed: PauseTrailRecord } | undefined {
+  // every pause has its `opened` entry first
+  const [asked, ...rest] = pause.trail as [PauseTrailRecord, ...PauseTrailRecord[]];
+  const changed = rest.find((entry) => entry.action === "reassigned");
+  return pause.reassignedFrom !== undefined || changed === undefined
+    ? undefined
+    : { asked, changed };
+}
+
+/**
+ * The notices of a pause whose channel was just asked: `opened` to the listeners — with the deadline
+ * the channel was asked with, not one an in-place change set during the send (`inFirstSendNotices`
+ * tells that); for a replacement a reassignment made, `reassigned` to the listeners instead (its
+ * channel was sent it, the old pause's channel was told `closed`), naming what it moved from — the
+ * entry before its own in the chain.
  */
 function openingNotices(
   pause: PauseRecord,
@@ -81,8 +106,10 @@ function openingNotices(
   recipients: PauseRecipients,
 ): readonly PlannedNotice[] {
   const at = instantOf(pause.askedAt);
-  if (pause.reassignedFrom === undefined)
-    return noticesOf(recipients, PauseNoticeKind.Opened, at, { expiresAt: pause.expiresAt });
+  if (pause.reassignedFrom === undefined) {
+    const asked = inPlaceChangeOf(pause)?.asked ?? pause;
+    return noticesOf(recipients, PauseNoticeKind.Opened, at, { expiresAt: asked.expiresAt });
+  }
   const before = pause.trail.at(-2);
   return noticesOf({ listeners: recipients.listeners }, PauseNoticeKind.Reassigned, at, {
     expiresAt: pause.expiresAt,
@@ -96,8 +123,33 @@ function openingNotices(
 }
 
 /**
+ * The `reassigned` notice of a pause that was changed in place (its trail holds a `reassigned` entry
+ * after its own `opened`) while its first send was in flight, to the channel that was just sent it and
+ * to the listeners: the in-place change wrote none then (nobody was told of the pause yet). It names
+ * what the channel was asked with — the `opened` entry, the first of the trail — and what the pause
+ * is now, due at that entry's time. No `previousExternalRef`: a pause not yet sent has no reference.
+ */
+function inFirstSendNotices(
+  sent: PauseRecord,
+  recipients: PauseRecipients,
+): readonly PlannedNotice[] {
+  const change = inPlaceChangeOf(sent);
+  if (change === undefined) return [];
+  const { asked, changed } = change;
+  return noticesOf(recipients, PauseNoticeKind.Reassigned, instantOf(changed.at), {
+    expiresAt: sent.expiresAt,
+    previousExpiresAt: asked.expiresAt,
+    assignees: sent.assignees,
+    previousAssignees: asked.assignees,
+    previousTarget: asked.target,
+    previousChannel: asked.channel,
+  });
+}
+
+/**
  * The channel was asked (rule 2), the pause as it was read: `opened` to the listeners, then, when
- * the pause closed meanwhile, its `closed` to the channel and the listeners — written at the first
+ * it is still `Pending` and was changed in place meanwhile, its `reassigned` (`inFirstSendNotices`),
+ * or, when the pause closed meanwhile, its `closed` to the channel and the listeners — written at the first
  * close's time (`closedFirst ?? the record`), its reason and time the core's — then its
  * `answerNotTaken` when its answer was closed untaken, at the untaken close's time: what a pause
  * told before its close hears (I8). `markSent` has no `at` and reads no clock.
@@ -108,7 +160,8 @@ export function markSentNotices(
   recipients: PauseRecipients,
 ): readonly PlannedNotice[] {
   const opened = openingNotices(pause, sent, recipients);
-  if (pause.status === PauseStatus.Pending) return opened;
+  if (pause.status === PauseStatus.Pending)
+    return [...opened, ...inFirstSendNotices(sent, recipients)];
   const closed = closedNotices(
     pause,
     instantOf((pause.closedFirst ?? pause).resolvedAt ?? pause.askedAt),

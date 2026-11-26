@@ -1,7 +1,7 @@
 import { PauseStatus, type PauseRecord } from "@agboss/core";
 import {
   PauseNoticeKind,
-  type PauseDeadlineChange,
+  type PauseTimeoutChange,
   type PauseNoticeFacts,
   type PauseRecipients,
 } from "@agboss/core/stores";
@@ -9,15 +9,15 @@ import type pg from "pg";
 import { changesOf, firstRowOf } from "../../connection/query.js";
 import { inPoolTransaction } from "../../connection/transaction.js";
 import { escapedJsonOf } from "../nul-escape.js";
-import { whenHeard } from "./pause-changes.js";
+import { whenHeard } from "./pause-heard.js";
 import { markSentNotices, noticesOf } from "./pause-notice-plan.js";
 import { appendNotices } from "./pause-notice-rows.js";
 import { writtenPause } from "./pause-reassign.js";
 import { LOCKED_PAUSE, recordOfRow } from "./pause-rows.js";
-import { extendPlan, sentPause } from "./pause-timer-plan.js";
+import { sentPause, timeoutChangePlan } from "./pause-timer-plan.js";
 
 /**
- * The changes of a pause that read it first (agbossjs/agboss#935, #910): the deadline moved, the
+ * The changes of a pause that read it first (agbossjs/agboss#935, #910): the deadline changed, the
  * reminder, the channel asked and a notice of its own. Each holds the pause's row lock
  * (`SELECT … FOR UPDATE`) from its read to the end of its transaction — a closer waits, and no
  * mailbox of the pause is appended to by two at once — and the write is still a compare-and-set.
@@ -34,14 +34,16 @@ export class PauseTimerChanges {
   constructor(private readonly pool: pg.Pool) {}
 
   /**
-   * The deadline moved — the pause row-locked and read, the change planned (`extendPlan`: only while
-   * `Pending`, from the deadline the caller read, to a later one, under `maxExtensions`), written
-   * over the status it was read at, with its `timeout-changed` entry and its `extended` notices.
+   * The deadline changed — the pause row-locked and read, the change planned (`timeoutChangePlan`:
+   * only while open and as the caller read it, from the deadline it read, to none or to a time after
+   * `at`, within the record's cap and count), written over the status it was read at — its
+   * `expires_at` and `remind_at` columns NULL when there is none — with its `timeout-changed` entry
+   * and its `timeout-changed` notices.
    */
-  extend(
+  changeTimeout(
     tenantId: string,
     pauseId: string,
-    change: PauseDeadlineChange,
+    change: PauseTimeoutChange,
     at: Date,
     recipients: PauseRecipients,
   ): Promise<PauseRecord | undefined> {
@@ -49,7 +51,7 @@ export class PauseTimerChanges {
       const read = await firstRowOf(database, LOCKED_PAUSE, [tenantId, pauseId]);
       if (read === undefined) return undefined;
       const before = recordOfRow(read);
-      const plan = extendPlan(before, change, at, recipients);
+      const plan = timeoutChangePlan(before, change, at, recipients);
       if (plan === undefined) return undefined;
       const written = await writtenPause(database, before, plan.pause);
       if (written === undefined) return undefined;

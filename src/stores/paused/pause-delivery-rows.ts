@@ -25,6 +25,40 @@ function heldClaimOf(row: unknown): PauseNoticeClaim {
   return { mailbox: mailboxOf(mailboxRowOf(row)), token, until };
 }
 
+/** The key of a mailbox row, for setting it aside when its notices do not read. */
+const MailboxKey = z.object({ tenant_id: z.string(), pause_id: z.string(), recipient: z.string() });
+
+/** The problem a mailbox row that does not read is set aside with. */
+export const UNREADABLE_MAILBOX = "unreadable mailbox";
+
+/**
+ * The claims of the rows a claim statement returned. A row that does not read (a notice kind no code
+ * writes any more, damage) is set aside as dead with its problem — one bad row never fails the claim
+ * of the others, as the core's SQLite store does. A row whose key is unreadable too is the statement's
+ * failure, never swallowed.
+ */
+async function readableClaimsOf(
+  database: Queryable,
+  rows: readonly unknown[],
+): Promise<PauseNoticeClaim[]> {
+  const claims: PauseNoticeClaim[] = [];
+  for (const row of rows) {
+    try {
+      claims.push(heldClaimOf(row));
+    } catch (error) {
+      const key = MailboxKey.safeParse(row);
+      if (!key.success) throw error;
+      await changesOf(
+        database,
+        `UPDATE agboss_pause_notices SET is_dead = true, problem = $4, claim_token = NULL,
+           claimed_until = NULL WHERE ${OF_MAILBOX}`,
+        [key.data.tenant_id, key.data.pause_id, key.data.recipient, UNREADABLE_MAILBOX],
+      );
+    }
+  }
+  return claims;
+}
+
 /**
  * The row lock of a statement that picks mailboxes, and its pass over a row another statement holds
  * (never waited for): two instances pick disjoint mailboxes. Constants of their own, so the
@@ -55,9 +89,9 @@ export async function claimDue(
      RETURNING *`,
     [new Date(at.getTime() + claimFor), at, [...recipients], limit],
   );
-  return rows
-    .map(heldClaimOf)
-    .sort((a, b) => a.mailbox.nextAttemptAt.getTime() - b.mailbox.nextAttemptAt.getTime());
+  return (await readableClaimsOf(database, rows)).sort(
+    (a, b) => a.mailbox.nextAttemptAt.getTime() - b.mailbox.nextAttemptAt.getTime(),
+  );
 }
 
 /**

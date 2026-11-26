@@ -1,7 +1,14 @@
 import { minutes } from "@agboss/core/units";
 import { describe, expect, it } from "vitest";
 import { onSchema, testDatabase } from "../support/database.js";
-import { DEADLINE, MID, RECIPIENTS, expiringPauseOf, instanceOn } from "./pause-fixtures.js";
+import {
+  DEADLINE,
+  MID,
+  RECIPIENTS,
+  expiringPauseOf,
+  instanceOn,
+  seenNowOf,
+} from "./pause-fixtures.js";
 
 /**
  * agbossjs/agboss#936 AC1 (#935 rule 1, V3.1): the head time of a mailbox — `head_written_at`, what
@@ -27,10 +34,14 @@ describe("the head time of a mailbox", () => {
     const store = instanceOn(database.url());
     await store.findOrCreateByStepKey(expiringPauseOf("p"));
     await store.markSentByTenantIdAndPauseId("default", "p", RECIPIENTS);
-    await store.extendByTenantIdAndPauseId(
+    await store.changeTimeoutByTenantIdAndPauseId(
       "default",
       "p",
-      { expiresAt: "2026-01-05T11:00:00.000Z", previousExpiresAt: DEADLINE.toISOString() },
+      {
+        expiresAt: "2026-01-05T11:00:00.000Z",
+        previousExpiresAt: DEADLINE.toISOString(),
+        seen: await seenNowOf(store, "default", "p"),
+      },
       MID,
       RECIPIENTS,
     );
@@ -61,10 +72,14 @@ describe("the head time of a mailbox", () => {
     if (claim === undefined) throw new Error("the listener's mailbox is due");
     await store.retryNotice(claim, NOON, "unreachable");
 
-    await store.extendByTenantIdAndPauseId(
+    await store.changeTimeoutByTenantIdAndPauseId(
       "default",
       "q",
-      { expiresAt: "2026-01-05T11:00:00.000Z", previousExpiresAt: DEADLINE.toISOString() },
+      {
+        expiresAt: "2026-01-05T11:00:00.000Z",
+        previousExpiresAt: DEADLINE.toISOString(),
+        seen: await seenNowOf(store, "default", "q"),
+      },
       MID,
       RECIPIENTS,
     );

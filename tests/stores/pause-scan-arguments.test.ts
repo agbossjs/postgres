@@ -21,6 +21,7 @@ const scansWith: readonly (readonly [string, (limit: number) => Promise<unknown>
   ["findPendingByRemindAtBefore", (limit) => store().findPendingByRemindAtBefore(LATER, limit)],
   ["findOpenAfter", (limit) => store().findOpenAfter(undefined, limit)],
   ["findPageByTenantId", (limit) => store().findPageByTenantId("default", FILTER, limit)],
+  ["findPageOfAllTenants", (limit) => store().findPageOfAllTenants(FILTER, limit)],
   ["findClosedByResolvedAtBefore", (limit) => store().findClosedByResolvedAtBefore(LATER, limit)],
   [
     "findPendingUnsentReassignedBefore",
@@ -55,6 +56,12 @@ describe("a pause filter and a page cursor", () => {
     );
   });
 
+  it("the cross-tenant page refuses a filter without a status by name too", async () => {
+    await expect(store().findPageOfAllTenants({ statuses: [] }, 5)).rejects.toThrow(
+      new TypeError("a pause filter names at least one status"),
+    );
+  });
+
   it.each([
     "abc",
     "12a",
@@ -70,6 +77,7 @@ describe("a pause filter and a page cursor", () => {
     const message = new TypeError(`${JSON.stringify(cursor)} is not a pause page cursor`);
     await expect(store().findOpenAfter(cursor, 5)).rejects.toThrow(message);
     await expect(store().findPageByTenantId("default", FILTER, 5, cursor)).rejects.toThrow(message);
+    await expect(store().findPageOfAllTenants(FILTER, 5, cursor)).rejects.toThrow(message);
     await expect(store().findClosedByResolvedAtBefore(LATER, 5, cursor)).rejects.toThrow(message);
   });
 

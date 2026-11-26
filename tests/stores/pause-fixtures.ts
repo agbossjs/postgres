@@ -1,5 +1,11 @@
 import { PauseKind, PauseStatus, type PauseRecord } from "@agboss/core";
-import { PauseExpiryBound, PauseRespondent, type PauseRecipients } from "@agboss/core/stores";
+import {
+  PauseExpiryBound,
+  PauseRespondent,
+  seenOf,
+  type PauseRecipients,
+  type PauseSeen,
+} from "@agboss/core/stores";
 import { VirtualClock } from "@agboss/core/testing";
 import { PostgresPausedExecutionRepository } from "../../src/index.js";
 import { connectionTo } from "../support/stores.js";
@@ -41,6 +47,9 @@ export const pauseOf = (pauseId: string, stepKey = `run-1:${pauseId}`): PauseRec
   status: PauseStatus.Pending,
   isSent: false,
   askedAt: "2026-01-05T09:00:00.000Z",
+  // the limits the pause was opened under (#1307, Q-D): none; a record without them is not read
+  firstAskedAt: "2026-01-05T09:00:00.000Z",
+  escalationLimits: {},
 });
 
 /** A pause with a deadline at `DEADLINE` and a reminder half an hour before it. */
@@ -60,3 +69,18 @@ export const RECIPIENTS: PauseRecipients = {
 /** A store on a connection of its own to `url`: two of them are two application instances. */
 export const instanceOn = (url: string, poolSize = 2): PostgresPausedExecutionRepository =>
   new PostgresPausedExecutionRepository(connectionTo(url, poolSize), new VirtualClock());
+
+/**
+ * The pause as `store` holds it now, as a change is planned against it: the core's `seenOf` (trail
+ * length, assignees, deadline, `isSent`) of the record read. A change applies only while the pause is
+ * still that (#1307).
+ */
+export async function seenNowOf(
+  store: PostgresPausedExecutionRepository,
+  tenantId: string,
+  pauseId: string,
+): Promise<PauseSeen> {
+  const pause = await store.findByTenantIdAndPauseId(tenantId, pauseId);
+  if (pause === undefined) throw new Error(`the pause ${pauseId} of ${tenantId} is not there`);
+  return seenOf(pause);
+}

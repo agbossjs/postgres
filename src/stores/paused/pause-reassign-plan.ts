@@ -1,20 +1,31 @@
-import { PauseNoticeKind, recipientKeysOf, replacementStepKeyOf } from "@agboss/core/stores";
+import {
+  isSeenAs,
+  narrowedLimits,
+  PauseNoticeKind,
+  recipientKeysOf,
+  replacementPause,
+  replacementStepKeyOf,
+} from "@agboss/core/stores";
 import type {
   PauseInPlaceReassignment,
+  PauseLimitsOffer,
   PauseReassignmentChange,
   PauseRecipients,
   PauseReplacement,
-  PauseSeen,
 } from "@agboss/core/stores";
-import { PauseStatus, type PauseRecord, type PauseTrailRecord } from "@agboss/core";
+import type { PauseRecord, PauseTrailRecord } from "@agboss/core";
 import { closedNotices, type PlannedNotice } from "./pause-notice-plan.js";
-import { reassignedPause, replacementPause } from "./pause-replacement.js";
+import { countOf, isDueAt, isOpenAt, isWithinCap } from "./pause-open.js";
+import { reassignedPause } from "./pause-replacement.js";
 
 /**
  * The plan of a reassignment (agbossjs/agboss#946, #1307): the pause row-locked and read, what the
  * change makes of it, as the core's pure `reassignChange` does (restated: no public entry exports
- * it yet) — the pause as it was seen, open at `at` (an expiry's: due), under its limits; then the
- * pause changed in place, or closed `Reassigned` with its replacement.
+ * it yet; the replacement record is the core's own `replacementPause`) — the pause as it was seen
+ * (`isSeenAs`, `seen` required: a change without one applies to nothing), open at `at` (an
+ * expiry's: due), under the limits the RECORD carries, narrowed by the destination of a move; then
+ * the pause changed in place, or closed `Reassigned` with its replacement. Planned over the record
+ * read under the row lock, so the narrowing is of that read, in the same transaction as the write.
  */
 
 /** What a reassignment writes: the pause as it becomes, its notices, and the replacement it inserts. */
@@ -24,45 +35,35 @@ export interface ReassignPlan {
   readonly inserted?: PauseRecord;
 }
 
-const NEVER = "\uffff";
 const DEADLINE_KEYS: readonly string[] = ["expiresAt", "expiryBound", "remindAt"];
 
 const isInPlace = (change: PauseReassignmentChange): change is PauseInPlaceReassignment =>
   !("pauseId" in change);
 
-const countOf = (pause: PauseRecord, action: PauseTrailRecord["action"]): number =>
-  pause.trail.filter((entry) => entry.action === action).length;
-
-const sameAssignees = (
-  one: readonly string[] | undefined,
-  other: readonly string[] | undefined,
-): boolean =>
-  one === undefined || other === undefined
-    ? one === other
-    : one.length === other.length && one.every((key, index) => key === other[index]);
-
-/** Whether the pause is still the one the change was permitted and planned against. */
-const isAsSeen = (pause: PauseRecord, seen: PauseSeen | undefined): boolean =>
-  seen === undefined ||
-  (pause.trail.length === seen.trailLength &&
-    pause.expiresAt === seen.expiresAt &&
-    sameAssignees(pause.assignees, seen.assignees));
+/** What the destination of a move offers of limits; none for a change in place or one that stays. */
+const offeredLimitsOf = (change: PauseReassignmentChange): PauseLimitsOffer | undefined =>
+  isInPlace(change) ? undefined : change.to?.limits;
 
 /** Whether the change may apply: as seen, open (or due, for an expiry's), under its limits. */
 function isApplicable(pause: PauseRecord, change: PauseReassignmentChange, at: Date): boolean {
-  if (pause.status !== PauseStatus.Pending || !isAsSeen(pause, change.seen)) return false;
-  const deadline = pause.expiresAt ?? NEVER;
-  if (change.due === undefined ? deadline <= at.toISOString() : deadline > at.toISOString())
-    return false;
-  if (
-    change.maxReassignments !== undefined &&
-    countOf(pause, "reassigned") >= change.maxReassignments
-  )
-    return false;
+  if (!isSeenAs(pause, change.seen)) return false;
+  if (change.due === undefined ? !isOpenAt(pause, at) : !isDueAt(pause, at)) return false;
+  return isUnderLimits(pause, change);
+}
+
+/**
+ * Whether the change keeps the limits: the record's own, narrowed by the destination of a move —
+ * never the change's (those fields are gone) and never the application's present configuration —,
+ * the counts and the cap on a deadline the change sets. A limit not named: no count reaches it.
+ */
+function isUnderLimits(pause: PauseRecord, change: PauseReassignmentChange): boolean {
+  const { escalationLimits, maxExpiresAt } = narrowedLimits(pause, offeredLimitsOf(change));
+  const deadline = change.due ?? change.timeout;
+  if (deadline !== undefined && !isWithinCap(maxExpiresAt, deadline.expiresAt)) return false;
+  if (countOf(pause, "reassigned") >= (escalationLimits.maxReassignments ?? Infinity)) return false;
   return !(
     change.countsAsExtension === true &&
-    change.maxExtensions !== undefined &&
-    countOf(pause, "timeout-changed") >= change.maxExtensions
+    countOf(pause, "timeout-changed") >= (escalationLimits.maxExtensions ?? Infinity)
   );
 }
 

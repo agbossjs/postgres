@@ -11,6 +11,7 @@ import {
   RECIPIENTS,
   expiringPauseOf,
   instanceOn,
+  seenNowOf,
 } from "./pause-fixtures.js";
 
 /**
@@ -66,11 +67,15 @@ describe("a change and its notices are one transaction", () => {
           RECIPIENTS,
         ),
       () => store.expireByTenantIdAndPauseId("default", "p4", {}, late, RECIPIENTS),
-      () =>
-        store.extendByTenantIdAndPauseId(
+      async () =>
+        store.changeTimeoutByTenantIdAndPauseId(
           "default",
           "p5",
-          { expiresAt: "2026-01-05T12:00:00.000Z", previousExpiresAt: DEADLINE.toISOString() },
+          {
+            expiresAt: "2026-01-05T12:00:00.000Z",
+            previousExpiresAt: DEADLINE.toISOString(),
+            seen: await seenNowOf(store, "default", "p5"),
+          },
           MID,
           RECIPIENTS,
         ),

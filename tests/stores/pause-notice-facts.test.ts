@@ -11,6 +11,7 @@ import {
   RECIPIENTS,
   expiringPauseOf,
   instanceOn,
+  seenNowOf,
   pauseOf,
 } from "./pause-fixtures.js";
 
@@ -103,15 +104,20 @@ describe("the facts of a reminder, an extension, a once-only notice", () => {
       ]);
   });
 
-  it("an extension with a new reminder moves both, in the record and the columns, and tells both deadlines", async () => {
+  it("a deadline change with a new reminder moves both, in the record and the columns, and tells both deadlines", async () => {
     const later = new Date("2026-01-05T11:00:00.000Z");
     const remind = new Date("2026-01-05T10:30:00.000Z");
     await store().findOrCreateByStepKey(expiringPauseOf("extended"));
 
-    const extended = await store().extendByTenantIdAndPauseId(
+    const extended = await store().changeTimeoutByTenantIdAndPauseId(
       "default",
       "extended",
-      { expiresAt: iso(later), previousExpiresAt: iso(DEADLINE), remindAt: iso(remind) },
+      {
+        expiresAt: iso(later),
+        previousExpiresAt: iso(DEADLINE),
+        remindAt: iso(remind),
+        seen: await seenNowOf(store(), "default", "extended"),
+      },
       NINE,
       RECIPIENTS,
     );
@@ -127,7 +133,7 @@ describe("the facts of a reminder, an extension, a once-only notice", () => {
       expect(stored).toEqual([
         {
           seq: 1,
-          kind: "extended",
+          kind: "timeout-changed",
           writtenAt: iso(NINE),
           expiresAt: iso(later),
           previousExpiresAt: iso(DEADLINE),
@@ -135,14 +141,18 @@ describe("the facts of a reminder, an extension, a once-only notice", () => {
       ]);
   });
 
-  it("an extension without a reminder leaves the pause with none", async () => {
+  it("a deadline change without a reminder leaves the pause with none", async () => {
     const later = new Date("2026-01-05T11:00:00.000Z");
     await store().findOrCreateByStepKey(expiringPauseOf("extended-plain"));
 
-    const extended = await store().extendByTenantIdAndPauseId(
+    const extended = await store().changeTimeoutByTenantIdAndPauseId(
       "default",
       "extended-plain",
-      { expiresAt: iso(later), previousExpiresAt: iso(DEADLINE) },
+      {
+        expiresAt: iso(later),
+        previousExpiresAt: iso(DEADLINE),
+        seen: await seenNowOf(store(), "default", "extended-plain"),
+      },
       NINE,
       RECIPIENTS,
     );

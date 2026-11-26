@@ -9,19 +9,15 @@ import {
   type PauseAnswer,
   type PauseExpiry,
   type PauseRecipients,
+  type PauseSeen,
   type PauseUntakenResolution,
 } from "@agboss/core/stores";
 import type pg from "pg";
-import { firstRowOf, type Queryable } from "../../connection/query.js";
-import { inPoolTransaction } from "../../connection/transaction.js";
+import { firstRowOf } from "../../connection/query.js";
 import { escapedJsonOf } from "../nul-escape.js";
 import { appendNotices } from "./pause-notice-rows.js";
-import {
-  closedNotices,
-  hasRecipients,
-  untakenNotices,
-  type PlannedNotice,
-} from "./pause-notice-plan.js";
+import { closedNotices, untakenNotices, type PlannedNotice } from "./pause-notice-plan.js";
+import { changedWhen } from "./pause-heard.js";
 import { recordOfRow } from "./pause-rows.js";
 
 /**
@@ -30,20 +26,14 @@ import { recordOfRow } from "./pause-rows.js";
  * instances exactly one changes it — and, when someone hears of the change, its notices appended in
  * the same transaction (`READ COMMITTED`): a notice is never without its change nor a change
  * without its notice. The deadline is compared in the database, in the statement that records the
- * change, so no answer is ever recorded at or after it, whatever the sweep did yet (I1, I2).
+ * change, so no answer is ever recorded at or after it, whatever the sweep did yet (I1, I2). A change
+ * that names the pause it was planned against (`seen`, #1307) row-locks and reads it first and is
+ * applied only while the core's `isSeenAs` holds — the same compare every store keeps — in the one
+ * transaction with the statement; of an answer and an in-place reassignment exactly one wins.
  */
 
 /** What a change writes with the pause it made: the notices its record asks for. */
 export type NoticesOf = (after: PauseRecord) => readonly PlannedNotice[];
-
-/** `work` in one transaction when anyone hears of the change, else on the pool (one statement). */
-export function whenHeard<TResult>(
-  pool: pg.Pool,
-  recipients: PauseRecipients,
-  work: (database: Queryable) => Promise<TResult>,
-): Promise<TResult> {
-  return hasRecipients(recipients) ? inPoolTransaction(pool, work) : work(pool);
-}
 
 /** The `closed` notice of a record that was sent (an unsent pause's close tells no one: I8). */
 const sentClosed =
@@ -68,6 +58,8 @@ interface Closing {
   readonly at: Date;
   readonly sql: string;
   readonly extra?: readonly unknown[];
+  /** The pause as the change was planned against: applied only while the pause is still that. */
+  readonly seen?: PauseSeen | undefined;
 }
 
 export class PauseChanges {
@@ -81,7 +73,8 @@ export class PauseChanges {
     recipients: PauseRecipients,
     notices: NoticesOf,
   ): Promise<PauseRecord | undefined> {
-    return whenHeard(this.pool, recipients, async (database) => {
+    const guard = { tenantId, pauseId, seen: change.seen };
+    return changedWhen(this.pool, recipients, guard, async (database) => {
       const row = await firstRowOf(database, change.sql, [
         tenantId,
         pauseId,
@@ -104,6 +97,7 @@ export class PauseChanges {
     answer: PauseAnswer,
     at: Date,
     recipients: PauseRecipients,
+    seen?: PauseSeen,
   ): Promise<PauseRecord | undefined> {
     const patch = {
       status: PauseStatus.Resolved,
@@ -117,12 +111,24 @@ export class PauseChanges {
       patch,
       at,
       sql: closing(OPEN, "record || $5::jsonb"),
+      seen,
     };
     return this.close(tenantId, pauseId, change, recipients, sentClosed(at, recipients));
   }
 
-  /** Its channel decided at once: never sent, no notice (I8). */
-  async decide(tenantId: string, pauseId: string, answer: PauseAnswer, at: Date): Promise<boolean> {
+  /**
+   * Its channel decided at once: never sent, no notice (I8). Only while the deadline is absent or
+   * after `at` (as `resolve`: a decision at or after it is the expiry's) and the pause is still the
+   * one the channel was sent (`seen`): an expiry's in-place reassignment during the first send makes
+   * the decision stale.
+   */
+  async decide(
+    tenantId: string,
+    pauseId: string,
+    answer: PauseAnswer,
+    at: Date,
+    seen: PauseSeen,
+  ): Promise<boolean> {
     const patch = {
       status: PauseStatus.Taken,
       resolution: PauseResolution.Decided,
@@ -134,7 +140,8 @@ export class PauseChanges {
       status: PauseStatus.Taken,
       patch,
       at,
-      sql: closing("", "record || $5::jsonb"),
+      sql: closing(OPEN, "record || $5::jsonb"),
+      seen,
     };
     const decided = await this.close(tenantId, pauseId, change, NO_RECIPIENTS, () => []);
     return decided !== undefined;
