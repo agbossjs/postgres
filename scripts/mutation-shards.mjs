@@ -34,7 +34,6 @@ export const SHARDS = {
       "src/stores/status-log.ts",
       "src/stores/fence.ts",
       "src/stores/cancel-fence.ts",
-      "src/stores/interrupt-fence.ts",
       "src/stores/outbound-calls/lease-state.ts",
       "src/stores/store-time.ts",
     ],

@@ -1,10 +1,9 @@
 import { InterruptMode, type NewStatusTransition } from "@agboss/core";
-import { cancelFencedOf, cancelTreeOf, type EffectKey } from "@agboss/core/stores";
+import { cancelFencedOf, cancelTreeOf, pauseFencedOf, stopFencedOf, type EffectKey } from "@agboss/core/stores";
 import { z } from "zod";
 import type { PoolClient } from "pg";
 import { changesOf, firstRowOf } from "../connection/query.js";
 import { appendStatus } from "./status-log.js";
-import { pauseFencedOf, stopFencedOf } from "./interrupt-fence.js";
 import { storeNow } from "./store-time.js";
 
 /**
