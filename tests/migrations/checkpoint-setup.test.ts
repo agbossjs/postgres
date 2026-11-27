@@ -68,7 +68,7 @@ describe("the root id step of the checkpoint tables (agbossjs/agboss#1321d, #962
 
     const { rows } = await onSchema(
       url,
-      "SELECT count(*)::int AS n FROM pg_trigger WHERE tgname = 'agboss_checkpoints_root'",
+      "SELECT count(*)::int AS n FROM pg_trigger WHERE tgname = 'agboss_checkpoints_root' AND tgrelid = 'checkpoints'::regclass",
     );
     expect(rows).toEqual([{ n: 1 }]);
   });

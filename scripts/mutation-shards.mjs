@@ -156,8 +156,11 @@ export const SHARDS = {
   // and the version a branch of one checkpoint gets, which its blobs rely on
   checkpoints: {
     timeoutMS: 120_000,
-    mutate: ["src/stores/postgres-checkpoint-saver.ts"],
-    tests: [CONFORMANCE, "tests/stores/{checkpoint-saver,checkpoint-latest-by-step}.test.ts"],
+    mutate: ["src/stores/postgres-checkpoint-saver.ts", "src/stores/checkpoint-root.ts"],
+    tests: [
+      CONFORMANCE,
+      "tests/stores/{checkpoint-saver,checkpoint-latest-by-step,checkpoint-root,checkpoint-root-recorded,checkpoint-root-config}.test.ts",
+    ],
   },
   // the schema: the migrations, their history and its check, the checkpoint tables, the live-lease
   // guard of an upgrade and a migrating start's wait for leases to lapse (agbossjs/agboss#1104)

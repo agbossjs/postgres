@@ -37,6 +37,7 @@ import { ChildExecutionQueueWatch } from '@agboss/core';
 import { Clock } from '@agboss/core';
 import { ClusterLeaseMirror } from '@agboss/core/stores';
 import { ClusterLeaseSync } from '@agboss/core/stores';
+import { ClusterLeaseTake } from '@agboss/core/stores';
 import { ConfigSnapshot } from '@agboss/core';
 import { CostCounter } from '@agboss/core';
 import { CostLedgerRepository } from '@agboss/core';
@@ -520,7 +521,7 @@ export abstract class PostgresLeaseMarks extends ExecutionLeaseRepository implem
     // (undocumented)
     stopOf(tree: ExecutionTree_2): Promise<StopMark | undefined>;
     // (undocumented)
-    syncClusterLease(lease: ExecutionLease): Promise<ClusterLeaseSync>;
+    syncClusterLease(lease: ExecutionLease, take?: ClusterLeaseTake): Promise<ClusterLeaseSync>;
     // (undocumented)
     unpause(tree: ExecutionTree_2, transition?: NewStatusTransition): Promise<void>;
 }

@@ -5,7 +5,7 @@ import {
   PauseStatus,
   type PauseRecord,
 } from "@agboss/core";
-import { NO_RECIPIENTS } from "@agboss/core/stores";
+import { NO_RECIPIENTS, pauseKeyOf } from "@agboss/core/stores";
 import { VirtualClock } from "@agboss/core/testing";
 import { describe, expect, it } from "vitest";
 import { PostgresPausedExecutionRepository } from "../../src/index.js";
@@ -81,8 +81,11 @@ describe("PostgresPausedExecutionRepository", () => {
     );
 
     const message = error instanceof Error ? error.message : "";
-    // #906: ids and field paths only, as for a paused run — the tenant is not one of them
-    expect(message).toMatch(/a stored pause is not readable \(pauseId p-no-call, /);
+    // #906, #1413 H2: the pause is named by its key (a hash of tenant and id), never by its id, which answers for it
+    expect(message).toContain(
+      `a stored pause is not readable (pause ${pauseKeyOf("default", "p-no-call")}, `,
+    );
+    expect(message).not.toContain("p-no-call");
     expect(message).not.toContain("tenantId");
   });
 

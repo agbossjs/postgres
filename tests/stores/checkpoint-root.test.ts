@@ -39,10 +39,11 @@ async function put(saver: PostgresCheckpointSaver, threadId: string, root?: stri
   );
 }
 
+/** The threads of a table, sorted here by code unit: the database's collation (`en_US`) orders `/` and digits its own way. */
 const threadsOf = async (table: "checkpoints" | "checkpoint_writes"): Promise<string[]> =>
-  (await onSchema(database.url(), `SELECT DISTINCT thread_id FROM ${table} ORDER BY 1`)).rows.map(
-    (row) => (row as { thread_id: string }).thread_id,
-  );
+  (await onSchema(database.url(), `SELECT DISTINCT thread_id FROM ${table}`)).rows
+    .map((row) => (row as { thread_id: string }).thread_id)
+    .sort();
 
 describe("PostgresCheckpointSaver.deleteThread by root (agbossjs/agboss#1321d)", () => {
   it("deletes the root's thread and every thread with that stored root, and no other tree's", async () => {
@@ -74,12 +75,12 @@ describe("PostgresCheckpointSaver.deleteThread by root (agbossjs/agboss#1321d)",
       channel_versions: { a: step },
     });
     const first = await saver.put(
-      at("root/child/x-evil", "x-evil"),
+      at("chain/child/z", "z-root"),
       checkpoint("c-1", 1),
       { source: "input", step: 1, parents: {} },
       { a: 1 },
     );
-    expect(first.configurable?.root_execution_id).toBe("x-evil");
+    expect(first.configurable?.root_execution_id).toBe("z-root");
 
     const second = await saver.put(
       first,
@@ -88,14 +89,14 @@ describe("PostgresCheckpointSaver.deleteThread by root (agbossjs/agboss#1321d)",
       { a: 2 },
     );
 
-    expect(second.configurable?.root_execution_id).toBe("x-evil");
+    expect(second.configurable?.root_execution_id).toBe("z-root");
     const { rows } = await onSchema(
       database.url(),
-      "SELECT checkpoint_id, root_id FROM checkpoints WHERE thread_id = 'root/child/x-evil' ORDER BY 1",
+      "SELECT checkpoint_id, root_id FROM checkpoints WHERE thread_id = 'chain/child/z' ORDER BY 1",
     );
     expect(rows).toEqual([
-      { checkpoint_id: "c-1", root_id: "x-evil" },
-      { checkpoint_id: "c-2", root_id: "x-evil" },
+      { checkpoint_id: "c-1", root_id: "z-root" },
+      { checkpoint_id: "c-2", root_id: "z-root" },
     ]);
     // a put whose config names no root answers the config as written
     const plain = await saver.put(

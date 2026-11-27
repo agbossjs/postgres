@@ -77,7 +77,8 @@ const liveLease = (url: string): Promise<pg.QueryResult> =>
 describe("checkSchema: the versions", () => {
   it("a database at the package's migrations passes; the client goes back to the pool as it was", async () => {
     const { url } = await fresh();
-    await migratePostgres({ url });
+    // at the migrations the check is given (the package's baseline and the two later ones of this file)
+    await migrateWith({ url }, ALL);
     const pool = poolOf(url);
     const borrowed = await pool.connect();
     const listeners = borrowed.listenerCount("error");

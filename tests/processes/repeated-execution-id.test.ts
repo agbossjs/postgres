@@ -13,7 +13,7 @@ import { createApp, IdGenerator, Injectable, ExecutionError } from "@agboss/core
 import { generateKeyPairSync } from "node:crypto";
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import {} from "../../src/index.js";
-import { ChargeWorkflowStart } from "../fixtures/charge.workflow.js";
+import { ChargeWorkflow, ChargeWorkflowStart } from "../fixtures/charge.workflow.js";
 import { openGate } from "../fixtures/process-log.js";
 import { storageLayoutOf } from "../fixtures/store-layout.application.js";
 import { onSchema, testDatabase } from "../support/database.js";
@@ -42,13 +42,14 @@ const opened: App[] = [];
 
 /** One application instance on the test's schema, with its own pool and its own generator. */
 async function instance(): Promise<App> {
-  const app = await createApp(storageLayoutOf([RestartingIdGenerator]));
+  const app = await createApp(storageLayoutOf([RestartingIdGenerator], [ChargeWorkflow]));
   opened.push(app);
   return app;
 }
 
 beforeAll(async () => {
   process.env.AGBOSS_PROCESS_DATABASE_URL = database.url();
+  process.env.AGBOSS_PROCESS_IDEMPOTENCY_KEY = "postgres-process-idempotency-key";
   process.env.AGBOSS_PROCESS_MESH_PEER_KEY = generateKeyPairSync("ed25519")
     .publicKey.export({ type: "spki", format: "pem" })
     .toString();

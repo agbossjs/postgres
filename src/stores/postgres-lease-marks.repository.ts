@@ -4,6 +4,7 @@ import {
   ExecutionLeaseRepository,
   MirroredLeaseState,
   type ClusterLeaseMirror,
+  type ClusterLeaseTake,
   type ClusterLeaseSync,
   type ExecutionLease,
   type ExecutionTree,
@@ -38,14 +39,19 @@ const MIRRORED_EXPIRY = `${String(CLUSTER_LEASE_EXPIRY.getUTCFullYear())}-09-13 
 /**
  * Writes the cluster's lease into the tree's row in one atomic upsert: only above the row's token,
  * or at it for the same holder not yet released; never over a retired (`finished`) row. The marks
- * and the fence are not touched.
+ * are not touched, and the fence only when the sync is a reclaim (`$6`, agbossjs/agboss#1341c)
+ * under an `Immediate` pause: it rises to the mirrored token, as the reclaim's own statement does.
  */
 const SYNC = `INSERT INTO agboss_execution_leases AS lease (tenant_id, root_execution_id,
     holder_instance_id, token, expires_at, released, yielded, superseded)
   VALUES ($1, $2, $3, $4, $5::timestamptz, false, false, false)
   ON CONFLICT (tenant_id, root_execution_id) DO UPDATE SET
     holder_instance_id = EXCLUDED.holder_instance_id, token = EXCLUDED.token,
-    expires_at = EXCLUDED.expires_at, released = false, yielded = false, superseded = false
+    expires_at = EXCLUDED.expires_at, released = false, yielded = false, superseded = false,
+    fenced_through_token = CASE WHEN $6::boolean AND lease.is_externally_paused
+      AND lease.external_pause_mode = 'immediate'
+      THEN GREATEST(COALESCE(lease.fenced_through_token, 0), EXCLUDED.token)
+      ELSE lease.fenced_through_token END
   WHERE NOT lease.finished AND (lease.token < EXCLUDED.token OR
     (lease.token = EXCLUDED.token AND lease.holder_instance_id = EXCLUDED.holder_instance_id
       AND NOT lease.released))`;
@@ -68,11 +74,15 @@ export abstract class PostgresLeaseMarks
     super();
   }
 
-  async syncClusterLease(lease: ExecutionLease): Promise<ClusterLeaseSync> {
+  async syncClusterLease(
+    lease: ExecutionLease,
+    take?: ClusterLeaseTake,
+  ): Promise<ClusterLeaseSync> {
     const { pool } = this.connection;
     const written = await changesOf(pool, SYNC, [
       ...[lease.tenantId, lease.rootExecutionId, lease.holderInstanceId, lease.token],
       MIRRORED_EXPIRY,
+      take?.isReclaim === true,
     ]);
     if (written === 1) return { outcome: ClusterLeaseSyncOutcome.Synced };
     const stored = await this.#mirrorRow(lease);
