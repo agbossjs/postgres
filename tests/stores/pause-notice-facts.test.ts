@@ -24,6 +24,8 @@ const database = testDatabase();
 const store = (): ReturnType<typeof instanceOn> => instanceOn(database.url());
 /** A copy of the instant: the notices carry `Date`s, equal by their time. */
 const same = (date: Date): Date => new Date(date.getTime());
+/** The text the notices' jsonb keeps of an instant (the raw column is read here). */
+const text = (date: Date): string => date.toISOString();
 
 interface Stored {
   readonly kind: string;
@@ -86,7 +88,7 @@ describe("the notices a late markSent writes for a pause closed before it", () =
 
       const { [CHANNEL]: channel = [] } = await noticesOf(id);
       expect(channel.map((notice) => notice.kind)).toEqual(["closed", "answer-not-taken"]);
-      expect(channel[1]).toMatchObject({ reason: resolution, closedAt: same(LATER) });
+      expect(channel[1]).toMatchObject({ reason: resolution, closedAt: text(LATER) });
     },
   );
 });
@@ -101,7 +103,7 @@ describe("the facts of a reminder, an extension, a once-only notice", () => {
     expect(Object.keys(notices)).toHaveLength(3);
     for (const stored of Object.values(notices))
       expect(stored).toEqual([
-        { seq: 1, kind: "expiring", writtenAt: same(MID), expiresAt: same(DEADLINE) },
+        { seq: 1, kind: "expiring", writtenAt: text(MID), expiresAt: text(DEADLINE) },
       ]);
   });
 
@@ -135,9 +137,9 @@ describe("the facts of a reminder, an extension, a once-only notice", () => {
         {
           seq: 1,
           kind: "timeout-changed",
-          writtenAt: same(NINE),
-          expiresAt: same(later),
-          previousExpiresAt: same(DEADLINE),
+          writtenAt: text(NINE),
+          expiresAt: text(later),
+          previousExpiresAt: text(DEADLINE),
         },
       ]);
   });

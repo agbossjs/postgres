@@ -85,7 +85,7 @@ describe("a claim's acknowledgements and renewals", () => {
     const next = await store.ackNotice(claim, MID);
 
     expect(next).toMatchObject({ token: claim.token, mailbox: { delivered: 1 } });
-    expect(next?.mailbox.headWrittenAt).toBe(MID.toISOString());
+    expect(next?.mailbox.headWrittenAt).toEqual(MID);
     expect(await store.ackNotice(claim, MID)).toBeUndefined();
     expect(await store.countNotices()).toEqual({ live: 0, dead: 0 });
   });

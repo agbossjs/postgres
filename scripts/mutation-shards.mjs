@@ -111,7 +111,7 @@ export const SHARDS = {
       "src/stores/postgres-a2a-direct-message.repository.ts",
       "src/stores/a2a-direct-messages/*.ts",
     ],
-    tests: [CONFORMANCE, "tests/stores/a2a-direct-message{,-clauses}.test.ts"],
+    tests: [CONFORMANCE, "tests/stores/a2a-direct-message{,-clauses,-rows}.test.ts"],
   },
   // the A2A task store (agbossjs/agboss#824): of two pods accepting one message exactly one claims
   // it, a task is saved once, the status moves by a compare-and-set on its version and never off a

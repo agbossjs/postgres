@@ -65,6 +65,48 @@ describe("PostgresCheckpointSaver.deleteThread by root (agbossjs/agboss#1321d)",
     expect((await saver.getTuple(at("rootx")))?.checkpoint.channel_values).toEqual({ a: "rootx" });
   });
 
+  it("a chain of puts keeps the root: the config put answers names it, the next row is of that tree", async () => {
+    const saver = new PostgresCheckpointSaver(connectionTo(database.url()));
+    const checkpoint = (id: string, step: number) => ({
+      ...emptyCheckpoint(),
+      id,
+      channel_values: { a: step },
+      channel_versions: { a: step },
+    });
+    const first = await saver.put(
+      at("root/child/x-evil", "x-evil"),
+      checkpoint("c-1", 1),
+      { source: "input", step: 1, parents: {} },
+      { a: 1 },
+    );
+    expect(first.configurable?.root_execution_id).toBe("x-evil");
+
+    const second = await saver.put(
+      first,
+      checkpoint("c-2", 2),
+      { source: "loop", step: 2, parents: {} },
+      { a: 2 },
+    );
+
+    expect(second.configurable?.root_execution_id).toBe("x-evil");
+    const { rows } = await onSchema(
+      database.url(),
+      "SELECT checkpoint_id, root_id FROM checkpoints WHERE thread_id = 'root/child/x-evil' ORDER BY 1",
+    );
+    expect(rows).toEqual([
+      { checkpoint_id: "c-1", root_id: "x-evil" },
+      { checkpoint_id: "c-2", root_id: "x-evil" },
+    ]);
+    // a put whose config names no root answers the config as written
+    const plain = await saver.put(
+      at("plain-thread"),
+      checkpoint("c-3", 1),
+      { source: "input", step: 1, parents: {} },
+      { a: 1 },
+    );
+    expect(plain.configurable).not.toHaveProperty("root_execution_id");
+  });
+
   it("a row written without the config's root gets its thread id's first segment", async () => {
     const saver = new PostgresCheckpointSaver(connectionTo(database.url()));
     await put(saver, "plain/child/p1");

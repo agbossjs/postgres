@@ -38,7 +38,7 @@ const exhausted = (records: ReturnType<typeof recordsOn>) =>
 function expectExhausted(refused: unknown): void {
   expect(refused).toBeInstanceOf(ExecutionError.ThreadIdsExhausted);
   expect(refused).toMatchObject({
-    code: "run.thread-ids-exhausted",
+    code: "execution.thread-ids-exhausted",
     generator: "StuckIdGenerator",
     tries: 100,
   });

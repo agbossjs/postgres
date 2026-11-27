@@ -1,31 +1,12 @@
-import type { PauseAnswerRecord, PausedExecution } from "@agboss/core";
+import type { PausedExecution } from "@agboss/core";
 import { assertValidInstant } from "@agboss/core/stores";
 
 /**
- * The times the package is about to bind or write outside the core's own rules (agbossjs/agboss#1307):
+ * The times the package is about to bind or write outside the core's own rules (the answer log's is the core's `assertPauseAnswerInstants`) (agbossjs/agboss#1307):
  * an Invalid Date is `null` in JSON, throws in `toISOString()` and is a syntax error as a
  * `timestamptz` parameter, so each is refused first — `StoreError.UnreadableRecord` naming the field,
  * never the value, nothing written. The pause itself is checked by the core's `assertPauseInstants`.
  */
-
-/** The record the answer log's refusal names. */
-const ANSWER = "pause answer";
-
-/**
- * Every time of a pause answer the log keeps (the core's Turn store checks the same). Local on
- * purpose: the core exports no `assertPauseAnswerInstants` yet (asked in the core follow-up, #1307);
- * replace this with it when it does.
- */
-export function assertAnswerInstants(
-  answer: Pick<PauseAnswerRecord, "askedAt" | "resolvedAt" | "trail">,
-): void {
-  assertValidInstant(answer.askedAt, "askedAt", ANSWER);
-  assertValidInstant(answer.resolvedAt, "resolvedAt", ANSWER);
-  for (const [index, entry] of answer.trail.entries()) {
-    assertValidInstant(entry.at, `trail[${String(index)}].at`, ANSWER);
-    assertValidInstant(entry.expiresAt, `trail[${String(index)}].expiresAt`, ANSWER);
-  }
-}
 
 /** The deadlines of the pauses a paused run waits on: `JSON.stringify` would write a bad one as `null`. */
 export function assertPausedRunInstants(run: PausedExecution["run"]): void {

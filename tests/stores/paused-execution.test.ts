@@ -105,7 +105,7 @@ describe("PostgresPausedExecutionRepository", () => {
       status: PauseStatus.Taken,
       resolution: PauseResolution.Replied,
       answer: { decision: 1, actor: { id: "a" } },
-      resolvedAt: NINE.toISOString(),
+      resolvedAt: NINE,
     });
     expect((await pauses.findByTenantIdAndPauseId("default", "p-pending"))?.status).toBe(
       PauseStatus.Pending,

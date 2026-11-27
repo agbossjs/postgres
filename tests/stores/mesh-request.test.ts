@@ -70,8 +70,10 @@ describe("PostgresMeshRequestRepository", () => {
     expect(await a.deleteByKey(keyOf("taken-over"), "attempt-1")).toBe(false);
     expect(await b.saveResponse(keyOf("taken-over"), "attempt-2", { who: "owner" })).toBe(true);
 
+    // a takeover moves the lease (attempt, creation time, lock) and keeps the row's own expiry, as the core's stores do
     expect(await a.findByKey(keyOf("taken-over"))).toEqual({
       ...later,
+      expiresAt: requestOf("taken-over").expiresAt,
       response: { who: "owner" },
     });
   });

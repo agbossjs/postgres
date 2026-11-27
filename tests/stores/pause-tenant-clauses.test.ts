@@ -149,8 +149,8 @@ describe("pauses of two tenants that share their ids", () => {
 
     expect(reminded).toBe(false);
     expect(await store().findByTenantIdAndPauseId(OTHER, "timed")).toMatchObject({
-      expiresAt: DEADLINE.toISOString(),
-      remindAt: "2026-01-05T09:30:00.000Z",
+      expiresAt: DEADLINE,
+      remindAt: new Date("2026-01-05T09:30:00.000Z"),
     });
     expect(
       (await store().findPendingByRemindAtBefore(LATER, 10)).map((one) => one.tenantId),

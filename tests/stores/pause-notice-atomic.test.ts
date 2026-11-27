@@ -85,8 +85,8 @@ describe("a change and its notices are one transaction", () => {
     expect(await stateOf("p1")).toEqual({ status: PauseStatus.Pending, isSent: false });
     for (const id of ["p2", "p3", "p4", "p5"])
       expect(await stateOf(id)).toEqual({ status: PauseStatus.Pending, isSent: true });
-    expect((await store.findByTenantIdAndPauseId("default", "p5"))?.expiresAt).toBe(
-      "2026-01-05T10:00:00.000Z",
+    expect((await store.findByTenantIdAndPauseId("default", "p5"))?.expiresAt).toEqual(
+      new Date("2026-01-05T10:00:00.000Z"),
     );
     expect(await noticeCount()).toBe(0);
     await onSchema(database.url(), "DROP TRIGGER no_notices ON agboss_pause_notices");

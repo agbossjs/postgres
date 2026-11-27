@@ -20,6 +20,18 @@ import { z } from "zod";
 /** The configurable key naming a thread's tree: the root execution id, written with every row. */
 const ROOT_EXECUTION_ID_KEY = "root_execution_id";
 
+/**
+ * The config a `put` answers, with the tree's root the written config named: the next `put` is
+ * given this config (LangGraph chains them), and a child checkpoint written without its root would
+ * be given the thread id's first segment by the table's trigger — another tree's root for a thread
+ * whose id merely looks like a child's (agbossjs/agboss#1321d).
+ */
+function withRoot(written: RunnableConfig, given: RunnableConfig): RunnableConfig {
+  const root: unknown = given.configurable?.[ROOT_EXECUTION_ID_KEY];
+  if (typeof root !== "string" || root === "") return written;
+  return { ...written, configurable: { ...written.configurable, [ROOT_EXECUTION_ID_KEY]: root } };
+}
+
 const ThreadRow = z.object({ thread_id: z.string() });
 
 /**
@@ -92,7 +104,7 @@ export class PostgresCheckpointSaver extends BaseCheckpointSaver {
     // the versions LangGraph passes, as they are: the core's contract passes them too (#511)
     const written = await (await this.#saver()).put(config, checkpoint, metadata, newVersions);
     await this.#rooted(config, "checkpoints", written.configurable?.checkpoint_id);
-    return written;
+    return withRoot(written, config);
   }
 
   async putWrites(

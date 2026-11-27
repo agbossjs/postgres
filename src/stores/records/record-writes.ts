@@ -1,13 +1,12 @@
 import { randomUUID } from "node:crypto";
 import type pg from "pg";
-import type { StatusContext } from "@agboss/core/stores";
+import { assertPauseAnswerInstants, type StatusContext } from "@agboss/core/stores";
 import { inPoolTransaction } from "../../connection/transaction.js";
 import { appendRecordStatus } from "../status-log.js";
 import type { NewThread, NewTurn, PauseAnswerRecord, Turn } from "@agboss/core";
 import { z } from "zod";
 import { changesOf, firstRowOf, rowsOf, type Queryable } from "../../connection/query.js";
 import { escapedJsonOf, escapedText } from "../nul-escape.js";
-import { assertAnswerInstants } from "../paused/pause-instants.js";
 
 /** Threads, appended records, their completion (unconditional or compare-and-set) and the pause log. */
 
@@ -151,7 +150,7 @@ export async function savePauseAnswer(
   rootExecutionId: string,
   answer: PauseAnswerRecord,
 ): Promise<void> {
-  assertAnswerInstants(answer);
+  assertPauseAnswerInstants(answer);
   await changesOf(
     database,
     `INSERT INTO agboss_pause_answers (tenant_id, root_execution_id, step_key, asked_at, record)
@@ -177,7 +176,7 @@ export async function markPauseAnswerNotTaken(
   rootExecutionId: string,
   answer: PauseAnswerRecord,
 ): Promise<void> {
-  assertAnswerInstants(answer);
+  assertPauseAnswerInstants(answer);
   await changesOf(
     database,
     `INSERT INTO agboss_pause_answers (tenant_id, root_execution_id, step_key, asked_at, record)

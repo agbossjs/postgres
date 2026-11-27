@@ -256,6 +256,7 @@ describe("a retention's delete runs under the long timeout", () => {
     await holder.query("ROLLBACK");
 
     expect(ordinary).toBeInstanceOf(StoreError.CallTimeout);
-    await expect(deleting).resolves.toBeUndefined();
+    // how many went: nothing was in the table
+    await expect(deleting).resolves.toBe(0);
   });
 });

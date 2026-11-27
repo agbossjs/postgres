@@ -16,7 +16,12 @@ import {
   DEFAULT_WATCH_LIVENESS_SECONDS,
   type PostgresConnectionSettings,
 } from "./settings.js";
-import { DATABASE_SETTINGS, SchemaSetup, type ResolvedSettings } from "@agboss/core/stores";
+import {
+  DATABASE_SETTINGS,
+  SchemaSetup,
+  type OnAbandon,
+  type ResolvedSettings,
+} from "@agboss/core/stores";
 import { settingsOfResolved } from "./driver-settings.js";
 
 /**
@@ -89,7 +94,7 @@ export function listenerOf(
  * of a PostgreSQL store names in its `deps`.
  */
 @Injectable({ deps: [DATABASE_SETTINGS] })
-export class PostgresConnection implements OnInit, OnDestroy {
+export class PostgresConnection implements OnInit, OnDestroy, OnAbandon {
   /** The instance's pool: every store's statements, every transaction's connection. */
   readonly pool: pg.Pool;
   readonly #settings: PostgresConnectionSettings;
@@ -171,10 +176,7 @@ export class PostgresConnection implements OnInit, OnDestroy {
    * still open — their owner was given up on by the stop — are dropped too: no socket is left.
    */
   async onDestroy(): Promise<void> {
-    CLOSED.add(this);
-    const listeners = LISTENERS.get(this);
-    for (const listener of [...(listeners ?? [])]) listener.destroy();
-    listeners?.clear();
+    this.#dropListeners();
     if (this.pool.ended) return;
     const ending = this.pool.end();
     const open = [...this.#clients];
@@ -182,6 +184,25 @@ export class PostgresConnection implements OnInit, OnDestroy {
     // with clients dropped the statements in flight reject and their holders release: not waited for
     if (open.length === 0) await ending;
     else ending.catch(() => undefined);
+  }
+
+  /**
+   * The stop's last resort (agbossjs/agboss#954, core `OnAbandon`): `onDestroy` was abandoned while
+   * it ran, so every socket it still holds is destroyed here, synchronously — the listeners and the
+   * pool's clients, idle or in use.
+   */
+  onAbandon(): void {
+    this.#dropListeners();
+    for (const drop of [...this.#clients]) drop();
+    if (!this.pool.ended) this.pool.end().catch(() => undefined);
+  }
+
+  /** No listener opens over the connection any more, and the ones open are destroyed. */
+  #dropListeners(): void {
+    CLOSED.add(this);
+    const listeners = LISTENERS.get(this);
+    for (const listener of [...(listeners ?? [])]) listener.destroy();
+    listeners?.clear();
   }
 
   async #currentSchema(): Promise<string> {

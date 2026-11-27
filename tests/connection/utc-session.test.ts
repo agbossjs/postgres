@@ -24,7 +24,10 @@ function recordingClient(failing = ""): {
     sent.push(sql);
     return sql === failing ? Promise.reject(new Error(`refused ${sql}`)) : Promise.resolve({});
   };
-  return { client: { query } as unknown as pg.ClientBase, sent };
+  // a real client that never connects: its `query` is the recording one
+  const client = new pg.Client();
+  Reflect.set(client, "query", query);
+  return { client, sent };
 }
 
 describe("the session of a connection", () => {

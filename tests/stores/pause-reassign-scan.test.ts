@@ -30,7 +30,7 @@ describe("the replacement of a reassigned pause", () => {
       RECIPIENTS,
     );
 
-    expect(made).toMatchObject({ pauseId: "new", remindAt: "2026-01-05T09:30:00.000Z" });
+    expect(made).toMatchObject({ pauseId: "new", remindAt: new Date("2026-01-05T09:30:00.000Z") });
     const { rows } = await onSchema(
       database.url(),
       "SELECT expires_at, remind_at FROM agboss_pauses WHERE pause_id = 'new'",

@@ -245,9 +245,13 @@ describe("PostgresFencedEffectRepository: business keys (agbossjs/agboss#508)", 
   it("#1367: a replay by the step that wrote the row has no replayedFrom at all, not an undefined one", async () => {
     const { effects, leases } = storesOn(connectionTo(database.url()));
     await leases.acquire("default", "bk-same", hours(1));
-    await effects.runOnce(businessKeyOf("bk-same", 1), () => ({ receipt: "r1" }));
+    // a business key of its own: the file shares one schema, and "order:42" is written by the tests before
+    const key = effectKeyForTesting(businessKeyOf("bk-same", 1), {
+      businessKey: "order:same-step",
+    });
+    await effects.runOnce(key, () => ({ receipt: "r1" }));
 
-    const same = await effects.runOnce(businessKeyOf("bk-same", 1), () => ({ receipt: "r2" }));
+    const same = await effects.runOnce(key, () => ({ receipt: "r2" }));
 
     expect(same.status).toBe(IdempotencyRunStatus.Replayed);
     expect("replayedFrom" in same).toBe(false);

@@ -80,6 +80,7 @@ import type { NewStatusTransition } from '@agboss/core';
 import { NewSummary } from '@agboss/core';
 import { NewThread } from '@agboss/core';
 import { NewTurn } from '@agboss/core';
+import { OnAbandon } from '@agboss/core/stores';
 import { OnDestroy } from '@agboss/core';
 import { OnInit } from '@agboss/core';
 import { OutboundCallClaim } from '@agboss/core/stores';
@@ -288,8 +289,9 @@ export class PostgresChildExecutionQueueRepository extends ChildExecutionQueueRe
 }
 
 // @public
-export class PostgresConnection implements OnInit, OnDestroy {
+export class PostgresConnection implements OnInit, OnDestroy, OnAbandon {
     constructor(source?: PostgresConnectionSettings | ResolvedSettings);
+    onAbandon(): void;
     onDestroy(): Promise<void>;
     onInit(): Promise<void>;
     ping(): Promise<void>;
