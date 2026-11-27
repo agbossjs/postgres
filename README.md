@@ -581,8 +581,8 @@ of the notices it writes.
   notices' jsonb, the answer log's `asked_at`, the unsent-replacement scan's `record->>'askedAt'`) is
   the `toISOString()` text, read back in that one spelling only (anything else is
   `StoreError.UnreadableRecord`, a mailbox like that is set aside at the claim). An Invalid Date is
-  refused before the first write. Every session of the pool is `timezone=UTC` (the URL's own
-  `options` wins when it sets any), and no statement compares or keys by a cast of a `timestamptz` to
+  refused before the first write. Every session is `timezone=UTC` (the startup option, and `SET TIME ZONE 'UTC'` on every connection of the pool, the migrate pool and the
+  step-index client, so a URL's own `options` cannot override it), and no statement compares or keys by a cast of a `timestamptz` to
   text. What a call returns is read from the database as written, never the caller's `Date`.
 - **A mailbox row that does not read** (a notice kind no code writes any more, damage) is set aside
   as dead with the problem `unreadable mailbox` when it is claimed; the claim of the others goes on.

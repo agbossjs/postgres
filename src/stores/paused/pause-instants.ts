@@ -11,7 +11,11 @@ import { assertValidInstant } from "@agboss/core/stores";
 /** The record the answer log's refusal names. */
 const ANSWER = "pause answer";
 
-/** Every time of a pause answer the log keeps (the core's Turn store checks the same). */
+/**
+ * Every time of a pause answer the log keeps (the core's Turn store checks the same). Local on
+ * purpose: the core exports no `assertPauseAnswerInstants` yet (asked in the core follow-up, #1307);
+ * replace this with it when it does.
+ */
 export function assertAnswerInstants(
   answer: Pick<PauseAnswerRecord, "askedAt" | "resolvedAt" | "trail">,
 ): void {

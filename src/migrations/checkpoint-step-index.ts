@@ -1,5 +1,6 @@
 import pg from "pg";
 import { z } from "zod";
+import { connectedInUtc } from "../connection/utc-session.js";
 import { quotedIdentifier, sessionOptionsOf } from "../connection/settings.js";
 
 /**
@@ -81,7 +82,7 @@ export async function buildStepIndex(options: {
   });
   // a dropped session rejects the statement in flight, which is the run's error
   client.on("error", () => undefined);
-  await client.connect();
+  await connectedInUtc(client);
   try {
     const { schema } = options;
     const { rows } = await client.query("SELECT pg_try_advisory_lock($1, hashtext($2)) AS got", [
