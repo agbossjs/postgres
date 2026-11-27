@@ -30,6 +30,44 @@ export function recordedPool(answers: readonly (readonly object[])[] = []): {
   return { pool, sent: recordingOn(pool, answers) };
 }
 
+/** What a scripted statement answers: its rows (none: an empty answer). */
+export type Respond = (sql: string, values: readonly unknown[]) => readonly object[] | undefined;
+
+/**
+ * A pool that answers each statement by what `respond` says of its text and parameters (empty when
+ * it says nothing), recording what was sent: for a transaction whose statements are not in a fixed
+ * order. As `recordedPool`, `BEGIN`, `COMMIT` and `ROLLBACK` are answered empty.
+ */
+export function scriptedPool(respond: Respond): { readonly pool: pg.Pool; readonly sent: Sent[] } {
+  const pool = new pg.Pool();
+  pools.push(pool);
+  return { pool, sent: scriptOn(pool, respond) };
+}
+
+/** A `PostgresConnection` whose pool answers as `scriptedPool`'s does. */
+export function scriptedConnection(respond: Respond): {
+  readonly connection: PostgresConnection;
+  readonly sent: Sent[];
+} {
+  const connection = new PostgresConnection({ url: "postgres://u:p@127.0.0.1:1/d" });
+  pools.push(connection.pool);
+  return { connection, sent: scriptOn(connection.pool, respond) };
+}
+
+function scriptOn(pool: pg.Pool, respond: Respond): Sent[] {
+  const sent: Sent[] = [];
+  const query = (sql: string, values: readonly unknown[] = []) => {
+    sent.push({ sql, values });
+    const rows = CONTROL.test(sql) ? [] : (respond(sql, values) ?? []);
+    return Promise.resolve({ rows, rowCount: rows.length });
+  };
+  Reflect.set(pool, "query", query);
+  Reflect.set(pool, "connect", () =>
+    Promise.resolve({ query, on: () => undefined, off: () => undefined, release: () => undefined }),
+  );
+  return sent;
+}
+
 /** A `PostgresConnection` whose pool is a recorded one (nothing connects). */
 export function recordedConnection(answers: readonly (readonly object[])[] = []): {
   readonly connection: PostgresConnection;
