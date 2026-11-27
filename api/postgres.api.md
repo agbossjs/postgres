@@ -45,6 +45,7 @@ import { DriverTimeouts } from '@agboss/core/stores';
 import { EffectKey } from '@agboss/core/stores';
 import { EndedTree } from '@agboss/core/stores';
 import { EndedTree as EndedTree_2 } from '@agboss/core';
+import type { EnvRef } from '@agboss/core';
 import { ExecutionAuditEventRecord } from '@agboss/core';
 import { ExecutionAuditLogRepository } from '@agboss/core';
 import type { ExecutionHistoryQuery } from '@agboss/core/stores';
@@ -332,7 +333,7 @@ export function PostgresDriver(options: PostgresDriverOptions): DatabaseDriver;
 // @public
 export interface PostgresDriverOptions {
     readonly poolSize?: number;
-    readonly schema?: string;
+    readonly schema?: string | EnvRef<string>;
     readonly schemaSetup?: SchemaSetup;
     readonly timeouts?: DriverTimeouts;
     readonly url: SecretRef;

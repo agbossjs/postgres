@@ -226,15 +226,15 @@ const [takeover] = await app.auditLogOf({ tenantId: "default", rootExecutionId }
 application's `@DatabaseStorage`); a script or a test builds a connection from a settings object
 (`new PostgresConnection({ url, poolSize, … })`, `PostgresConnectionSettings`).
 
-| Option                              | Type           | Default                                         | What                                                                         |
-| ----------------------------------- | -------------- | ----------------------------------------------- | ---------------------------------------------------------------------------- |
-| `url`                               | `SecretRef`    | —                                               | the database: `postgres://user:password@host:5432/db`                        |
-| `poolSize`                          | `number`       | `DEFAULT_POOL_SIZE` (`10`)                      | the most connections this instance's pool opens                              |
-| `timeouts.watchLiveness`            | `Milliseconds` | `DEFAULT_WATCH_LIVENESS_SECONDS` (`10` s)       | the longest a silently dead `LISTEN` connection goes unnoticed (2 to 3600 s) |
-| `timeouts.commandTimeout`           | `Milliseconds` | `DEFAULT_COMMAND_TIMEOUT` (`10000`)             | how long a store command may run (100 ms to 30 s; 0 is refused)              |
-| `timeouts.idleInTransactionTimeout` | `Milliseconds` | `DEFAULT_IDLE_IN_TRANSACTION_TIMEOUT` (`10000`) | how long a session may idle inside a transaction (100 ms to 30 s)            |
-| `schema`                            | `string`       | the URL's `search_path`, `DEFAULT_SCHEMA`       | the schema of the stores' tables (one per application)                       |
-| `schemaSetup`                       | `SchemaSetup`  | `SchemaSetup.Check`                             | what the start does with the schema (Migrations, below)                      |
+| Option                              | Type               | Default                                         | What                                                                         |
+| ----------------------------------- | ------------------ | ----------------------------------------------- | ---------------------------------------------------------------------------- |
+| `url`                               | `SecretRef`        | —                                               | the database: `postgres://user:password@host:5432/db`                        |
+| `poolSize`                          | `number`           | `DEFAULT_POOL_SIZE` (`10`)                      | the most connections this instance's pool opens                              |
+| `timeouts.watchLiveness`            | `Milliseconds`     | `DEFAULT_WATCH_LIVENESS_SECONDS` (`10` s)       | the longest a silently dead `LISTEN` connection goes unnoticed (2 to 3600 s) |
+| `timeouts.commandTimeout`           | `Milliseconds`     | `DEFAULT_COMMAND_TIMEOUT` (`10000`)             | how long a store command may run (100 ms to 30 s; 0 is refused)              |
+| `timeouts.idleInTransactionTimeout` | `Milliseconds`     | `DEFAULT_IDLE_IN_TRANSACTION_TIMEOUT` (`10000`) | how long a session may idle inside a transaction (100 ms to 30 s)            |
+| `schema`                            | `string \| env(…)` | the URL's `search_path`, `DEFAULT_SCHEMA`       | the schema of the stores' tables (one per application)                       |
+| `schemaSetup`                       | `SchemaSetup`      | `SchemaSetup.Check`                             | what the start does with the schema (Migrations, below)                      |
 
 An application with no `@DatabaseStorage` of `PostgresDriver` that starts a PostgreSQL store fails
 the start with `PostgresSettingsError`, naming the storage to declare, before anything connects. A
@@ -571,6 +571,19 @@ of the notices it writes.
   and cursor, no tenant clause) filter `statuses`, `target`, `expiresBefore`, `channel`, `assignee`
   (any member of a pool) and `externalRef` on the record's own JSON, each on an index
   (`agboss_pauses_by_status`, `…_by_channel`, a GIN on the record's `assignees`, `…_by_external_ref`).
+- **Times** (P6b, agbossjs/agboss#1307): the store contract holds `Date`s. A change is the core's
+  pure transition (`resolveChange`, `decideChange`, `cancelChange`, `expireChange`,
+  `closeUntakenChange`, `remindChange`, `markSentChange`, `timeoutChange`, `reassignChange`,
+  `onceNotices`: the rule, its `seen`, its deadline, its notices) planned over the pause read under
+  its row lock, then written with the `UPDATE … WHERE status = <as read>` and its notices in that
+  transaction; nothing of the rules is restated here. `expires_at`, `remind_at`, `resolved_at` and the
+  mailbox columns are `timestamptz` bound as `Date`s; every time kept as text (the record's JSON, the
+  notices' jsonb, the answer log's `asked_at`, the unsent-replacement scan's `record->>'askedAt'`) is
+  the `toISOString()` text, read back in that one spelling only (anything else is
+  `StoreError.UnreadableRecord`, a mailbox like that is set aside at the claim). An Invalid Date is
+  refused before the first write. Every session of the pool is `timezone=UTC` (the URL's own
+  `options` wins when it sets any), and no statement compares or keys by a cast of a `timestamptz` to
+  text. What a call returns is read from the database as written, never the caller's `Date`.
 - **A mailbox row that does not read** (a notice kind no code writes any more, damage) is set aside
   as dead with the problem `unreadable mailbox` when it is claimed; the claim of the others goes on.
 

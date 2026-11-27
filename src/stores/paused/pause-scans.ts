@@ -4,6 +4,7 @@ import type pg from "pg";
 import { z } from "zod";
 import { rowsOf } from "../../connection/query.js";
 import { inLongTransaction } from "../../connection/transaction.js";
+import { assertInstants } from "./pause-instants.js";
 import { recordOfRow } from "./pause-rows.js";
 
 /**
@@ -80,6 +81,7 @@ export class PauseScans {
     limit: number,
     after?: PauseScanAfter,
   ): Promise<readonly PauseRecord[]> {
+    assertInstants("pause scan", { at, after: after?.at });
     // the keyset (agbossjs/agboss#1070): past the last pause of the page before, in the scan's order
     const rows = await rowsOf(
       this.pool,
@@ -96,12 +98,17 @@ export class PauseScans {
   /**
    * The replacements of a reassignment still `Pending` and unsent, asked before `cutoff`, by
    * `(askedAt, tenant, pause)` with the keyset (agbossjs/agboss#946), on the partial index of 0035.
+   * The index and the compare are on the record's TEXT `askedAt` (`COLLATE "C"`, canonical ISO, so
+   * the text orders as the instant): the cutoff and the keyset's time are bound as
+   * `toISOString()` texts, never as `Date`s (node-postgres writes a `Date` in the process's local
+   * time with an offset, which does not sort as the instant).
    */
   async reassignedUnsentBefore(
     cutoff: Date,
     limit: number,
     after?: PauseScanAfter,
   ): Promise<readonly PauseRecord[]> {
+    assertInstants("pause scan", { cutoff, after: after?.at });
     const rows = await rowsOf(
       this.pool,
       `SELECT record FROM agboss_pauses
@@ -115,7 +122,7 @@ export class PauseScans {
       [
         cutoff.toISOString(),
         limit,
-        after?.at ?? null,
+        after?.at.toISOString() ?? null,
         after?.tenantId ?? null,
         after?.pauseId ?? null,
       ],
@@ -162,6 +169,7 @@ export class PauseScans {
     after: string,
     limit: number,
   ): Promise<PausePage> {
+    assertInstants("pause filter", { expiresBefore: filter.expiresBefore });
     const values: unknown[] = [after];
     const clauses = ["seq > $1::bigint"];
     const add = (clause: (placeholder: string) => string, value: unknown): void => {
@@ -197,6 +205,7 @@ export class PauseScans {
    * cursor — the retention's log repair reads every page before the one removal (#939).
    */
   async closedBefore(cutoff: Date, after: string, limit: number): Promise<PausePage> {
+    assertInstants("pause scan", { cutoff });
     const rows = await rowsOf(
       this.pool,
       `SELECT p.record, p.seq FROM agboss_pauses p WHERE p.seq > $3::bigint AND ${REMOVABLE}
@@ -211,8 +220,9 @@ export class PauseScans {
    * row-locked first (a notice written to one meanwhile finishes before), and the removal reads the
    * mailboxes after the lock: a pause with a notice just written is kept.
    */
-  deleteClosedBefore(cutoff: Date): Promise<void> {
-    return inLongTransaction(this.pool, async (database) => {
+  async deleteClosedBefore(cutoff: Date): Promise<void> {
+    assertInstants("pause scan", { cutoff });
+    await inLongTransaction(this.pool, async (database) => {
       const candidates = KeysOf.parse(
         await rowsOf(
           database,

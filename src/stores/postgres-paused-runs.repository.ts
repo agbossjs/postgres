@@ -8,6 +8,7 @@ import { z } from "zod";
 import { PostgresConnection } from "../connection/postgres-connection.js";
 import { changesOf, firstRowOf } from "../connection/query.js";
 import { pausedRunJsonOf, pausedRunOfJson } from "./framework-json.js";
+import { assertPausedRunInstants } from "./paused/pause-instants.js";
 import { PauseRows, recordOfRow } from "./paused/pause-rows.js";
 
 const PausedRow = z.object({
@@ -63,6 +64,7 @@ export abstract class PostgresPausedRunRepository extends PausedExecutionReposit
 
   async save(paused: PausedExecution): Promise<void> {
     const { run } = paused;
+    assertPausedRunInstants(run);
     await changesOf(
       this.connection.pool,
       `INSERT INTO agboss_paused_executions

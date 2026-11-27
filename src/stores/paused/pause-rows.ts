@@ -1,4 +1,5 @@
 import { PauseStatus, type PauseRecord } from "@agboss/core";
+import { assertPauseInstants } from "@agboss/core/stores";
 import type pg from "pg";
 import { z } from "zod";
 import { changesOf, firstRowOf, rowsOf } from "../../connection/query.js";
@@ -42,6 +43,8 @@ export class PauseRows {
 
   /** The pause of the step in its tenant's tree when one exists, else `pause` saved — one insert, then a read. */
   async findOrCreate(pause: PauseRecord): Promise<PauseRecord> {
+    // a time a `Date` cannot keep (Invalid Date: `null` in the JSON, a syntax error as a column) is refused first
+    assertPauseInstants(pause);
     const inserted = await firstRowOf(
       this.pool,
       `INSERT INTO agboss_pauses (tenant_id, pause_id, step_key, root_execution_id, status,

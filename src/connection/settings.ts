@@ -158,3 +158,17 @@ export const quotedIdentifier = (schema: string): string => `"${schema.replaceAl
 /** The connection's startup `options` that put every statement of the session in `schema` (checked). */
 export const searchPathOptionOf = (schema: string): string =>
   `-c search_path=${quotedIdentifier(schema)}`;
+
+/**
+ * The session's time zone, UTC (agbossjs/agboss#1307): a `timestamptz` is the same instant whatever
+ * the zone, but a cast to text is not (`expires_at::text` reads `+02` under `+02`), so every `::text`
+ * of a migration or of a human's `psql` is the framework's spelling.
+ */
+export const UTC_OPTION = "-c timezone=UTC";
+
+/**
+ * The startup `options` of every session the package opens: UTC, and `schema`'s `search_path` when
+ * one is given (checked).
+ */
+export const sessionOptionsOf = (schema: string | undefined): string =>
+  schema === undefined ? UTC_OPTION : `${UTC_OPTION} ${searchPathOptionOf(schema)}`;

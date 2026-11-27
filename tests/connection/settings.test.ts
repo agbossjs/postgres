@@ -9,7 +9,8 @@ import {
   PostgresSettingsError,
   SchemaSetup,
 } from "../../src/index.js";
-import { searchPathOptionOf } from "../../src/connection/settings.js";
+import { poolOptionsOf } from "../../src/connection/pool-options.js";
+import { searchPathOptionOf, sessionOptionsOf } from "../../src/connection/settings.js";
 import { settingsOfResolved } from "../../src/connection/driver-settings.js";
 import { revealing } from "../support/application-context.js";
 
@@ -122,6 +123,15 @@ describe("the settings of the PostgreSQL stores", () => {
 
   it("agbossjs/agboss#891: the search_path option names the schema quoted", () => {
     expect(searchPathOptionOf("app_a")).toBe('-c search_path="app_a"');
+  });
+
+  it("agbossjs/agboss#1307: every session is in UTC, with or without a schema", () => {
+    expect(sessionOptionsOf(undefined)).toBe("-c timezone=UTC");
+    expect(sessionOptionsOf("app_a")).toBe('-c timezone=UTC -c search_path="app_a"');
+    expect(poolOptionsOf({ url: "postgres://h/d" }).options).toBe("-c timezone=UTC");
+    expect(poolOptionsOf({ url: "postgres://h/d", schema: "app_a" }).options).toBe(
+      '-c timezone=UTC -c search_path="app_a"',
+    );
   });
 
   it("no settings at all (an application with no PostgreSQL storage) fails, naming the storage to declare", () => {

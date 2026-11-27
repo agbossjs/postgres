@@ -133,8 +133,8 @@ describe("pauses of two tenants that share their ids", () => {
       PAUSE,
       "timed",
       {
-        expiresAt: later.toISOString(),
-        previousExpiresAt: DEADLINE.toISOString(),
+        expiresAt: later,
+        previousExpiresAt: DEADLINE,
         seen: await seenNowOf(store(), PAUSE, "timed"),
       },
       NINE,

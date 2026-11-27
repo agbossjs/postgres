@@ -138,7 +138,10 @@ export const SHARDS = {
   "execution-records": {
     timeoutMS: 120_000,
     mutate: ["src/stores/postgres-execution-record.repository.ts", "src/stores/records/*.ts"],
-    tests: [CONFORMANCE, "tests/stores/{execution-record*,minted-thread}.test.ts"],
+    tests: [
+      CONFORMANCE,
+      "tests/stores/{execution-record*,minted-thread,pause-answer-text}.test.ts",
+    ],
   },
   // the execution tree store (agbossjs/postgres#133, agbossjs/agboss#133): `saveIfAbsentInTree`, one `INSERT ... ON
   // CONFLICT DO NOTHING RETURNING`, is the only guard of every once-only key of a tree: the public `saveIfAbsent` of

@@ -1,6 +1,6 @@
 import pg from "pg";
 import { z } from "zod";
-import { quotedIdentifier, searchPathOptionOf } from "../connection/settings.js";
+import { quotedIdentifier, sessionOptionsOf } from "../connection/settings.js";
 
 /**
  * The index behind `PostgresCheckpointSaver.latestByStep` (agbossjs/agboss#962): a thread's newest
@@ -77,7 +77,7 @@ export async function buildStepIndex(options: {
 }): Promise<StepIndexResult> {
   const client = new pg.Client({
     connectionString: options.url,
-    options: searchPathOptionOf(options.schema),
+    options: sessionOptionsOf(options.schema),
   });
   // a dropped session rejects the statement in flight, which is the run's error
   client.on("error", () => undefined);

@@ -38,8 +38,8 @@ describe("the head time of a mailbox", () => {
       "default",
       "p",
       {
-        expiresAt: "2026-01-05T11:00:00.000Z",
-        previousExpiresAt: DEADLINE.toISOString(),
+        expiresAt: new Date("2026-01-05T11:00:00.000Z"),
+        previousExpiresAt: DEADLINE,
         seen: await seenNowOf(store, "default", "p"),
       },
       MID,
@@ -76,8 +76,8 @@ describe("the head time of a mailbox", () => {
       "default",
       "q",
       {
-        expiresAt: "2026-01-05T11:00:00.000Z",
-        previousExpiresAt: DEADLINE.toISOString(),
+        expiresAt: new Date("2026-01-05T11:00:00.000Z"),
+        previousExpiresAt: DEADLINE,
         seen: await seenNowOf(store, "default", "q"),
       },
       MID,

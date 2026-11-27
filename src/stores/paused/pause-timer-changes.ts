@@ -1,44 +1,36 @@
 import { PauseStatus, type PauseRecord } from "@agboss/core";
 import {
-  PauseNoticeKind,
-  type PauseTimeoutChange,
+  markSentChange,
+  onceNotices,
+  remindChange,
+  timeoutChange,
   type PauseNoticeFacts,
+  type PauseNoticeKind,
   type PauseRecipients,
+  type PauseTimeoutChange,
 } from "@agboss/core/stores";
 import type pg from "pg";
-import { changesOf, firstRowOf } from "../../connection/query.js";
+import { firstRowOf, changesOf } from "../../connection/query.js";
 import { inPoolTransaction } from "../../connection/transaction.js";
 import { escapedJsonOf } from "../nul-escape.js";
-import { whenHeard } from "./pause-heard.js";
-import { markSentNotices, noticesOf } from "./pause-notice-plan.js";
 import { appendNotices } from "./pause-notice-rows.js";
-import { writtenPause } from "./pause-reassign.js";
 import { LOCKED_PAUSE, recordOfRow } from "./pause-rows.js";
-import { sentPause, timeoutChangePlan } from "./pause-timer-plan.js";
+import { transitioned } from "./pause-transition.js";
 
 /**
- * The changes of a pause that read it first (agbossjs/agboss#935, #910): the deadline changed, the
- * reminder, the channel asked and a notice of its own. Each holds the pause's row lock
- * (`SELECT … FOR UPDATE`) from its read to the end of its transaction — a closer waits, and no
- * mailbox of the pause is appended to by two at once — and the write is still a compare-and-set.
+ * The changes of a pause that read it first (agbossjs/agboss#935, #910, #1307): the deadline changed
+ * (`timeoutChange`), the reminder (`remindChange`), the channel asked (`markSentChange`) and a notice
+ * of its own (`onceNotices`) — each the core's pure rule over the pause row-locked and read, so no
+ * two instances write a mailbox of the pause at once, and the write is still a compare-and-set.
  */
-
-/**
- * A reminder is of a pending pause only: a resolved or cancelled one keeps its `remind_at` column,
- * and must not fire it. A constant of its own, so the mutation shard drops it
- * (agbossjs/agboss#1302).
- */
-const PENDING = "AND status = 'pending'";
-
 export class PauseTimerChanges {
   constructor(private readonly pool: pg.Pool) {}
 
   /**
-   * The deadline changed — the pause row-locked and read, the change planned (`timeoutChangePlan`:
-   * only while open and as the caller read it, from the deadline it read, to none or to a time after
-   * `at`, within the record's cap and count), written over the status it was read at — its
-   * `expires_at` and `remind_at` columns NULL when there is none — with its `timeout-changed` entry
-   * and its `timeout-changed` notices.
+   * The deadline changed — only while open and as the caller read it, from the deadline it read, to
+   * none or to a time after `at`, within the record's cap and count (the core's rule) —, its
+   * `expires_at` and `remind_at` columns NULL when there is none, with its `timeout-changed` entry
+   * and notices.
    */
   changeTimeout(
     tenantId: string,
@@ -47,17 +39,9 @@ export class PauseTimerChanges {
     at: Date,
     recipients: PauseRecipients,
   ): Promise<PauseRecord | undefined> {
-    return inPoolTransaction(this.pool, async (database) => {
-      const read = await firstRowOf(database, LOCKED_PAUSE, [tenantId, pauseId]);
-      if (read === undefined) return undefined;
-      const before = recordOfRow(read);
-      const plan = timeoutChangePlan(before, change, at, recipients);
-      if (plan === undefined) return undefined;
-      const written = await writtenPause(database, before, plan.pause);
-      if (written === undefined) return undefined;
-      await appendNotices(database, tenantId, pauseId, plan.notices);
-      return written;
-    });
+    return transitioned(this.pool, { tenantId, pauseId }, (pause) =>
+      timeoutChange(pause, change, at, recipients),
+    );
   }
 
   /** The reminder of a `Pending` pause, once: `remindAt ≤ at < expiresAt`; `false` when it does not apply. */
@@ -67,32 +51,16 @@ export class PauseTimerChanges {
     at: Date,
     recipients: PauseRecipients,
   ): Promise<boolean> {
-    return whenHeard(this.pool, recipients, async (database) => {
-      const row = await firstRowOf(
-        database,
-        `UPDATE agboss_pauses SET remind_at = NULL, record = record - 'remindAt'
-         WHERE tenant_id = $1 AND pause_id = $2 AND expires_at > $3 AND remind_at <= $3
-           ${PENDING} RETURNING record`,
-        [tenantId, pauseId, at],
-      );
-      if (row === undefined) return false;
-      // the statement matched `expires_at > at`: the record has its deadline
-      const { expiresAt } = recordOfRow(row);
-      const facts = { expiresAt };
-      await appendNotices(
-        database,
-        tenantId,
-        pauseId,
-        noticesOf(recipients, PauseNoticeKind.Expiring, at, facts),
-      );
-      return true;
-    });
+    const reminded = await transitioned(this.pool, { tenantId, pauseId }, (pause) =>
+      remindChange(pause, at, recipients),
+    );
+    return reminded !== undefined;
   }
 
   /**
    * The channel was asked (rule 2), whatever the pause's status: `isSent`, and — only when it was
-   * not yet — the notices `markSentNotices` plans from the pause as it was read. `true` while
-   * the pause is `Pending`.
+   * not yet — the notices `markSentChange` plans from the pause as it was read. `true` while the
+   * pause is `Pending`.
    */
   markSent(
     tenantId: string,
@@ -105,13 +73,13 @@ export class PauseTimerChanges {
       if (read === undefined) return false;
       const before = recordOfRow(read);
       if (!before.isSent) {
-        const sent = sentPause(before, externalRef);
+        const sent = markSentChange(before, recipients, externalRef);
         await changesOf(
           database,
           `UPDATE agboss_pauses SET record = $3::jsonb WHERE tenant_id = $1 AND pause_id = $2`,
-          [tenantId, pauseId, escapedJsonOf(sent)],
+          [tenantId, pauseId, escapedJsonOf(sent.pause)],
         );
-        await appendNotices(database, tenantId, pauseId, markSentNotices(before, sent, recipients));
+        await appendNotices(database, tenantId, pauseId, sent.notices);
       }
       return before.status === PauseStatus.Pending;
     });
@@ -129,10 +97,11 @@ export class PauseTimerChanges {
     at: Date,
     recipients: PauseRecipients,
   ): Promise<boolean> {
-    return whenHeard(this.pool, recipients, async (database) => {
+    return inPoolTransaction(this.pool, async (database) => {
       const read = await firstRowOf(database, LOCKED_PAUSE, [tenantId, pauseId]);
-      if (read === undefined || !recordOfRow(read).isSent) return false;
-      const planned = noticesOf(recipients, kind, at, facts);
+      if (read === undefined) return false;
+      // planned (and its times checked) even when nothing is written: the refusal never depends on the data
+      const planned = onceNotices(recordOfRow(read), kind, facts, at, recipients);
       return (await appendNotices(database, tenantId, pauseId, planned, kind)) > 0;
     });
   }

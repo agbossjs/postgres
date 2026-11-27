@@ -22,7 +22,8 @@ import {
  */
 const database = testDatabase();
 const store = (): ReturnType<typeof instanceOn> => instanceOn(database.url());
-const iso = (date: Date): string => date.toISOString();
+/** A copy of the instant: the notices carry `Date`s, equal by their time. */
+const same = (date: Date): Date => new Date(date.getTime());
 
 interface Stored {
   readonly kind: string;
@@ -85,7 +86,7 @@ describe("the notices a late markSent writes for a pause closed before it", () =
 
       const { [CHANNEL]: channel = [] } = await noticesOf(id);
       expect(channel.map((notice) => notice.kind)).toEqual(["closed", "answer-not-taken"]);
-      expect(channel[1]).toMatchObject({ reason: resolution, closedAt: iso(LATER) });
+      expect(channel[1]).toMatchObject({ reason: resolution, closedAt: same(LATER) });
     },
   );
 });
@@ -100,7 +101,7 @@ describe("the facts of a reminder, an extension, a once-only notice", () => {
     expect(Object.keys(notices)).toHaveLength(3);
     for (const stored of Object.values(notices))
       expect(stored).toEqual([
-        { seq: 1, kind: "expiring", writtenAt: iso(MID), expiresAt: iso(DEADLINE) },
+        { seq: 1, kind: "expiring", writtenAt: same(MID), expiresAt: same(DEADLINE) },
       ]);
   });
 
@@ -113,16 +114,16 @@ describe("the facts of a reminder, an extension, a once-only notice", () => {
       "default",
       "extended",
       {
-        expiresAt: iso(later),
-        previousExpiresAt: iso(DEADLINE),
-        remindAt: iso(remind),
+        expiresAt: same(later),
+        previousExpiresAt: same(DEADLINE),
+        remindAt: same(remind),
         seen: await seenNowOf(store(), "default", "extended"),
       },
       NINE,
       RECIPIENTS,
     );
 
-    expect(extended).toMatchObject({ expiresAt: iso(later), remindAt: iso(remind) });
+    expect(extended).toMatchObject({ expiresAt: same(later), remindAt: same(remind) });
     const { rows } = await onSchema(
       database.url(),
       "SELECT expires_at, remind_at FROM agboss_pauses WHERE pause_id = 'extended'",
@@ -134,9 +135,9 @@ describe("the facts of a reminder, an extension, a once-only notice", () => {
         {
           seq: 1,
           kind: "timeout-changed",
-          writtenAt: iso(NINE),
-          expiresAt: iso(later),
-          previousExpiresAt: iso(DEADLINE),
+          writtenAt: same(NINE),
+          expiresAt: same(later),
+          previousExpiresAt: same(DEADLINE),
         },
       ]);
   });
@@ -149,15 +150,15 @@ describe("the facts of a reminder, an extension, a once-only notice", () => {
       "default",
       "extended-plain",
       {
-        expiresAt: iso(later),
-        previousExpiresAt: iso(DEADLINE),
+        expiresAt: same(later),
+        previousExpiresAt: same(DEADLINE),
         seen: await seenNowOf(store(), "default", "extended-plain"),
       },
       NINE,
       RECIPIENTS,
     );
 
-    expect(extended).toMatchObject({ expiresAt: iso(later) });
+    expect(extended).toMatchObject({ expiresAt: same(later) });
     expect(extended).not.toHaveProperty("remindAt");
     const { rows } = await onSchema(
       database.url(),

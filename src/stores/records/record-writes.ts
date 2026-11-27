@@ -7,6 +7,7 @@ import type { NewThread, NewTurn, PauseAnswerRecord, Turn } from "@agboss/core";
 import { z } from "zod";
 import { changesOf, firstRowOf, rowsOf, type Queryable } from "../../connection/query.js";
 import { escapedJsonOf, escapedText } from "../nul-escape.js";
+import { assertAnswerInstants } from "../paused/pause-instants.js";
 
 /** Threads, appended records, their completion (unconditional or compare-and-set) and the pause log. */
 
@@ -150,11 +151,18 @@ export async function savePauseAnswer(
   rootExecutionId: string,
   answer: PauseAnswerRecord,
 ): Promise<void> {
+  assertAnswerInstants(answer);
   await changesOf(
     database,
     `INSERT INTO agboss_pause_answers (tenant_id, root_execution_id, step_key, asked_at, record)
      VALUES ($1, $2, $3, $4, $5) ON CONFLICT (tenant_id, root_execution_id, step_key) DO NOTHING`,
-    [tenantId, rootExecutionId, answer.step.idempotencyKey, answer.askedAt, JSON.stringify(answer)],
+    [
+      tenantId,
+      rootExecutionId,
+      answer.step.idempotencyKey,
+      answer.askedAt.toISOString(),
+      JSON.stringify(answer),
+    ],
   );
 }
 
@@ -169,12 +177,19 @@ export async function markPauseAnswerNotTaken(
   rootExecutionId: string,
   answer: PauseAnswerRecord,
 ): Promise<void> {
+  assertAnswerInstants(answer);
   await changesOf(
     database,
     `INSERT INTO agboss_pause_answers (tenant_id, root_execution_id, step_key, asked_at, record)
      VALUES ($1, $2, $3, $4, $5) ON CONFLICT (tenant_id, root_execution_id, step_key)
      DO UPDATE SET record = EXCLUDED.record`,
-    [tenantId, rootExecutionId, answer.step.idempotencyKey, answer.askedAt, JSON.stringify(answer)],
+    [
+      tenantId,
+      rootExecutionId,
+      answer.step.idempotencyKey,
+      answer.askedAt.toISOString(),
+      JSON.stringify(answer),
+    ],
   );
 }
 

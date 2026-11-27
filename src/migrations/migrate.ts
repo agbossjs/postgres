@@ -7,7 +7,7 @@ import { PostgresStepIndexError } from "../errors.js";
 import { refuseLiveLeases } from "./live-leases.js";
 import { setupCheckpoints } from "./checkpoint-setup.js";
 import { inTransaction } from "../connection/transaction.js";
-import { checkedSchemaOf, quotedIdentifier, searchPathOptionOf } from "../connection/settings.js";
+import { checkedSchemaOf, quotedIdentifier, sessionOptionsOf } from "../connection/settings.js";
 import { connectTimeoutOf } from "../connection/connect-timeout.js";
 
 /**
@@ -105,7 +105,7 @@ export async function migrateWith(
     max: 2,
     // agbossjs/agboss#989: a database that never answers the start fails the run, never hangs it
     connectionTimeoutMillis: connectTimeoutOf(options.url),
-    ...(schema === undefined ? {} : { options: searchPathOptionOf(schema) }),
+    options: sessionOptionsOf(schema),
   });
   try {
     const client = await pool.connect();

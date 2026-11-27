@@ -65,7 +65,7 @@ describe("the unsent replacements scan", () => {
       );
     }
     const seen: string[] = [];
-    let after: { at: string; tenantId: string; pauseId: string } | undefined;
+    let after: { at: Date; tenantId: string; pauseId: string } | undefined;
 
     for (;;) {
       const [page] = await store().findPendingUnsentReassignedBefore(LATER, 1, after);
@@ -76,7 +76,7 @@ describe("the unsent replacements scan", () => {
 
     expect(seen).toEqual(["new", ...ids]);
     const together = await store().findPendingUnsentReassignedBefore(LATER, 10, {
-      at: NINE.toISOString(),
+      at: NINE,
       tenantId: "default",
       pauseId: "r2",
     });

@@ -6,7 +6,7 @@ import {
   DEFAULT_COMMAND_TIMEOUT,
   DEFAULT_IDLE_IN_TRANSACTION_TIMEOUT,
   DEFAULT_POOL_SIZE,
-  searchPathOptionOf,
+  sessionOptionsOf,
   type PostgresConnectionSettings,
 } from "./settings.js";
 import { CLIENT_TIMEOUT_MARGIN, type TimedClientConfig } from "./timed-client.js";
@@ -39,6 +39,6 @@ export function poolOptionsOf(
     max: settings.poolSize ?? DEFAULT_POOL_SIZE,
     // agbossjs/agboss#989: a connection that never answers rejects the call, never hangs it
     connectionTimeoutMillis: connectTimeoutOf(settings.url),
-    ...(schema === undefined ? {} : { options: searchPathOptionOf(schema) }),
+    options: sessionOptionsOf(schema),
   };
 }

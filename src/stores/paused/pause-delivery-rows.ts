@@ -1,6 +1,7 @@
 import type { PauseNoticeClaim, PauseNoticeCounts, SetAsideMailbox } from "@agboss/core/stores";
 import { z } from "zod";
 import { changesOf, firstRowOf, rowsOf, type Queryable } from "../../connection/query.js";
+import { assertInstants } from "./pause-instants.js";
 import { mailboxOf, mailboxRowOf, OF_MAILBOX, UNDELIVERED } from "./pause-notice-rows.js";
 
 /**
@@ -24,6 +25,9 @@ function heldClaimOf(row: unknown): PauseNoticeClaim {
   const { claim_token: token, claimed_until: until } = Held.parse(row);
   return { mailbox: mailboxOf(mailboxRowOf(row)), token, until };
 }
+
+/** What the refusal of a time of a mailbox statement calls the record. */
+const MAILBOX = "pause mailbox";
 
 /** The key of a mailbox row, for setting it aside when its notices do not read. */
 const MailboxKey = z.object({ tenant_id: z.string(), pause_id: z.string(), recipient: z.string() });
@@ -78,6 +82,8 @@ export async function claimDue(
   claimFor: number,
   recipients: readonly string[],
 ): Promise<readonly PauseNoticeClaim[]> {
+  const until = new Date(at.getTime() + claimFor);
+  assertInstants(MAILBOX, { at, until });
   const rows = await rowsOf(
     database,
     `UPDATE agboss_pause_notices SET claim_token = gen_random_uuid()::text, claimed_until = $1
@@ -87,7 +93,7 @@ export async function claimDue(
          AND (claimed_until IS NULL OR claimed_until <= $2) AND recipient = ANY($3::text[])
        ORDER BY next_attempt_at LIMIT $4 ${ROW_LOCK})
      RETURNING *`,
-    [new Date(at.getTime() + claimFor), at, [...recipients], limit],
+    [until, at, [...recipients], limit],
   );
   return (await readableClaimsOf(database, rows)).sort(
     (a, b) => a.mailbox.nextAttemptAt.getTime() - b.mailbox.nextAttemptAt.getTime(),
@@ -105,6 +111,7 @@ export async function ackHead(
   at: Date,
 ): Promise<PauseNoticeClaim | undefined> {
   const { tenantId, pauseId, recipient } = claim.mailbox;
+  assertInstants(MAILBOX, { at });
   const row = await firstRowOf(
     database,
     `UPDATE agboss_pause_notices SET delivered = delivered + 1, attempts = 0, next_attempt_at = $4,
@@ -134,11 +141,13 @@ export async function renewHead(
   claimFor: number,
 ): Promise<PauseNoticeClaim | undefined> {
   const { tenantId, pauseId, recipient } = claim.mailbox;
+  const until = new Date(at.getTime() + claimFor);
+  assertInstants(MAILBOX, { at, until });
   const row = await firstRowOf(
     database,
     `UPDATE agboss_pause_notices SET claimed_until = GREATEST(claimed_until, $4::timestamptz)
      WHERE ${OF_MAILBOX} AND claim_token = $5 AND claimed_until > $6 RETURNING *`,
-    [tenantId, pauseId, recipient, new Date(at.getTime() + claimFor), claim.token, at],
+    [tenantId, pauseId, recipient, until, claim.token, at],
   );
   return row === undefined ? undefined : heldClaimOf(row);
 }
@@ -151,6 +160,7 @@ export async function retryHead(
   problem: string,
 ): Promise<boolean> {
   const { tenantId, pauseId, recipient } = claim.mailbox;
+  assertInstants(MAILBOX, { nextAttemptAt });
   const changed = await changesOf(
     database,
     `UPDATE agboss_pause_notices SET attempts = attempts + 1, next_attempt_at = $4, problem = $5,
@@ -188,6 +198,7 @@ export async function setAsideStale(
   problem: string,
   limit: number,
 ): Promise<readonly SetAsideMailbox[]> {
+  assertInstants(MAILBOX, { before, at });
   const rows = await rowsOf(
     database,
     `UPDATE agboss_pause_notices SET is_dead = true, problem = $3, claim_token = NULL,

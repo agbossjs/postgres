@@ -72,8 +72,8 @@ describe("a change and its notices are one transaction", () => {
           "default",
           "p5",
           {
-            expiresAt: "2026-01-05T12:00:00.000Z",
-            previousExpiresAt: DEADLINE.toISOString(),
+            expiresAt: new Date("2026-01-05T12:00:00.000Z"),
+            previousExpiresAt: DEADLINE,
             seen: await seenNowOf(store, "default", "p5"),
           },
           MID,

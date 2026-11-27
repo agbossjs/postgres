@@ -14,7 +14,7 @@ const database = testDatabase();
 const CLAIM_FOR = minutes(5);
 const AUDIT = "listener:audit-listener";
 const LISTENER_ONLY = { listeners: ["audit-listener"] };
-const at = (time: string): string => `2026-01-05T${time}:00.000Z`;
+const at = (time: string): Date => new Date(`2026-01-05T${time}:00.000Z`);
 const NOON = new Date(at("12:00"));
 
 /** Pauses `ids` asked at `times` (so their mailboxes are due then), in this order, each sent. */
