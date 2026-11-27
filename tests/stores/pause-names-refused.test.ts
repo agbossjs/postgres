@@ -9,6 +9,7 @@ import {
   PostgresExecutionHistoryRepository,
   PostgresPausedExecutionRepository,
 } from "../../src/index.js";
+import { pauseKeyOf } from "@agboss/core/stores";
 import { VirtualClock } from "@agboss/core/testing";
 import { onSchema, testDatabase } from "../support/database.js";
 import { connectionTo, recordsOn } from "../support/stores.js";
@@ -155,7 +156,11 @@ describe("D1 / D2: a pause's embedded answer and the answer log", () => {
     const id = `p-${String(Math.random()).slice(2, 8)}`;
     const pauses = await pauseWith(answer, id);
 
-    await refusal(() => pauses.findByTenantIdAndPauseId("default", id), `pauseId ${id}`, field);
+    await refusal(
+      () => pauses.findByTenantIdAndPauseId("default", id),
+      `pause ${pauseKeyOf("default", id)}`,
+      field,
+    );
   });
 
   it("an answer-log entry whose role is an object names the execution and the field", async () => {

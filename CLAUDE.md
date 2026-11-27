@@ -62,6 +62,11 @@ clock_timestamp())`, the parameter the test's clock only when `StoreClock.source
   (`attemptStartedAt`, `firstAttemptStartedAt`, `readAt`, agbossjs/agboss#658) are the time the
   fence read (`checkFence` answers it). Other times (records, retention) come from the
   application's clock, as parameters.
+- Times of a pause (agbossjs/agboss#1307): `Date`s in memory, `timestamptz` columns bound as `Date`s, every
+  time in a text column or JSON the `toISOString()` text (never a `Date` into `text`/`jsonb`: node-postgres
+  writes local time with an offset), read back canonical-only (`pauseRecordOfJson`, `instantOfText`);
+  an Invalid Date is refused first (`assertPauseInstants`, `assertValidInstant`); the rules are the
+  core's pure transitions, never restated; pool sessions are `timezone=UTC`.
 - `src/cli.ts` + `bin/agboss-postgres.js` — the command.
 - `tests/processes/` + `tests/fixtures/` — the two-process tests (#482 AC1–AC3, #483 AC1–AC4, the outbound charge, agbossjs/agboss#520 AC1):
   each instance a `node` child (`--import tsx`) running `ProcessApplication` on the test's schema,

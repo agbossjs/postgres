@@ -30,7 +30,7 @@ const momentOf = (iso: string | undefined): Date | null =>
  * `ExecutionHistoryRepository` on PostgreSQL (agbossjs/agboss#483): one row per kept root
  * execution, its record as `jsonb` beside the columns it is found by — tenant, execution, thread,
  * start and end. `save` is one upsert of the row (the same root saved twice keeps the last), so the
- * instances of an application share one history: `agboss records export` on any of them lists
+ * instances of an application share one history: `agboss executions export` on any of them lists
  * the executions of all. Reads are one `SELECT` each, oldest start first, ids ordered byte-wise;
  * the periods' reads are paged by `LIMIT` / `OFFSET` on the start indexes. The sweep's
  * `deleteByEndedAtBefore` removes only ended rows, by the `Clock`'s cutoff passed as a parameter.

@@ -30,7 +30,7 @@ describe("the replacement of a reassigned pause", () => {
       RECIPIENTS,
     );
 
-    expect(made).toMatchObject({ pauseId: "new", remindAt: "2026-01-05T09:30:00.000Z" });
+    expect(made).toMatchObject({ pauseId: "new", remindAt: new Date("2026-01-05T09:30:00.000Z") });
     const { rows } = await onSchema(
       database.url(),
       "SELECT expires_at, remind_at FROM agboss_pauses WHERE pause_id = 'new'",
@@ -65,7 +65,7 @@ describe("the unsent replacements scan", () => {
       );
     }
     const seen: string[] = [];
-    let after: { at: string; tenantId: string; pauseId: string } | undefined;
+    let after: { at: Date; tenantId: string; pauseId: string } | undefined;
 
     for (;;) {
       const [page] = await store().findPendingUnsentReassignedBefore(LATER, 1, after);
@@ -76,7 +76,7 @@ describe("the unsent replacements scan", () => {
 
     expect(seen).toEqual(["new", ...ids]);
     const together = await store().findPendingUnsentReassignedBefore(LATER, 10, {
-      at: NINE.toISOString(),
+      at: NINE,
       tenantId: "default",
       pauseId: "r2",
     });

@@ -73,8 +73,14 @@ describe("agbossjs/agboss#1213: paused run text and non-finite numbers", () => {
 });
 
 describe("agbossjs/agboss#1213: pauseRecordOf", () => {
+  it("a record written as JSON reads back with the same Dates (#1307)", () => {
+    const written: unknown = JSON.parse(JSON.stringify(pauseOf("p1")));
+
+    expect(pauseRecordOf(written)).toEqual(pauseOf("p1"));
+  });
+
   it("reads a pause the core's way", () => {
-    expect(pauseRecordOf(pauseOf("p1"))).toMatchObject({
+    expect(pauseRecordOf(JSON.parse(JSON.stringify(pauseOf("p1"))))).toMatchObject({
       pauseId: "p1",
       tenantId: "default",
       status: "pending",

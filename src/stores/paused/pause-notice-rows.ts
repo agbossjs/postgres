@@ -1,9 +1,14 @@
 import { PauseClosedReason } from "@agboss/core";
-import { PauseNoticeKind, type PauseMailbox } from "@agboss/core/stores";
+import {
+  instantOfText,
+  PauseNoticeKind,
+  type PauseMailbox,
+  type PauseNotice,
+  type PlannedNotice,
+} from "@agboss/core/stores";
 import { z } from "zod";
 import { changesOf, type Queryable } from "../../connection/query.js";
 import { escapedJsonOf, unescapedJson } from "../nul-escape.js";
-import type { PlannedNotice } from "./pause-notice-plan.js";
 
 /**
  * The mailboxes of `PostgresPausedExecutionRepository` (agbossjs/agboss#935): one row per (tenant,
@@ -13,6 +18,10 @@ import type { PlannedNotice } from "./pause-notice-plan.js";
  * change that causes it (its caller holds the pause's row lock).
  */
 
+/** What the unreadable-time refusal calls a notice. */
+const NOTICE = "pause notice";
+
+/** A notice as the JSON keeps it: its times canonical ISO texts, read by `noticeOf`. */
 const NoticeRow = z.object({
   seq: z.number(),
   kind: z.enum(PauseNoticeKind),
@@ -49,8 +58,27 @@ const MailboxRow = z.object({
 
 /** A mailbox row with its notices read. */
 export type StoredMailbox = Omit<z.infer<typeof MailboxRow>, "notices"> & {
-  readonly notices: readonly z.infer<typeof NoticeRow>[];
+  readonly notices: readonly PauseNotice[];
 };
+
+/** The time of a notice's text, when it has one: the canonical spelling only, else `StoreError.UnreadableRecord`. */
+const instantOf = (text: string | undefined, field: string): Date | undefined =>
+  text === undefined ? undefined : instantOfText(text, field, NOTICE);
+
+/** A notice with its times as `Date`s (a text that is no canonical instant is `StoreError.UnreadableRecord`). */
+function noticeOf(row: z.infer<typeof NoticeRow>): PauseNotice {
+  const { writtenAt, closedAt, expiresAt, previousExpiresAt, ...rest } = row;
+  const closed = instantOf(closedAt, "closedAt");
+  const expires = instantOf(expiresAt, "expiresAt");
+  const previous = instantOf(previousExpiresAt, "previousExpiresAt");
+  return {
+    ...rest,
+    writtenAt: instantOfText(writtenAt, "writtenAt", NOTICE),
+    ...(closed === undefined ? {} : { closedAt: closed }),
+    ...(expires === undefined ? {} : { expiresAt: expires }),
+    ...(previous === undefined ? {} : { previousExpiresAt: previous }),
+  };
+}
 
 /** The undelivered notices exist: the mailbox waits for delivery (`jsonb_array_length`). */
 export const UNDELIVERED = "delivered < jsonb_array_length(notices)";
@@ -72,7 +100,8 @@ const NEW_HEAD = (idle: string): string =>
 /** A row as read back: its notices' text unescaped, checked. */
 export const mailboxRowOf = (row: unknown): StoredMailbox => {
   const parsed = MailboxRow.parse(row);
-  return { ...parsed, notices: z.array(NoticeRow).parse(unescapedJson(parsed.notices)) };
+  const notices = z.array(NoticeRow).parse(unescapedJson(parsed.notices)).map(noticeOf);
+  return { ...parsed, notices };
 };
 
 /** The mailbox a receiver sees. */

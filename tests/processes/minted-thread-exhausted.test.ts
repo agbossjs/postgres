@@ -46,7 +46,7 @@ describe("agbossjs/agboss#613: a minted thread id that never finds a free one, o
 
       expect(refused).toBeInstanceOf(ExecutionError.ThreadIdsExhausted);
       expect(refused).toMatchObject({
-        code: "run.thread-ids-exhausted",
+        code: "execution.thread-ids-exhausted",
         generator: "StuckIdGenerator",
         tries: 100,
       });

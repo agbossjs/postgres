@@ -13,7 +13,7 @@ import { createApp, IdGenerator, Injectable, ExecutionError } from "@agboss/core
 import { generateKeyPairSync } from "node:crypto";
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import {} from "../../src/index.js";
-import { ChargeWorkflowStart } from "../fixtures/charge.workflow.js";
+import { ChargeWorkflow, ChargeWorkflowStart } from "../fixtures/charge.workflow.js";
 import { openGate } from "../fixtures/process-log.js";
 import { storageLayoutOf } from "../fixtures/store-layout.application.js";
 import { onSchema, testDatabase } from "../support/database.js";
@@ -42,13 +42,14 @@ const opened: App[] = [];
 
 /** One application instance on the test's schema, with its own pool and its own generator. */
 async function instance(): Promise<App> {
-  const app = await createApp(storageLayoutOf([RestartingIdGenerator]));
+  const app = await createApp(storageLayoutOf([RestartingIdGenerator], [ChargeWorkflow]));
   opened.push(app);
   return app;
 }
 
 beforeAll(async () => {
   process.env.AGBOSS_PROCESS_DATABASE_URL = database.url();
+  process.env.AGBOSS_PROCESS_IDEMPOTENCY_KEY = "postgres-process-idempotency-key";
   process.env.AGBOSS_PROCESS_MESH_PEER_KEY = generateKeyPairSync("ed25519")
     .publicKey.export({ type: "spki", format: "pem" })
     .toString();
@@ -102,8 +103,12 @@ describe("agbossjs/agboss#591 on PostgreSQL: a repeated execution id never repla
       error: expect.any(ExecutionError.DuplicateExecutionId) as unknown,
     });
     expect(String((repeated as { error: unknown }).error)).not.toContain("execution-1");
+    // the gateway is sent the call's key as a keyed digest (core 0.1.1), not the text `<execution>:<step>:…`
     expect(await charges()).toEqual([
-      { order_id: "order-A", idempotency_key: "execution-1:charge-action:1:charge" },
+      {
+        order_id: "order-A",
+        idempotency_key: expect.stringMatching(/^[A-Za-z0-9_-]{43}$/u) as unknown,
+      },
     ]);
     const { rows } = await onSchema(
       database.url(),

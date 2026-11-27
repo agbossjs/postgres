@@ -104,9 +104,9 @@ async function pausesWithManyNotices(count: number): Promise<void> {
         "default",
         id,
         {
-          expiresAt: `2026-01-05T${String(hour)}:00:00.000Z`,
+          expiresAt: new Date(`2026-01-05T${String(hour)}:00:00.000Z`),
           previousExpiresAt:
-            hour === 11 ? DEADLINE.toISOString() : `2026-01-05T${String(hour - 1)}:00:00.000Z`,
+            hour === 11 ? DEADLINE : new Date(`2026-01-05T${String(hour - 1)}:00:00.000Z`),
           seen: await seenNowOf(store, "default", id),
         },
         MID,

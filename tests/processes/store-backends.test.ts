@@ -42,6 +42,7 @@ const database = testDatabase();
 
 beforeAll(() => {
   process.env.AGBOSS_PROCESS_DATABASE_URL = database.url();
+  process.env.AGBOSS_PROCESS_IDEMPOTENCY_KEY = "postgres-process-idempotency-key";
   process.env.AGBOSS_PROCESS_MESH_PEER_KEY = generateKeyPairSync("ed25519")
     .publicKey.export({ type: "spki", format: "pem" })
     .toString();
@@ -223,7 +224,11 @@ describe("agbossjs/agboss#891 AC3: the store bundles in providers", () => {
 
   it("the package's PostgresDriver starts — a whole application on PostgreSQL, no store listed", async () => {
     const app = await createApp(storageLayoutOf());
-    await app.close();
+    try {
+      expect(app).toBeDefined();
+    } finally {
+      await app.close();
+    }
   });
 
   it("AC3: ...POSTGRES_DURABLE_STORES beside coordination leases and provide(EXECUTION_ID_STORE, …): no ambiguity, no mismatch", async () => {
@@ -233,7 +238,8 @@ describe("agbossjs/agboss#891 AC3: the store bundles in providers", () => {
   });
 
   it("AC2/AC3: a PostgreSQL fencing store beside the coordination leases is refused — its write checks a lease the leases' backend does not share", async () => {
-    const providers = [...POSTGRES_DURABLE_STORES, CoordinationLeases, durableIds];
+    // no durable store bound to EXECUTION_ID_STORE: the listed leases are the ones its write is checked by
+    const providers = [...POSTGRES_DURABLE_STORES, CoordinationLeases];
 
     expect(await backendViolationsOf([...providers, PostgresFencedEffectRepository])).toEqual([
       mismatch(PG_EFFECTS, "postgres", "CoordinationLeases", "redis"),
@@ -241,5 +247,12 @@ describe("agbossjs/agboss#891 AC3: the store bundles in providers", () => {
     expect(await backendViolationsOf([...providers, PostgresOutboundCallRepository])).toEqual([
       mismatch(PG_CALLS, "postgres", "CoordinationLeases", "redis"),
     ]);
+  });
+
+  it("AC2/AC3 (#1321e D6): with the durable lease store bound to EXECUTION_ID_STORE the fencing store is checked against that row — no mismatch", async () => {
+    const providers = [...POSTGRES_DURABLE_STORES, CoordinationLeases, durableIds];
+
+    expect(await backendViolationsOf([...providers, PostgresFencedEffectRepository])).toEqual([]);
+    expect(await backendViolationsOf([...providers, PostgresOutboundCallRepository])).toEqual([]);
   });
 });

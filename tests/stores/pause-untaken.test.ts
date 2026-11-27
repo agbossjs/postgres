@@ -2,7 +2,15 @@ import { PauseResolution } from "@agboss/core";
 import { minutes } from "@agboss/core/units";
 import { describe, expect, it } from "vitest";
 import { onSchema, testDatabase } from "../support/database.js";
-import { APPROVED, LATER, MID, RECIPIENTS, expiringPauseOf, instanceOn } from "./pause-fixtures.js";
+import {
+  APPROVED,
+  DEADLINE,
+  LATER,
+  MID,
+  RECIPIENTS,
+  expiringPauseOf,
+  instanceOn,
+} from "./pause-fixtures.js";
 
 /**
  * agbossjs/agboss#935 acceptance (a): `closeUntaken` keeps the first close's facts and only adds the
@@ -17,8 +25,8 @@ const AFTER_DEADLINE = new Date("2026-01-05T10:01:00.000Z");
 interface Fact {
   kind: string;
   reason?: string;
-  closedAt?: string;
-  writtenAt: string;
+  closedAt?: Date;
+  writtenAt: Date;
 }
 
 /** The channel's notices of the pause: what it hears. */
@@ -76,13 +84,13 @@ describe("closeUntaken keeps the first close's facts", () => {
       expect(strip(late)).toEqual(strip(early));
       expect(strip(early)[0]).toEqual(
         how === "expiry"
-          ? { kind: "closed", reason: "expired", closedAt: "2026-01-05T10:00:00.000Z" }
-          : { kind: "closed", reason: "answered", closedAt: MID.toISOString() },
+          ? { kind: "closed", reason: "expired", closedAt: DEADLINE }
+          : { kind: "closed", reason: "answered", closedAt: MID },
       );
       expect(strip(early)[1]).toEqual({
         kind: "answer-not-taken",
         reason: "tree-ended",
-        closedAt: LATER.toISOString(),
+        closedAt: LATER,
       });
     });
 });

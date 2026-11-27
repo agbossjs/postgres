@@ -20,6 +20,8 @@ export const ORDERS_KEYS = generateKeyPairSync("ed25519");
 export const processEnvOf = (url: string): NodeJS.ProcessEnv => ({
   ...process.env,
   AGBOSS_PROCESS_DATABASE_URL: url,
+  // every process of a test keys its business-key fingerprints alike (agbossjs/agboss#825): a fixed test key
+  AGBOSS_PROCESS_IDEMPOTENCY_KEY: "postgres-process-idempotency-key",
   AGBOSS_PROCESS_MESH_PEER_KEY: ORDERS_KEYS.publicKey
     .export({ type: "spki", format: "pem" })
     .toString(),

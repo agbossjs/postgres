@@ -90,10 +90,15 @@ const YIELD = `UPDATE agboss_execution_leases SET yielded = true
 
 /**
  * The holder takes its own lease back at the next token (agbossjs/agboss#516), held again — matched
- * as `renew` matches it, so a lease already over or taken over is not reclaimed.
+ * as `renew` matches it, so a lease already over or taken over is not reclaimed. Under an
+ * `Immediate` external pause the new token inherits the fence in the same statement
+ * (`fenced_through_token = GREATEST(itself, token + 1)`, agbossjs/agboss#1341c): the holder's first
+ * write is refused and it parks; under an `AfterStep` pause or after `unpause` the fence stays.
  */
 const RECLAIM = `UPDATE agboss_execution_leases
   SET token = token + 1, yielded = false,
+    fenced_through_token = CASE WHEN is_externally_paused AND external_pause_mode = 'immediate'
+      THEN GREATEST(COALESCE(fenced_through_token, 0), token + 1) ELSE fenced_through_token END,
     expires_at = ${storeNow(6)} + $1::float8 * interval '1 millisecond'
   WHERE tenant_id = $2 AND root_execution_id = $3 AND holder_instance_id = $4
     AND token = $5 AND NOT released AND expires_at > ${storeNow(6)}

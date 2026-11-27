@@ -149,7 +149,11 @@ export class SpendExecutionBudget implements BudgetHandler {
 })
 export class OrdersAuthenticator {
   authenticate(): HttpAuthResult {
-    return HttpAuthResult.authenticated({ peer: "orders-application" });
+    // an owner of its own: a caller with none is given a new one for every message, so no messageId would dedupe
+    return HttpAuthResult.authenticated({
+      peer: "orders-application",
+      ownerId: "orders-application",
+    });
   }
 }
 

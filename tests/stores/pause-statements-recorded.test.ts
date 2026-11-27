@@ -1,5 +1,6 @@
 import { PauseStatus } from "@agboss/core";
 import pg from "pg";
+import { ZodError } from "zod";
 import { afterEach, describe, expect, it } from "vitest";
 import { claimDue, UNREADABLE_MAILBOX } from "../../src/stores/paused/pause-delivery-rows.js";
 import { PauseScans } from "../../src/stores/paused/pause-scans.js";
@@ -50,7 +51,9 @@ describe("the pause listing's statement", () => {
     await new PauseScans(tenant.pool).ofTenant("acme", PENDING, "0", 10);
     await new PauseScans(every.pool).ofAllTenants(PENDING, "0", 10);
 
-    expect(squeezed(tenant.sent[0]?.sql ?? "")).toContain("tenant_id = $2");
+    expect(squeezed(tenant.sent[0]?.sql ?? "")).toContain(
+      "WHERE seq > $1::bigint AND tenant_id = $2 AND status = ANY($3::text[])",
+    );
     expect(tenant.sent[0]?.values).toEqual(["0", "acme", ["pending"], 11]);
     expect(every.sent[0]?.sql).not.toContain("tenant_id");
     expect(every.sent[0]?.values).toEqual(["0", ["pending"], 11]);
@@ -141,6 +144,7 @@ describe("the claim of mailboxes", () => {
   it("a row whose key does not read either is the statement's failure, never swallowed", async () => {
     const { pool } = poolAnswering([[{ notices: [notice("opened")] }]]);
 
-    await expect(claimDue(pool, new Date(), 10, 1, ["r"])).rejects.toThrow();
+    // the row's own failure (the schema's), not a TypeError of reading a key that is not there
+    await expect(claimDue(pool, new Date(), 10, 1, ["r"])).rejects.toBeInstanceOf(ZodError);
   });
 });

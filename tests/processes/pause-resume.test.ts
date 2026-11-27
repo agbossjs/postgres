@@ -29,7 +29,7 @@ describe("AC3: a pause across two processes", () => {
 
     expect(paused.status).toBe("paused");
     expect(paused.pending).toEqual([
-      { pauseId: expect.any(String), channel: "ship-approval-channel" },
+      { pauseId: expect.any(String), channel: "queued-ship-approval-channel" },
     ]);
     expect(eventsOf(a, "shipped")).toEqual([]);
     const pauseId = paused.pending[0]?.pauseId;

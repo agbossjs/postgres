@@ -38,8 +38,8 @@ describe("the head time of a mailbox", () => {
       "default",
       "p",
       {
-        expiresAt: "2026-01-05T11:00:00.000Z",
-        previousExpiresAt: DEADLINE.toISOString(),
+        expiresAt: new Date("2026-01-05T11:00:00.000Z"),
+        previousExpiresAt: DEADLINE,
         seen: await seenNowOf(store, "default", "p"),
       },
       MID,
@@ -52,7 +52,7 @@ describe("the head time of a mailbox", () => {
 
     const next = await store.ackNotice(claim, MID);
 
-    expect(next?.mailbox.headWrittenAt).toBe(MID.toISOString());
+    expect(next?.mailbox.headWrittenAt).toEqual(MID);
     expect(await headOf()).toEqual(MID);
     const between = new Date("2026-01-05T09:30:00.000Z");
     expect(await store.setAsideStaleNoticesBefore(between, NOON, "stale", 10)).toEqual([
@@ -76,8 +76,8 @@ describe("the head time of a mailbox", () => {
       "default",
       "q",
       {
-        expiresAt: "2026-01-05T11:00:00.000Z",
-        previousExpiresAt: DEADLINE.toISOString(),
+        expiresAt: new Date("2026-01-05T11:00:00.000Z"),
+        previousExpiresAt: DEADLINE,
         seen: await seenNowOf(store, "default", "q"),
       },
       MID,

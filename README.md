@@ -80,7 +80,7 @@ The stores of the driver:
 | `PostgresA2ADirectMessageRepository`    | `A2ADirectMessageRepository`    | `agboss_a2a_direct_messages`, its ids claimed in `agboss_a2a_messages` (`0030`)                      |
 
 With all of them listed, nothing of the application is per pod: budgets sum every pod's spend, a
-provider's limits hold across pods, `agboss records export` on any pod lists every pod's
+provider's limits hold across pods, `agboss executions export` on any pod lists every pod's
 executions, a mesh request retried against another pod is answered from the first run, and an A2A
 message (agbossjs/agboss#824) resent to another pod — the same `messageId` — gets the task the first
 pod accepted, never a second execution; `GetTask` and `ListTasks` read it on any pod. An application
@@ -226,15 +226,15 @@ const [takeover] = await app.auditLogOf({ tenantId: "default", rootExecutionId }
 application's `@DatabaseStorage`); a script or a test builds a connection from a settings object
 (`new PostgresConnection({ url, poolSize, … })`, `PostgresConnectionSettings`).
 
-| Option                              | Type           | Default                                         | What                                                                         |
-| ----------------------------------- | -------------- | ----------------------------------------------- | ---------------------------------------------------------------------------- |
-| `url`                               | `SecretRef`    | —                                               | the database: `postgres://user:password@host:5432/db`                        |
-| `poolSize`                          | `number`       | `DEFAULT_POOL_SIZE` (`10`)                      | the most connections this instance's pool opens                              |
-| `timeouts.watchLiveness`            | `Milliseconds` | `DEFAULT_WATCH_LIVENESS_SECONDS` (`10` s)       | the longest a silently dead `LISTEN` connection goes unnoticed (2 to 3600 s) |
-| `timeouts.commandTimeout`           | `Milliseconds` | `DEFAULT_COMMAND_TIMEOUT` (`10000`)             | how long a store command may run (100 ms to 30 s; 0 is refused)              |
-| `timeouts.idleInTransactionTimeout` | `Milliseconds` | `DEFAULT_IDLE_IN_TRANSACTION_TIMEOUT` (`10000`) | how long a session may idle inside a transaction (100 ms to 30 s)            |
-| `schema`                            | `string`       | the URL's `search_path`, `DEFAULT_SCHEMA`       | the schema of the stores' tables (one per application)                       |
-| `schemaSetup`                       | `SchemaSetup`  | `SchemaSetup.Check`                             | what the start does with the schema (Migrations, below)                      |
+| Option                              | Type               | Default                                         | What                                                                         |
+| ----------------------------------- | ------------------ | ----------------------------------------------- | ---------------------------------------------------------------------------- |
+| `url`                               | `SecretRef`        | —                                               | the database: `postgres://user:password@host:5432/db`                        |
+| `poolSize`                          | `number`           | `DEFAULT_POOL_SIZE` (`10`)                      | the most connections this instance's pool opens                              |
+| `timeouts.watchLiveness`            | `Milliseconds`     | `DEFAULT_WATCH_LIVENESS_SECONDS` (`10` s)       | the longest a silently dead `LISTEN` connection goes unnoticed (2 to 3600 s) |
+| `timeouts.commandTimeout`           | `Milliseconds`     | `DEFAULT_COMMAND_TIMEOUT` (`10000`)             | how long a store command may run (100 ms to 30 s; 0 is refused)              |
+| `timeouts.idleInTransactionTimeout` | `Milliseconds`     | `DEFAULT_IDLE_IN_TRANSACTION_TIMEOUT` (`10000`) | how long a session may idle inside a transaction (100 ms to 30 s)            |
+| `schema`                            | `string \| env(…)` | the URL's `search_path`, `DEFAULT_SCHEMA`       | the schema of the stores' tables (one per application)                       |
+| `schemaSetup`                       | `SchemaSetup`      | `SchemaSetup.Check`                             | what the start does with the schema (Migrations, below)                      |
 
 An application with no `@DatabaseStorage` of `PostgresDriver` that starts a PostgreSQL store fails
 the start with `PostgresSettingsError`, naming the storage to declare, before anything connects. A
@@ -571,6 +571,25 @@ of the notices it writes.
   and cursor, no tenant clause) filter `statuses`, `target`, `expiresBefore`, `channel`, `assignee`
   (any member of a pool) and `externalRef` on the record's own JSON, each on an index
   (`agboss_pauses_by_status`, `…_by_channel`, a GIN on the record's `assignees`, `…_by_external_ref`).
+- **Times** (P6b, agbossjs/agboss#1307): the store contract holds `Date`s. A change is the core's
+  pure transition (`resolveChange`, `decideChange`, `cancelChange`, `expireChange`,
+  `closeUntakenChange`, `remindChange`, `markSentChange`, `timeoutChange`, `reassignChange`,
+  `onceNotices`: the rule, its `seen`, its deadline, its notices) planned over the pause read under
+  its row lock, then written with the `UPDATE … WHERE status = <as read>` and its notices in that
+  transaction; nothing of the rules is restated here. `expires_at`, `remind_at`, `resolved_at` and the
+  mailbox columns are `timestamptz` bound as `Date`s; every time kept as text (the record's JSON, the
+  notices' jsonb, the answer log's `asked_at`, the unsent-replacement scan's `record->>'askedAt'`) is
+  the `toISOString()` text, read back in that one spelling only (anything else is
+  `StoreError.UnreadableRecord`, a mailbox like that is set aside at the claim). An Invalid Date is
+  refused before the first write. Every connection is sent `SET TIME ZONE 'UTC'` and, when a schema
+  is configured, `SET search_path TO "<schema>"` — on the pool (awaited by pg-pool before it lends the
+  connection; a failing statement ends it), the migrating pool and the step-index client — so a URL
+  carrying its own `options` can override neither the zone nor the schema; the startup `options` is
+  sent only for a schema, as before. No statement compares or keys by a cast of a `timestamptz` to
+  text, so correctness never rests on the session zone. Behind a pooler in transaction mode (PgBouncer,
+  RDS Proxy) a session `SET` does not stick to the server connection (RDS Proxy pins the session):
+  use session pooling, or set the zone and `search_path` on the role or the database.
+  What a call returns is read from the database as written, never the caller's `Date`.
 - **A mailbox row that does not read** (a notice kind no code writes any more, damage) is set aside
   as dead with the problem `unreadable mailbox` when it is claimed; the claim of the others goes on.
 
@@ -648,6 +667,12 @@ npm run test:faults      # the fault suite (below): ~20 min on the real clock; A
 
 Each test file works in a schema of its own (`t_<random>`), dropped after it.
 
+The pause contract holds `Date`s, so it is also run in other time zones (agbossjs/agboss#1307, step 8;
+against the database, at the T-train, not in `npm test`): `npm run test:tz` runs the contract suite
+under `TZ=Asia/Jerusalem`, under `TZ=America/New_York`, and with the server's session zone left alone
+(`test:tz:session`: `AGBOSS_TEST_KEEP_SESSION_TZ=1`, read by the test harness only, takes the package's
+`SET TIME ZONE` off the pool; first `ALTER DATABASE <db> SET timezone = '+02'` on the test database).
+
 - **Contract suites** (`tests/contracts/store-conformance.test.ts`) — one `storeConformance` of
   `@agboss/core/testing/contracts` (agbossjs/agboss#526) runs every store's published suite
   against the real database, two instances with two pools, and the store set's cases (the three
@@ -676,7 +701,7 @@ Each test file works in a schema of its own (`t_<random>`), dropped after it.
     the next execution, on either process, is refused with `BudgetExceededError` before any call.
   - `shared-rate-limit.test.ts` (#483 AC2): four executions on A and B against a provider with
     `maxConcurrentCalls: 1`; the provider's calls, timed on the `Clock`, never overlap.
-  - `history-export.test.ts` (#483 AC3): `agboss records export --all-tenants`, run with B's
+  - `history-export.test.ts` (#483 AC3): `agboss executions export --all-tenants`, run with B's
     environment, lists the executions run on A and on B.
   - `mesh-dedup.test.ts` (#483 AC4): a signed A2A request sent to A, then the same one to B, runs
     once; B answers with A's answer.

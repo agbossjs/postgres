@@ -8,7 +8,7 @@ import {
   type StorageMigration,
   type StorageMigrationOptions,
 } from "@agboss/core/stores";
-import type { SecretRef } from "@agboss/core";
+import type { EnvRef, SecretRef } from "@agboss/core";
 import { PostgresConnection } from "./connection/postgres-connection.js";
 import { settingsOfResolved, timeoutSettingsOf } from "./connection/driver-settings.js";
 import { migratePostgres } from "./migrations/migrate.js";
@@ -21,8 +21,11 @@ import { PostgresRateLimitRepository } from "./stores/postgres-rate-limit.reposi
 export interface PostgresDriverOptions {
   /** The database: `secret("POSTGRES_URL")`, read once when the application starts, never printed. */
   readonly url: SecretRef;
-  /** The schema of the stores' tables: two applications on one database, each in its own. */
-  readonly schema?: string;
+  /**
+   * The schema of the stores' tables: two applications on one database, each in its own. A name, or
+   * `env("POSTGRES_SCHEMA")` read once when the application starts, as the url is.
+   */
+  readonly schema?: string | EnvRef<string>;
   /** The most connections the instance's pool opens (default 10). */
   readonly poolSize?: number;
   /** What the start does with the schema (default `SchemaSetup.Check`: it is migrated by `agboss migrate db`). */
@@ -49,6 +52,14 @@ export async function migrateWithDriver(
   return { applied: report.applied.map((migration) => migration.name) };
 }
 
+/** What the driver tells of itself: a schema named in the code by its name, one read from the environment by its variable. */
+function describedOf(schema: string | EnvRef<string> | undefined): string {
+  if (schema === undefined) return "postgres";
+  return typeof schema === "string"
+    ? `postgres (schema ${schema})`
+    : `postgres (schema from ${schema.variable})`;
+}
+
 /**
  * The database on PostgreSQL (`@DatabaseStorage({ driver: PostgresDriver({ url: secret("POSTGRES_URL") }) })`):
  * every store of the package on the one pool of the instance — two instances open two pools to one
@@ -60,7 +71,7 @@ export function PostgresDriver(options: PostgresDriverOptions): DatabaseDriver {
   return defineStorageDriver({
     role: StorageRole.Database,
     backend: "postgres",
-    describes: schema === undefined ? "postgres" : `postgres (schema ${schema})`,
+    describes: describedOf(schema),
     settings: {
       kind: "postgres",
       url,

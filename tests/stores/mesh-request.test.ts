@@ -70,8 +70,10 @@ describe("PostgresMeshRequestRepository", () => {
     expect(await a.deleteByKey(keyOf("taken-over"), "attempt-1")).toBe(false);
     expect(await b.saveResponse(keyOf("taken-over"), "attempt-2", { who: "owner" })).toBe(true);
 
+    // a takeover moves the lease (attempt, creation time, lock) and keeps the row's own expiry, as the core's stores do
     expect(await a.findByKey(keyOf("taken-over"))).toEqual({
       ...later,
+      expiresAt: requestOf("taken-over").expiresAt,
       response: { who: "owner" },
     });
   });
@@ -102,12 +104,25 @@ describe("PostgresMeshRequestRepository", () => {
     await requests.saveIfAbsent(requestOf("answered"));
     await requests.saveResponse(keyOf("answered"), "attempt-1", {});
     await requests.saveIfAbsent(requestOf("running"));
+    // running: its attempt still holds the lease at the sweep's time (a lapsed lease is swept at the expiry, #1321)
+    const held = new Date(expired.getTime() + 60 * 60 * 1000).toISOString();
+    expect(await requests.renewLease(keyOf("running"), "attempt-1", held)).toBe(true);
 
     expect(await requests.deleteExpired(new Date(expired.getTime() - 1))).toBe(0);
     await requests.deleteExpired(expired);
 
     expect(await requests.findByKey(keyOf("answered"))).toBeUndefined();
     expect(await requests.findByKey(keyOf("running"))).toBeDefined();
+  });
+
+  it("the sweep removes a request that expired and whose lease lapsed, answered or not", async () => {
+    const requests = requestsOn();
+    const expired = new Date(Date.parse(requestOf("lapsed").expiresAt));
+    await requests.saveIfAbsent(requestOf("lapsed"));
+
+    expect(await requests.deleteExpired(expired)).toBe(1);
+
+    expect(await requests.findByKey(keyOf("lapsed"))).toBeUndefined();
   });
 
   it("a lost connection rejects ping and every operation", async () => {

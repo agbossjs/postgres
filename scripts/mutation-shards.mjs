@@ -111,7 +111,7 @@ export const SHARDS = {
       "src/stores/postgres-a2a-direct-message.repository.ts",
       "src/stores/a2a-direct-messages/*.ts",
     ],
-    tests: [CONFORMANCE, "tests/stores/a2a-direct-message{,-clauses}.test.ts"],
+    tests: [CONFORMANCE, "tests/stores/a2a-direct-message{,-clauses,-rows}.test.ts"],
   },
   // the A2A task store (agbossjs/agboss#824): of two pods accepting one message exactly one claims
   // it, a task is saved once, the status moves by a compare-and-set on its version and never off a
@@ -138,7 +138,10 @@ export const SHARDS = {
   "execution-records": {
     timeoutMS: 120_000,
     mutate: ["src/stores/postgres-execution-record.repository.ts", "src/stores/records/*.ts"],
-    tests: [CONFORMANCE, "tests/stores/{execution-record*,minted-thread}.test.ts"],
+    tests: [
+      CONFORMANCE,
+      "tests/stores/{execution-record*,minted-thread,pause-answer-text}.test.ts",
+    ],
   },
   // the execution tree store (agbossjs/postgres#133, agbossjs/agboss#133): `saveIfAbsentInTree`, one `INSERT ... ON
   // CONFLICT DO NOTHING RETURNING`, is the only guard of every once-only key of a tree: the public `saveIfAbsent` of
@@ -153,8 +156,11 @@ export const SHARDS = {
   // and the version a branch of one checkpoint gets, which its blobs rely on
   checkpoints: {
     timeoutMS: 120_000,
-    mutate: ["src/stores/postgres-checkpoint-saver.ts"],
-    tests: [CONFORMANCE, "tests/stores/{checkpoint-saver,checkpoint-latest-by-step}.test.ts"],
+    mutate: ["src/stores/postgres-checkpoint-saver.ts", "src/stores/checkpoint-root.ts"],
+    tests: [
+      CONFORMANCE,
+      "tests/stores/{checkpoint-saver,checkpoint-latest-by-step,checkpoint-root,checkpoint-root-recorded,checkpoint-root-config}.test.ts",
+    ],
   },
   // the schema: the migrations, their history and its check, the checkpoint tables, the live-lease
   // guard of an upgrade and a migrating start's wait for leases to lapse (agbossjs/agboss#1104)
@@ -170,7 +176,7 @@ export const SHARDS = {
   "store-bound": {
     timeoutMS: 120_000,
     mutate: [
-      "src/connection/{outcome,known-failure,timed-client,timed-pool,transaction,query,connect-timeout,pool-options,tracked-client,once}.ts",
+      "src/connection/{outcome,known-failure,timed-client,timed-pool,transaction,query,connect-timeout,pool-options,tracked-client,once,utc-session}.ts",
       "src/stores/{unreadable,framework-json,nul-escape}.ts",
     ],
     tests: [

@@ -16,9 +16,7 @@ import { once } from "../connection/once.js";
 import { changesOf, rowsOf } from "../connection/query.js";
 import { inPoolTransaction } from "../connection/transaction.js";
 import { z } from "zod";
-
-/** The configurable key naming a thread's tree: the root execution id, written with every row. */
-const ROOT_EXECUTION_ID_KEY = "root_execution_id";
+import { checkpointIdOf, rootedRowOf, withRoot } from "./checkpoint-root.js";
 
 const ThreadRow = z.object({ thread_id: z.string() });
 
@@ -91,8 +89,8 @@ export class PostgresCheckpointSaver extends BaseCheckpointSaver {
   ): Promise<RunnableConfig> {
     // the versions LangGraph passes, as they are: the core's contract passes them too (#511)
     const written = await (await this.#saver()).put(config, checkpoint, metadata, newVersions);
-    await this.#rooted(config, "checkpoints", written.configurable?.checkpoint_id);
-    return written;
+    await this.#rooted(config, "checkpoints", checkpointIdOf(written));
+    return withRoot(written, config);
   }
 
   async putWrites(
@@ -102,7 +100,7 @@ export class PostgresCheckpointSaver extends BaseCheckpointSaver {
     taskPath?: string,
   ): Promise<void> {
     await (await this.#saver()).putWrites(config, writes, taskId, taskPath);
-    await this.#rooted(config, "checkpoint_writes", config.configurable?.checkpoint_id);
+    await this.#rooted(config, "checkpoint_writes", checkpointIdOf(config));
   }
 
   /**
@@ -138,16 +136,13 @@ export class PostgresCheckpointSaver extends BaseCheckpointSaver {
 
   /** Stores the tree's root execution id on the row just written (its config names it). */
   async #rooted(config: RunnableConfig, table: string, checkpointId: unknown): Promise<void> {
-    const configurable: Readonly<Record<string, unknown>> | undefined = config.configurable;
-    const root: unknown = configurable?.[ROOT_EXECUTION_ID_KEY];
-    const threadId: unknown = configurable?.thread_id;
-    if (typeof root !== "string" || root === "" || typeof threadId !== "string") return;
-    if (typeof checkpointId !== "string") return;
+    const row = rootedRowOf(config, checkpointId);
+    if (row === undefined) return;
     await changesOf(
       this.connection.pool,
       `UPDATE ${table} SET root_id = $1 WHERE thread_id = $2 AND checkpoint_ns = $3
        AND checkpoint_id = $4`,
-      [root, threadId, configurable?.checkpoint_ns ?? "", checkpointId],
+      [row.root, row.threadId, row.namespace, row.checkpointId],
     );
   }
 

@@ -7,7 +7,8 @@ import { PostgresStepIndexError } from "../errors.js";
 import { refuseLiveLeases } from "./live-leases.js";
 import { setupCheckpoints } from "./checkpoint-setup.js";
 import { inTransaction } from "../connection/transaction.js";
-import { checkedSchemaOf, quotedIdentifier, searchPathOptionOf } from "../connection/settings.js";
+import { onConnectOf } from "../connection/utc-session.js";
+import { checkedSchemaOf, quotedIdentifier } from "../connection/settings.js";
 import { connectTimeoutOf } from "../connection/connect-timeout.js";
 
 /**
@@ -99,13 +100,13 @@ export async function migrateWith(
   options.signal?.throwIfAborted();
   const schema = checkedSchemaOf(options.schema);
   // two connections: the lock's session, and the one LangGraph's setup takes from the pool — both
-  // in `schema` (its search_path) when one is given
+  // in `schema` (its search_path, set on every connection by `onConnect`) when one is given
   const pool = new pg.Pool({
     connectionString: options.url,
     max: 2,
     // agbossjs/agboss#989: a database that never answers the start fails the run, never hangs it
     connectionTimeoutMillis: connectTimeoutOf(options.url),
-    ...(schema === undefined ? {} : { options: searchPathOptionOf(schema) }),
+    onConnect: onConnectOf(schema),
   });
   try {
     const client = await pool.connect();

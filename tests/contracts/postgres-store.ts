@@ -20,6 +20,20 @@ export type PostgresStoreFactory<TStore> = (
   onClose: OnClose,
 ) => TStore | Promise<TStore>;
 
+/**
+ * The test-only seam of the session-zone run (`npm run test:tz:session`, agbossjs/agboss#1307 step 8):
+ * with `AGBOSS_TEST_KEEP_SESSION_TZ=1` the pool's awaited `onConnect` (the package's `SET TIME ZONE
+ * 'UTC'`) is taken off, so the contract runs in whatever zone the server gives the session
+ * (`ALTER DATABASE … SET timezone = '+02'`) — the zone a pooler in transaction mode can leave a
+ * session in. pg-pool reads `options.onConnect` at every new connection; nothing of `src/` reads
+ * the environment.
+ */
+function keepServerSessionZone(connection: PostgresConnection): void {
+  if (process.env.AGBOSS_TEST_KEEP_SESSION_TZ !== "1") return;
+  const options: unknown = Reflect.get(connection.pool, "options");
+  if (typeof options === "object" && options !== null) Reflect.set(options, "onConnect", undefined);
+}
+
 export function postgresStore<TStore extends object>(
   database: TestDatabase,
   make: PostgresStoreFactory<TStore>,
@@ -28,6 +42,7 @@ export function postgresStore<TStore extends object>(
   return {
     instance: async (seam) => {
       const connection = new PostgresConnection({ url: database.url(), poolSize: 4 });
+      keepServerSessionZone(connection);
       const closes: (() => Promise<void> | void)[] = [];
       const store = await make(connection, seam, (close) => closes.push(close));
       closes.push(() => connection.onDestroy());

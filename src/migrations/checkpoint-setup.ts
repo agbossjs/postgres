@@ -31,6 +31,26 @@ CREATE TRIGGER agboss_checkpoint_writes_root BEFORE INSERT ON checkpoint_writes
 UPDATE checkpoints SET root_id = split_part(thread_id, '/child/', 1) WHERE root_id IS NULL;
 UPDATE checkpoint_writes SET root_id = split_part(thread_id, '/child/', 1) WHERE root_id IS NULL;`;
 
+/**
+ * Whether the three parts of `ROOT_ID_SQL` are all there (columns, indexes, triggers): read from the
+ * catalog, which takes no lock on the tables. The statements above take `ACCESS EXCLUSIVE` and
+ * `SHARE` locks on the checkpoint tables even when they change nothing — a second run's setup
+ * would wait for a `CREATE INDEX CONCURRENTLY` of another run (the step index) that waits for it:
+ * a deadlock (agbossjs/agboss#962, #1321d). A run that finds them applied runs none.
+ */
+const ROOT_ID_APPLIED_SQL = `
+SELECT
+  (SELECT count(*) FROM information_schema.columns WHERE table_schema = $1
+     AND table_name IN ('checkpoints', 'checkpoint_writes') AND column_name = 'root_id') = 2
+  AND (SELECT count(*) FROM pg_indexes WHERE schemaname = $1
+     AND indexname IN ('checkpoints_root', 'checkpoint_writes_root')) = 2
+  AND (SELECT count(*) FROM pg_trigger t
+     JOIN pg_class c ON c.oid = t.tgrelid JOIN pg_namespace n ON n.oid = c.relnamespace
+     WHERE n.nspname = $1 AND NOT t.tgisinternal
+     AND t.tgname IN ('agboss_checkpoints_root', 'agboss_checkpoint_writes_root')) = 2 AS applied`;
+
+const AppliedRow = z.object({ applied: z.boolean() });
+
 const VersionRow = z.object({ newest: z.number().nullable() });
 
 /** LangGraph's checkpoint tables in `schema`, set up by its saver; how many of its migrations ran. */
@@ -41,7 +61,8 @@ export async function setupCheckpoints(
 ): Promise<number> {
   const before = await checkpointVersionOf(client);
   await new PostgresSaver(pool, undefined, { schema }).setup();
-  await client.query(ROOT_ID_SQL);
+  const { rows } = await client.query(ROOT_ID_APPLIED_SQL, [schema]);
+  if (!AppliedRow.parse(rows[0]).applied) await client.query(ROOT_ID_SQL);
   return (await checkpointVersionOf(client)) - before;
 }
 

@@ -1,4 +1,4 @@
-import { secret } from "@agboss/core";
+import { env, secret } from "@agboss/core";
 import { SchemaSetup, StorageRole, type ResolvedSettings } from "@agboss/core/stores";
 import { seconds } from "@agboss/core/units";
 import { describe, expect, it } from "vitest";
@@ -49,6 +49,18 @@ describe("PostgresDriver", () => {
       poolSize: 4,
       commandTimeout: 5000,
     });
+  });
+});
+
+describe("PostgresDriver schema from the environment", () => {
+  it("takes env(…) like the url's secret: described by its variable, resolved to the name at start", () => {
+    const driver = PostgresDriver({ url: secret("POSTGRES_URL"), schema: env("POSTGRES_SCHEMA") });
+
+    expect(driver.describes).toBe("postgres (schema from POSTGRES_SCHEMA)");
+    expect(driver.settings).toMatchObject({ kind: "postgres", schema: env("POSTGRES_SCHEMA") });
+    expect(
+      settingsOfResolved({ kind: "postgres", url: revealing(URL), schema: "billing" }).schema,
+    ).toBe("billing");
   });
 });
 

@@ -34,20 +34,25 @@ export function storeLayoutOf(providers: readonly Provider[]): Class {
   driver: PostgresDriver({ url: secret("AGBOSS_PROCESS_DATABASE_URL"), poolSize: 4 }),
   auditLogTtl: hours(24),
   ledgerEntriesTtl: hours(24),
+  // a workflow that can write under a business key needs the key its fingerprints are made with (#825)
+  idempotencySecret: secret("AGBOSS_PROCESS_IDEMPOTENCY_KEY"),
 })
 class StoreLayoutDatabaseStorage {}
 
 /**
  * The takeover workflow on the package's `PostgresDriver` stores, started: the application lists no
  * store itself (`[storage.providers-conflict]`), only what is not one — a project's own id
- * generator, say, in `providers`.
+ * generator, say, in `providers`; `workflows` are the ones it runs (the takeover workflow by default).
  */
-export function storageLayoutOf(providers: readonly Provider[] = []): Class {
+export function storageLayoutOf(
+  providers: readonly Provider[] = [],
+  workflows: readonly Class[] = [TakeoverWorkflow],
+): Class {
   @Application({
     name: "storage-layout-application",
     version: "1.0.0",
     storage: StoreLayoutDatabaseStorage,
-    workflows: [TakeoverWorkflow],
+    workflows: [...workflows],
     budgets: [ProcessApplicationBudget, ProcessTenantBudget, ProcessExecutionBudget],
     providers: [...providers],
   })

@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { mailboxOf, type StoredMailbox } from "../../src/stores/paused/pause-notice-rows.js";
 
 /** The mailbox a receiver sees (agbossjs/agboss#935, #1213): a head and a problem only when there are some. */
-const WRITTEN = "2026-01-05T09:00:00.000Z";
+const WRITTEN = new Date("2026-01-05T09:00:00.000Z");
 
 const storedWith = (changes: Partial<StoredMailbox>): StoredMailbox => ({
   tenant_id: "default",
@@ -12,7 +12,7 @@ const storedWith = (changes: Partial<StoredMailbox>): StoredMailbox => ({
   notices: [{ seq: 1, kind: PauseNoticeKind.Opened, writtenAt: WRITTEN }],
   delivered: 0,
   attempts: 2,
-  next_attempt_at: new Date(WRITTEN),
+  next_attempt_at: WRITTEN,
   is_dead: false,
   problem: null,
   claim_token: null,
@@ -31,7 +31,7 @@ describe("the mailbox of a stored row", () => {
       notices: [{ seq: 1, kind: PauseNoticeKind.Opened, writtenAt: WRITTEN }],
       delivered: 0,
       attempts: 2,
-      nextAttemptAt: new Date(WRITTEN),
+      nextAttemptAt: WRITTEN,
       headWrittenAt: WRITTEN,
       isDead: false,
     });

@@ -33,7 +33,7 @@ const FactsRow = z.object({ fingerprint: z.string().nullable(), origin: z.unknow
 const LOCK_BUSINESS_KEY = "SELECT pg_advisory_xact_lock(hashtextextended($1, 508))";
 
 /** The row of `key`: by its step, or by its tenant, name and business key. */
-async function storedRowOf(client: PoolClient, key: EffectKey): Promise<unknown> {
+export async function storedRowOf(client: PoolClient, key: EffectKey): Promise<unknown> {
   if (key.businessKey === undefined)
     return firstRowOf(
       client,

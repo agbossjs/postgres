@@ -134,7 +134,15 @@ export async function statusPageOf(
   if (!Number.isSafeInteger(limit) || limit < 1)
     throw new RangeError("a page's limit is a positive whole number");
   const found = await recordsByStatus(database, query.status, limit + 1, query.cursor);
-  const items = found.slice(0, limit);
-  const last = items.at(-1);
-  return found.length > limit && last !== undefined ? { items, nextCursor: last.id } : { items };
+  return { items: found.slice(0, limit), ...cursorOf(found, limit)[0] };
 }
+
+/**
+ * The cursor of a page of `limit` read with one more: the id of the last record shown, and only when
+ * the record beyond it was read — none otherwise (an array of at most one, so a page that has no
+ * next one carries no key at all).
+ */
+const cursorOf = (found: readonly Turn[], limit: number): readonly { nextCursor: string }[] =>
+  found
+    .slice(limit)
+    .flatMap(() => found.slice(limit - 1, limit).map((last) => ({ nextCursor: last.id })));

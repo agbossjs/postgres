@@ -6,9 +6,9 @@ import { connectionTo } from "../support/stores.js";
 import { MID, expiringPauseOf, pauseOf } from "./pause-fixtures.js";
 
 /**
- * How much a change asks of the database (agbossjs/agboss#935, #1213): a change that tells no one is
- * one statement on the pool — no transaction, no notice statement — and one that tells someone is
- * one transaction on one connection. Counted on the pool's own `query`: a statement of a
+ * How much a change asks of the database (agbossjs/agboss#935, #1213, #1307): every change is one
+ * transaction on one connection (the pause read under its row lock, the core's rule planned, the
+ * write and its notices), whoever hears of it. Counted on the pool's own `query`: a statement of a
  * transaction goes through its client, never through it.
  */
 const database = testDatabase();
@@ -29,13 +29,14 @@ const CHANNEL = { channel: "refund-approval-channel", listeners: [] };
 const LISTENERS = { listeners: ["audit-listener"] };
 const NO_ONE = { listeners: [] };
 
-describe("a change on the pool or in a transaction, by who hears of it", () => {
+describe("a change is a transaction, whoever hears of it", () => {
+  // the pause is row-locked and read first (#1307, P6b): the pool lends one connection, asks it nothing itself
   it.each([
-    ["no one", NO_ONE, 1],
-    ["the channel only", CHANNEL, 0],
-    ["a listener only", LISTENERS, 0],
-    ["the channel and a listener", { ...CHANNEL, ...LISTENERS }, 0],
-  ])("a reminder heard by %s asks the pool %i statements", async (who, recipients, statements) => {
+    ["no one", NO_ONE],
+    ["the channel only", CHANNEL],
+    ["a listener only", LISTENERS],
+    ["the channel and a listener", { ...CHANNEL, ...LISTENERS }],
+  ])("a reminder heard by %s asks the pool no statement of its own", async (who, recipients) => {
     const { store, poolStatements } = instrumented();
     const id = `remind-${who.replaceAll(" ", "-")}`;
     await store.findOrCreateByStepKey(expiringPauseOf(id));
@@ -43,7 +44,7 @@ describe("a change on the pool or in a transaction, by who hears of it", () => {
 
     expect(await store.remindByTenantIdAndPauseId("default", id, MID, recipients)).toBe(true);
 
-    expect(poolStatements() - before).toBe(statements);
+    expect(poolStatements() - before).toBe(0);
   });
 });
 

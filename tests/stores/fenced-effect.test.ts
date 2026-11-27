@@ -241,13 +241,47 @@ describe("PostgresFencedEffectRepository: business keys (agbossjs/agboss#508)", 
     expect(removed).toBe(1);
   });
 
+  it("#1317d: after a rotation of the idempotency secret the row under the previous digest is replayed; with none stored under either, the work runs", async () => {
+    const { effects, leases } = storesOn(connectionTo(database.url()));
+    await leases.acquire("default", "rot-1", hours(1));
+    await leases.acquire("default", "rot-2", hours(1));
+    const keyOf2 = (root: string, fields: object) =>
+      effectKeyForTesting(keyOf(root, 1), { fingerprint: "f", ...fields });
+    await effects.runOnce(keyOf2("rot-1", { businessKey: "digest-old" }), () => ({
+      receipt: "r1",
+    }));
+
+    const rotated = await effects.runOnce(
+      keyOf2("rot-1", { businessKey: "digest-new", previousBusinessKey: "digest-old" }),
+      () => ({ receipt: "again" }),
+    );
+    const fresh = await effects.runOnce(
+      keyOf2("rot-2", { businessKey: "digest-fresh", previousBusinessKey: "digest-none" }),
+      () => ({ receipt: "r2" }),
+    );
+    const plain = await effects.runOnce(keyOf2("rot-2", { businessKey: "digest-plain" }), () => ({
+      receipt: "r3",
+    }));
+
+    expect(rotated).toMatchObject({
+      status: IdempotencyRunStatus.Replayed,
+      result: { receipt: "r1" },
+    });
+    expect(fresh).toMatchObject({ status: IdempotencyRunStatus.Ran, result: { receipt: "r2" } });
+    expect(plain).toMatchObject({ status: IdempotencyRunStatus.Ran, result: { receipt: "r3" } });
+  });
+
   // agbossjs/agboss#1367: mutants a Stryker Timeout used to hide (the shard's run outlasted its limit)
   it("#1367: a replay by the step that wrote the row has no replayedFrom at all, not an undefined one", async () => {
     const { effects, leases } = storesOn(connectionTo(database.url()));
     await leases.acquire("default", "bk-same", hours(1));
-    await effects.runOnce(businessKeyOf("bk-same", 1), () => ({ receipt: "r1" }));
+    // a business key of its own: the file shares one schema, and "order:42" is written by the tests before
+    const key = effectKeyForTesting(businessKeyOf("bk-same", 1), {
+      businessKey: "order:same-step",
+    });
+    await effects.runOnce(key, () => ({ receipt: "r1" }));
 
-    const same = await effects.runOnce(businessKeyOf("bk-same", 1), () => ({ receipt: "r2" }));
+    const same = await effects.runOnce(key, () => ({ receipt: "r2" }));
 
     expect(same.status).toBe(IdempotencyRunStatus.Replayed);
     expect("replayedFrom" in same).toBe(false);

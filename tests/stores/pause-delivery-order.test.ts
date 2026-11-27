@@ -14,7 +14,7 @@ const database = testDatabase();
 const CLAIM_FOR = minutes(5);
 const AUDIT = "listener:audit-listener";
 const LISTENER_ONLY = { listeners: ["audit-listener"] };
-const at = (time: string): string => `2026-01-05T${time}:00.000Z`;
+const at = (time: string): Date => new Date(`2026-01-05T${time}:00.000Z`);
 const NOON = new Date(at("12:00"));
 
 /** Pauses `ids` asked at `times` (so their mailboxes are due then), in this order, each sent. */
@@ -85,7 +85,7 @@ describe("a claim's acknowledgements and renewals", () => {
     const next = await store.ackNotice(claim, MID);
 
     expect(next).toMatchObject({ token: claim.token, mailbox: { delivered: 1 } });
-    expect(next?.mailbox.headWrittenAt).toBe(MID.toISOString());
+    expect(next?.mailbox.headWrittenAt).toEqual(MID);
     expect(await store.ackNotice(claim, MID)).toBeUndefined();
     expect(await store.countNotices()).toEqual({ live: 0, dead: 0 });
   });

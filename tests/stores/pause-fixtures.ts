@@ -39,25 +39,25 @@ export const pauseOf = (pauseId: string, stepKey = `run-1:${pauseId}`): PauseRec
   trail: [
     {
       action: "opened",
-      at: "2026-01-05T09:00:00.000Z",
+      at: NINE,
       target: "refund-tool-approval",
       channel: "refund-approval-channel",
     },
   ],
   status: PauseStatus.Pending,
   isSent: false,
-  askedAt: "2026-01-05T09:00:00.000Z",
+  askedAt: NINE,
   // the limits the pause was opened under (#1307, Q-D): none; a record without them is not read
-  firstAskedAt: "2026-01-05T09:00:00.000Z",
+  firstAskedAt: NINE,
   escalationLimits: {},
 });
 
 /** A pause with a deadline at `DEADLINE` and a reminder half an hour before it. */
 export const expiringPauseOf = (pauseId: string): PauseRecord => ({
   ...pauseOf(pauseId),
-  expiresAt: DEADLINE.toISOString(),
+  expiresAt: DEADLINE,
   expiryBound: PauseExpiryBound.Pause,
-  remindAt: "2026-01-05T09:30:00.000Z",
+  remindAt: new Date("2026-01-05T09:30:00.000Z"),
 });
 
 /** The pause's channel and two listeners. */

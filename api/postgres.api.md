@@ -37,6 +37,7 @@ import { ChildExecutionQueueWatch } from '@agboss/core';
 import { Clock } from '@agboss/core';
 import { ClusterLeaseMirror } from '@agboss/core/stores';
 import { ClusterLeaseSync } from '@agboss/core/stores';
+import { ClusterLeaseTake } from '@agboss/core/stores';
 import { ConfigSnapshot } from '@agboss/core';
 import { CostCounter } from '@agboss/core';
 import { CostLedgerRepository } from '@agboss/core';
@@ -45,6 +46,7 @@ import { DriverTimeouts } from '@agboss/core/stores';
 import { EffectKey } from '@agboss/core/stores';
 import { EndedTree } from '@agboss/core/stores';
 import { EndedTree as EndedTree_2 } from '@agboss/core';
+import type { EnvRef } from '@agboss/core';
 import { ExecutionAuditEventRecord } from '@agboss/core';
 import { ExecutionAuditLogRepository } from '@agboss/core';
 import type { ExecutionHistoryQuery } from '@agboss/core/stores';
@@ -79,6 +81,7 @@ import type { NewStatusTransition } from '@agboss/core';
 import { NewSummary } from '@agboss/core';
 import { NewThread } from '@agboss/core';
 import { NewTurn } from '@agboss/core';
+import { OnAbandon } from '@agboss/core/stores';
 import { OnDestroy } from '@agboss/core';
 import { OnInit } from '@agboss/core';
 import { OutboundCallClaim } from '@agboss/core/stores';
@@ -287,8 +290,9 @@ export class PostgresChildExecutionQueueRepository extends ChildExecutionQueueRe
 }
 
 // @public
-export class PostgresConnection implements OnInit, OnDestroy {
+export class PostgresConnection implements OnInit, OnDestroy, OnAbandon {
     constructor(source?: PostgresConnectionSettings | ResolvedSettings);
+    onAbandon(): void;
     onDestroy(): Promise<void>;
     onInit(): Promise<void>;
     ping(): Promise<void>;
@@ -332,7 +336,7 @@ export function PostgresDriver(options: PostgresDriverOptions): DatabaseDriver;
 // @public
 export interface PostgresDriverOptions {
     readonly poolSize?: number;
-    readonly schema?: string;
+    readonly schema?: string | EnvRef<string>;
     readonly schemaSetup?: SchemaSetup;
     readonly timeouts?: DriverTimeouts;
     readonly url: SecretRef;
@@ -517,7 +521,7 @@ export abstract class PostgresLeaseMarks extends ExecutionLeaseRepository implem
     // (undocumented)
     stopOf(tree: ExecutionTree_2): Promise<StopMark | undefined>;
     // (undocumented)
-    syncClusterLease(lease: ExecutionLease): Promise<ClusterLeaseSync>;
+    syncClusterLease(lease: ExecutionLease, take?: ClusterLeaseTake): Promise<ClusterLeaseSync>;
     // (undocumented)
     unpause(tree: ExecutionTree_2, transition?: NewStatusTransition): Promise<void>;
 }
