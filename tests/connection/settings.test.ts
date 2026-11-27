@@ -10,7 +10,7 @@ import {
   SchemaSetup,
 } from "../../src/index.js";
 import { poolOptionsOf } from "../../src/connection/pool-options.js";
-import { searchPathOptionOf, sessionOptionsOf } from "../../src/connection/settings.js";
+import { searchPathOptionOf } from "../../src/connection/settings.js";
 import { settingsOfResolved } from "../../src/connection/driver-settings.js";
 import { revealing } from "../support/application-context.js";
 
@@ -125,13 +125,12 @@ describe("the settings of the PostgreSQL stores", () => {
     expect(searchPathOptionOf("app_a")).toBe('-c search_path="app_a"');
   });
 
-  it("agbossjs/agboss#1307: every session is in UTC, with or without a schema", () => {
-    expect(sessionOptionsOf(undefined)).toBe("-c timezone=UTC");
-    expect(sessionOptionsOf("app_a")).toBe('-c timezone=UTC -c search_path="app_a"');
-    expect(poolOptionsOf({ url: "postgres://h/d" }).options).toBe("-c timezone=UTC");
+  it("agbossjs/agboss#1307: startup options go out only for a schema, as before; the session is set on connect", () => {
+    expect(poolOptionsOf({ url: "postgres://h/d" }).options).toBeUndefined();
     expect(poolOptionsOf({ url: "postgres://h/d", schema: "app_a" }).options).toBe(
-      '-c timezone=UTC -c search_path="app_a"',
+      '-c search_path="app_a"',
     );
+    expect(poolOptionsOf({ url: "postgres://h/d" }).onConnect).toBeTypeOf("function");
   });
 
   it("no settings at all (an application with no PostgreSQL storage) fails, naming the storage to declare", () => {

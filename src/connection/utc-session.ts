@@ -1,28 +1,36 @@
 import type pg from "pg";
+import { quotedIdentifier } from "./settings.js";
 
 /**
- * Every session of the package is in UTC (agbossjs/agboss#1307): the startup option
- * `-c timezone=UTC` (`sessionOptionsOf`) does it, but a URL that carries `options` of its own
- * overrides the config's, so the statement is sent on every connection too. A `timestamptz` is the
- * same instant in any zone; a cast to text is not, and every `::text` of a migration or of a human's
- * `psql` is the framework's spelling only in UTC.
+ * The session every connection of the package is in (agbossjs/agboss#1307): UTC, and — when a schema
+ * is configured — that schema's `search_path`. Both are statements sent on the connection, not
+ * startup `options`: a URL that carries `options` of its own (Neon's `endpoint=…`, a
+ * `statement_timeout`) overrides the config's, which would silently run the stores in the URL's
+ * `search_path` and in another time zone; and a pooler (PgBouncer) may refuse the `options` startup
+ * parameter altogether. A `timestamptz` is the same instant in any zone and no statement of the
+ * stores compares or keys by a cast of one to text, so correctness never rests on the session zone;
+ * UTC is for every `::text` of a migration or of a human's `psql`.
  */
 export const SET_UTC = "SET TIME ZONE 'UTC'";
 
-/**
- * `pool`, every connection it opens sent `SET_UTC` first: the statement is queued on the connection
- * before anything the pool lends it runs. A connection that cannot take it is a connection the next
- * statement fails on by itself, so the rejection is not reported twice.
- */
-export function utcPoolOf<TPool extends pg.Pool>(pool: TPool): TPool {
-  pool.on("connect", (client) => {
-    client.query(SET_UTC).catch(() => undefined);
-  });
-  return pool;
+/** The statements that put a session in UTC and in `schema` (checked; none when there is none). */
+export const sessionStatementsOf = (schema: string | undefined): readonly string[] =>
+  schema === undefined ? [SET_UTC] : [SET_UTC, `SET search_path TO ${quotedIdentifier(schema)}`];
+
+/** `client`, in the session `sessionStatementsOf(schema)` names; a statement that fails rejects. */
+export async function inSession(client: pg.ClientBase, schema: string | undefined): Promise<void> {
+  for (const statement of sessionStatementsOf(schema)) await client.query(statement);
 }
 
-/** `client`, connected, in UTC. */
-export async function connectedInUtc(client: pg.Client): Promise<void> {
-  await client.connect();
-  await client.query(SET_UTC);
-}
+/** pg's type of the pool's `onConnect`: it says `void`, pg-pool awaits what it returns. */
+export type OnConnect = NonNullable<pg.PoolConfig["onConnect"]>;
+
+/**
+ * The pool option that sets every connection up before the pool lends it (pg-pool's awaited
+ * `onConnect`): a connection that cannot take the statements is ended and the checkout fails with
+ * the statement's error — never lent in the wrong zone or schema.
+ */
+export const onConnectOf =
+  (schema: string | undefined): OnConnect =>
+  (client) =>
+    inSession(client, schema);

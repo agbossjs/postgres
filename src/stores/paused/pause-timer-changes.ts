@@ -15,7 +15,7 @@ import { inPoolTransaction } from "../../connection/transaction.js";
 import { escapedJsonOf } from "../nul-escape.js";
 import { appendNotices } from "./pause-notice-rows.js";
 import { LOCKED_PAUSE, recordOfRow } from "./pause-rows.js";
-import { transitioned } from "./pause-transition.js";
+import { missed, transitioned } from "./pause-transition.js";
 
 /**
  * The changes of a pause that read it first (agbossjs/agboss#935, #910, #1307): the deadline changed
@@ -74,11 +74,13 @@ export class PauseTimerChanges {
       const before = recordOfRow(read);
       if (!before.isSent) {
         const sent = markSentChange(before, recipients, externalRef);
-        await changesOf(
+        const changed = await changesOf(
           database,
           `UPDATE agboss_pauses SET record = $3::jsonb WHERE tenant_id = $1 AND pause_id = $2`,
           [tenantId, pauseId, escapedJsonOf(sent.pause)],
         );
+        // read first under the row lock: any other count is damage, as in the core's SQLite store
+        if (changed !== 1) throw new Error(missed({ tenantId, pauseId }));
         await appendNotices(database, tenantId, pauseId, sent.notices);
       }
       return before.status === PauseStatus.Pending;

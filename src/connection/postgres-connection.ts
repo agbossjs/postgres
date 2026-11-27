@@ -9,7 +9,6 @@ import { once } from "./once.js";
 import { PostgresListener, type PostgresListenerOptions } from "./listener.js";
 import { checkSchema } from "../migrations/schema-check.js";
 import { poolOptionsOf } from "./pool-options.js";
-import { utcPoolOf } from "./utc-session.js";
 import { timedPool } from "./timed-pool.js";
 import { TimedClient } from "./timed-client.js";
 import {
@@ -113,7 +112,7 @@ export class PostgresConnection implements OnInit, OnDestroy {
       ...poolOptionsOf(this.#settings),
       Client: trackedClientOf(this.#clients, TimedClient),
     };
-    this.pool = timedPool(utcPoolOf(new pg.Pool(options)));
+    this.pool = timedPool(new pg.Pool(options));
     // an idle connection that fails leaves the pool by itself; the next statement opens a new one,
     // and an operation in flight rejects with its own error — nothing to do here but not crash
     this.pool.on("error", () => undefined);

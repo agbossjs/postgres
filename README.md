@@ -581,9 +581,15 @@ of the notices it writes.
   notices' jsonb, the answer log's `asked_at`, the unsent-replacement scan's `record->>'askedAt'`) is
   the `toISOString()` text, read back in that one spelling only (anything else is
   `StoreError.UnreadableRecord`, a mailbox like that is set aside at the claim). An Invalid Date is
-  refused before the first write. Every session is `timezone=UTC` (the startup option, and `SET TIME ZONE 'UTC'` on every connection of the pool, the migrate pool and the
-  step-index client, so a URL's own `options` cannot override it), and no statement compares or keys by a cast of a `timestamptz` to
-  text. What a call returns is read from the database as written, never the caller's `Date`.
+  refused before the first write. Every connection is sent `SET TIME ZONE 'UTC'` and, when a schema
+  is configured, `SET search_path TO "<schema>"` — on the pool (awaited by pg-pool before it lends the
+  connection; a failing statement ends it), the migrating pool and the step-index client — so a URL
+  carrying its own `options` can override neither the zone nor the schema; the startup `options` is
+  sent only for a schema, as before. No statement compares or keys by a cast of a `timestamptz` to
+  text, so correctness never rests on the session zone. Behind a pooler in transaction mode (PgBouncer,
+  RDS Proxy) a session `SET` does not stick to the server connection (RDS Proxy pins the session):
+  use session pooling, or set the zone and `search_path` on the role or the database.
+  What a call returns is read from the database as written, never the caller's `Date`.
 - **A mailbox row that does not read** (a notice kind no code writes any more, damage) is set aside
   as dead with the problem `unreadable mailbox` when it is claimed; the claim of the others goes on.
 
@@ -660,6 +666,12 @@ npm run test:faults      # the fault suite (below): ~20 min on the real clock; A
 ```
 
 Each test file works in a schema of its own (`t_<random>`), dropped after it.
+
+The pause contract holds `Date`s, so it is also run in other time zones (agbossjs/agboss#1307, step 8;
+against the database, at the T-train, not in `npm test`): `npm run test:tz` runs the contract suite
+under `TZ=Asia/Jerusalem`, under `TZ=America/New_York`, and with the server's session zone left alone
+(`test:tz:session`: `AGBOSS_TEST_KEEP_SESSION_TZ=1`, read by the test harness only, takes the package's
+`SET TIME ZONE` off the pool; first `ALTER DATABASE <db> SET timezone = '+02'` on the test database).
 
 - **Contract suites** (`tests/contracts/store-conformance.test.ts`) — one `storeConformance` of
   `@agboss/core/testing/contracts` (agbossjs/agboss#526) runs every store's published suite

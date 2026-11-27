@@ -1,7 +1,7 @@
 import pg from "pg";
 import { z } from "zod";
-import { connectedInUtc } from "../connection/utc-session.js";
-import { quotedIdentifier, sessionOptionsOf } from "../connection/settings.js";
+import { inSession } from "../connection/utc-session.js";
+import { quotedIdentifier, searchPathOptionOf } from "../connection/settings.js";
 
 /**
  * The index behind `PostgresCheckpointSaver.latestByStep` (agbossjs/agboss#962): a thread's newest
@@ -78,13 +78,15 @@ export async function buildStepIndex(options: {
 }): Promise<StepIndexResult> {
   const client = new pg.Client({
     connectionString: options.url,
-    options: sessionOptionsOf(options.schema),
+    options: searchPathOptionOf(options.schema),
   });
   // a dropped session rejects the statement in flight, which is the run's error
   client.on("error", () => undefined);
-  await connectedInUtc(client);
+  await client.connect();
   try {
     const { schema } = options;
+    // inside the try: a statement that fails still ends the session
+    await inSession(client, schema);
     const { rows } = await client.query("SELECT pg_try_advisory_lock($1, hashtext($2)) AS got", [
       INDEX_LOCK_KEY,
       schema,

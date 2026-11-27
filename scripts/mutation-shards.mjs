@@ -173,7 +173,7 @@ export const SHARDS = {
   "store-bound": {
     timeoutMS: 120_000,
     mutate: [
-      "src/connection/{outcome,known-failure,timed-client,timed-pool,transaction,query,connect-timeout,pool-options,tracked-client,once}.ts",
+      "src/connection/{outcome,known-failure,timed-client,timed-pool,transaction,query,connect-timeout,pool-options,tracked-client,once,utc-session}.ts",
       "src/stores/{unreadable,framework-json,nul-escape}.ts",
     ],
     tests: [

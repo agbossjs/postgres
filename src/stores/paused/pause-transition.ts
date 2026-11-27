@@ -19,6 +19,10 @@ import { LOCKED_PAUSE, recordOfRow } from "./pause-rows.js";
  * is ever in it, and none of it is the store's.
  */
 
+/** The invariant a write of a row read under its lock breaks when it changes none. */
+export const missed = (key: PauseKey): string =>
+  `unreachable: 0 rows changed by a write of the pause ${key.pauseId} of ${key.tenantId}, read first under its row lock`;
+
 /** The pause a change names. */
 export interface PauseKey {
   readonly tenantId: string;
@@ -95,7 +99,9 @@ export function transitioned(
     if (change === undefined) return undefined;
     if (change.inserted !== undefined) assertPauseInstants(change.inserted);
     const written = await writtenPause(database, before, change.pause);
-    if (written === undefined) return undefined;
+    // the row is locked and was read a moment ago: a miss is the record and the status column disagreeing
+    // (damage), never a lost race — a loud failure that rolls the transaction back, as the core's SQLite store
+    if (written === undefined) throw new Error(missed(key));
     await appendNotices(database, key.tenantId, key.pauseId, change.notices);
     return change.inserted === undefined ? written : insertedPause(database, change.inserted);
   });
