@@ -193,7 +193,8 @@ describe("an outbound charge across processes (#482 AC1 + agbossjs/agboss#505)",
     expect(intent).toMatchObject({
       status: OutboundCallStatus.Completed,
       attempt: 1,
-      businessKey: "order:order-42",
+      // kept as a keyed digest of the business key (core 0.1.1), never as the text the workflow wrote
+      businessKey: expect.stringMatching(/^[A-Za-z0-9_-]{43}$/u) as unknown,
       leaseExecutionId: second.executionId,
     });
 

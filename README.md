@@ -80,7 +80,7 @@ The stores of the driver:
 | `PostgresA2ADirectMessageRepository`    | `A2ADirectMessageRepository`    | `agboss_a2a_direct_messages`, its ids claimed in `agboss_a2a_messages` (`0030`)                      |
 
 With all of them listed, nothing of the application is per pod: budgets sum every pod's spend, a
-provider's limits hold across pods, `agboss records export` on any pod lists every pod's
+provider's limits hold across pods, `agboss executions export` on any pod lists every pod's
 executions, a mesh request retried against another pod is answered from the first run, and an A2A
 message (agbossjs/agboss#824) resent to another pod — the same `messageId` — gets the task the first
 pod accepted, never a second execution; `GetTask` and `ListTasks` read it on any pod. An application
@@ -701,7 +701,7 @@ under `TZ=Asia/Jerusalem`, under `TZ=America/New_York`, and with the server's se
     the next execution, on either process, is refused with `BudgetExceededError` before any call.
   - `shared-rate-limit.test.ts` (#483 AC2): four executions on A and B against a provider with
     `maxConcurrentCalls: 1`; the provider's calls, timed on the `Clock`, never overlap.
-  - `history-export.test.ts` (#483 AC3): `agboss records export --all-tenants`, run with B's
+  - `history-export.test.ts` (#483 AC3): `agboss executions export --all-tenants`, run with B's
     environment, lists the executions run on A and on B.
   - `mesh-dedup.test.ts` (#483 AC4): a signed A2A request sent to A, then the same one to B, runs
     once; B answers with A's answer.

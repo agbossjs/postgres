@@ -30,7 +30,7 @@ describe("agbossjs/agboss#727: a sibling child's spend on the other process", ()
     await b.send("open");
 
     await expect(run).rejects.toMatchObject({
-      name: "BudgetExceededError",
+      name: "LimitError.Budget",
       message: expect.stringMatching(/spent \$1\.2;/),
     });
     // neither child paid past its first step: the one on B was held back at once

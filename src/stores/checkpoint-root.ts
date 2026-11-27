@@ -36,9 +36,12 @@ export interface RootedRow {
 
 /** The root to store on the row `checkpointId` of `config`'s thread; `undefined` when the config names no root, no thread or the row has no id. */
 export function rootedRowOf(config: RunnableConfig, checkpointId: unknown): RootedRow | undefined {
-  const root: unknown = config.configurable?.[ROOT_EXECUTION_ID_KEY];
-  const threadId: unknown = config.configurable?.thread_id;
+  const configurable: unknown = config.configurable;
+  if (typeof configurable !== "object" || configurable === null) return undefined;
+  const root: unknown = Reflect.get(configurable, ROOT_EXECUTION_ID_KEY);
+  const threadId: unknown = Reflect.get(configurable, "thread_id");
   if (typeof root !== "string" || root === "" || typeof threadId !== "string") return undefined;
   if (typeof checkpointId !== "string") return undefined;
-  return { root, threadId, namespace: config.configurable?.checkpoint_ns ?? "", checkpointId };
+  const namespace: unknown = Reflect.get(configurable, "checkpoint_ns") ?? "";
+  return { root, threadId, namespace, checkpointId };
 }

@@ -1,6 +1,6 @@
 /**
  * AC3 (agbossjs/agboss#483): the execution history is one in PostgreSQL. Executions run on A and
- * on B — two tenants, one of them resting at a pause — and `agboss records export --all-tenants`,
+ * on B — two tenants, one of them resting at a pause — and `agboss executions export --all-tenants`,
  * run as one more process with B's environment (as `kubectl exec` into pod B would), lists every
  * one of them, oldest start first, each with the instance that ran it; `--tenant` lists only that
  * tenant's, from either process's runs.
@@ -30,13 +30,13 @@ interface Exported {
   readonly application: { readonly instanceId: string };
 }
 
-/** `agboss records export <whose…>` on the test's schema: the lines it wrote. */
+/** `agboss executions export <whose…>` on the test's schema: the lines it wrote. */
 async function exportRecords(whose: readonly string[]): Promise<Exported[]> {
   const out = join(mkdtempSync(join(tmpdir(), "agboss-export-")), "records.jsonl");
   const application = ["--application", "tests/fixtures/process.application.ts"];
   await promisify(execFile)(
     process.execPath,
-    [CLI, "records", "export", ...whose, "--out", out, ...application],
+    [CLI, "executions", "export", ...whose, "--out", out, ...application],
     { cwd: ROOT, env: processEnvOf(database.url()) },
   );
   const lines = readFileSync(out, "utf8").split("\n").filter(Boolean);
@@ -49,7 +49,7 @@ interface Output {
 }
 
 describe("AC3: the history export across two processes", () => {
-  it("AC3: agboss records export from process B returns executions run on every pod", async () => {
+  it("AC3: agboss executions export from process B returns executions run on every pod", async () => {
     const a = await launch(database.url());
     const b = await launch(database.url());
 

@@ -71,6 +71,8 @@ describe("rootedRowOf", () => {
 
   it.each([
     ["no `configurable`", {}, "c-9"],
+    ["a `configurable` that is null", { configurable: null as never }, "c-9"],
+    ["a `configurable` that is no object", { configurable: "t-1" as never }, "c-9"],
     ["no root", { configurable: { thread_id: "t-1" } }, "c-9"],
     ["an empty root", { configurable: { thread_id: "t-1", root_execution_id: "" } }, "c-9"],
     ["a root that is no text", { configurable: { thread_id: "t-1", root_execution_id: 7 } }, "c-9"],

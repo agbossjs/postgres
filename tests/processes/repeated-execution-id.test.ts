@@ -103,8 +103,12 @@ describe("agbossjs/agboss#591 on PostgreSQL: a repeated execution id never repla
       error: expect.any(ExecutionError.DuplicateExecutionId) as unknown,
     });
     expect(String((repeated as { error: unknown }).error)).not.toContain("execution-1");
+    // the gateway is sent the call's key as a keyed digest (core 0.1.1), not the text `<execution>:<step>:…`
     expect(await charges()).toEqual([
-      { order_id: "order-A", idempotency_key: "execution-1:charge-action:1:charge" },
+      {
+        order_id: "order-A",
+        idempotency_key: expect.stringMatching(/^[A-Za-z0-9_-]{43}$/u) as unknown,
+      },
     ]);
     const { rows } = await onSchema(
       database.url(),

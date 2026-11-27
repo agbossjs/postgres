@@ -70,9 +70,17 @@ describe("a mailbox row's notices", () => {
     it(`${field} "${text}" is not the canonical spelling: StoreError.UnreadableRecord naming the field`, () => {
       const notice = { seq: 1, kind: PauseNoticeKind.Closed, writtenAt: WRITTEN.toISOString() };
 
-      expect(() => withNotices([{ ...notice, [field]: text }])).toThrow(
-        StoreError.UnreadableRecord,
-      );
+      let error: unknown;
+      try {
+        withNotices([{ ...notice, [field]: text }]);
+      } catch (thrown) {
+        error = thrown;
+      }
+
+      expect(error).toBeInstanceOf(StoreError.UnreadableRecord);
+      // the record and the field it names, never the text
+      expect(String(error)).toContain("a stored pause notice is not readable");
+      expect(String(error)).toContain(`the field(s) ${field} `);
     });
 
   it("does not quote the text it refused", () => {
@@ -118,12 +126,17 @@ describe("the claim over a mailbox whose time does not read", () => {
     ]);
   });
 
-  it("an Invalid Date `at` is refused before the statement", async () => {
+  it("names the problem it sets a mailbox aside with, as the operator reads it", () => {
+    expect(UNREADABLE_MAILBOX).toBe("unreadable mailbox");
+  });
+
+  it("an Invalid Date `at` is refused before the statement, naming the mailbox and the field", async () => {
     const { pool, sent } = recordedPool();
 
-    await expect(claimDue(pool, new Date(Number.NaN), 10, 1, ["r"])).rejects.toBeInstanceOf(
-      StoreError.UnreadableRecord,
-    );
+    const error = await claimDue(pool, new Date(Number.NaN), 10, 1, ["r"]).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(StoreError.UnreadableRecord);
+    expect(String(error)).toContain("at of a pause mailbox");
     expect(sent).toHaveLength(0);
   });
 });

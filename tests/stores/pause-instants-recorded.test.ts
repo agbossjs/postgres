@@ -193,6 +193,9 @@ describe("what a change writes of a time", () => {
   });
 });
 
+/** The reminder column a replacement is inserted with: its Date, or NULL. */
+const remindOf = (inserted: PauseRecord): Date | null => inserted.remindAt ?? null;
+
 describe("a reassignment's replacement", () => {
   const change: PauseReplacement = { pauseId: "q", seen: seenOf(pause), assignees: ["ann"] };
 
@@ -217,6 +220,9 @@ describe("a reassignment's replacement", () => {
     const insert = sent.find(({ sql }) => sql.includes("INSERT INTO agboss_pauses"));
     expect(insert?.values[1]).toBe("q");
     expect(insert?.values[4]).toEqual(planned.inserted.expiresAt);
+    expect(insert?.values[5]).toEqual(remindOf(planned.inserted));
+    // the pause is read and locked first, by tenant and id
+    expect(sent.find(({ sql }) => sql.includes("FOR UPDATE"))?.values).toEqual(["default", "p"]);
     expect(made?.pauseId).toBe("q");
     const closing = sent.find(({ sql }) => sql.startsWith("UPDATE agboss_pauses"));
     expect(closing?.values[3]).toBe(PauseStatus.Cancelled);

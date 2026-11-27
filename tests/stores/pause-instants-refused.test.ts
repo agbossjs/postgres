@@ -21,9 +21,10 @@ import {
 import { reassigned } from "../../src/stores/paused/pause-reassign.js";
 import { PauseScans } from "../../src/stores/paused/pause-scans.js";
 import { PauseTimerChanges } from "../../src/stores/paused/pause-timer-changes.js";
+import { transitioned } from "../../src/stores/paused/pause-transition.js";
 import { pausedRunOfJson } from "../../src/stores/framework-json.js";
 import { APPROVED, MID, NINE, RECIPIENTS, expiringPauseOf } from "./pause-fixtures.js";
-import { recordedPool } from "./recorded-pool.js";
+import { recordedPool, type Sent } from "./recorded-pool.js";
 import { pausedRun } from "./stored-rows.fixtures.js";
 
 /**
@@ -51,6 +52,10 @@ const CLAIM: PauseNoticeClaim = {
   },
 };
 const change: PauseReplacement = { pauseId: "q", seen: seenOf(pause) };
+
+/** The statements that write (UPDATE, INSERT). */
+const writes = (sent: readonly Sent[]): number =>
+  sent.filter(({ sql }) => /^\s*(UPDATE|INSERT)/u.test(sql)).length;
 
 const refused = async (attempt: () => Promise<unknown>): Promise<void> => {
   await expect(attempt()).rejects.toBeInstanceOf(StoreError.UnreadableRecord);
@@ -194,4 +199,177 @@ describe("what node-postgres sends of a bound time", () => {
       // a Date for a timestamptz: the offset is in the text, so the instant is the same in any zone
       expect(new Date(String(prepareValue(cutoff))).getTime()).toBe(cutoff.getTime());
     });
+});
+
+/** The message of the refusal an attempt gets: what it names. */
+const messageOf = async (attempt: () => Promise<unknown>): Promise<string> =>
+  attempt().then(
+    () => "",
+    (error: unknown) => String(error),
+  );
+
+describe("a refusal names the record and the field, never the value", () => {
+  it("of a scan, a filter, a retention page, the paused run's save", async () => {
+    const { pool } = recordedPool();
+    const scans = new PauseScans(pool);
+    const after = { at: INVALID, tenantId: "default", pauseId: "r" };
+    const filter = { statuses: [PauseStatus.Pending], expiresBefore: INVALID };
+
+    expect(await messageOf(() => scans.pendingDue("expires_at", INVALID, 5))).toContain(
+      "at of a pause scan",
+    );
+    expect(await messageOf(() => scans.pendingDue("expires_at", MID, 5, after))).toContain(
+      "after of a pause scan",
+    );
+    expect(await messageOf(() => scans.reassignedUnsentBefore(INVALID, 5))).toContain(
+      "cutoff of a pause scan",
+    );
+    expect(await messageOf(() => scans.reassignedUnsentBefore(MID, 5, after))).toContain(
+      "after of a pause scan",
+    );
+    expect(await messageOf(() => scans.closedBefore(INVALID, "0", 5))).toContain(
+      "cutoff of a pause scan",
+    );
+    expect(await messageOf(() => scans.deleteClosedBefore(INVALID))).toContain(
+      "cutoff of a pause scan",
+    );
+    expect(await messageOf(() => scans.ofAllTenants(filter, "0", 5))).toContain(
+      "expiresBefore of a pause filter",
+    );
+    expect(await messageOf(() => scans.ofTenant("default", filter, "0", 5))).toContain(
+      "expiresBefore of a pause filter",
+    );
+  });
+
+  it("of a paused run: the pending pause by its place", async () => {
+    const run = pausedRunOfJson(JSON.stringify(pausedRun));
+    const bad = { ...run, pending: run.pending.map((one) => ({ ...one, expiresAt: INVALID })) };
+    const connection = new PostgresConnection({ url: "postgres://u:p@localhost:1/d" });
+    try {
+      const store = new PostgresPausedExecutionRepository(connection, new VirtualClock());
+
+      const message = await messageOf(() =>
+        store.save({ run: bad, workflowVersion: "1", configHash: "h" }),
+      );
+
+      expect(message).toContain("pending[0].expiresAt of a paused run");
+    } finally {
+      await connection.onDestroy();
+    }
+  });
+});
+
+describe("a transition's own times are checked before the first write", () => {
+  const key = { tenantId: "default", pauseId: "p" };
+
+  it("the pause it made", async () => {
+    const { pool, sent } = recordedPool([[rowOf]]);
+
+    const message = await messageOf(() =>
+      transitioned(pool, key, (before) => ({
+        pause: { ...before, expiresAt: INVALID },
+        notices: [],
+      })),
+    );
+
+    expect(message).toContain("expiresAt of a pause");
+    expect(writes(sent)).toBe(0);
+  });
+
+  it("the replacement it inserts, even when the pause it made is fine", async () => {
+    const { pool, sent } = recordedPool([[rowOf]]);
+
+    const message = await messageOf(() =>
+      transitioned(pool, key, (before) => ({
+        pause: before,
+        notices: [],
+        inserted: { ...before, pauseId: "q", stepKey: "k", askedAt: INVALID },
+      })),
+    );
+
+    expect(message).toContain("askedAt of a pause");
+    expect(writes(sent)).toBe(0);
+  });
+});
+
+describe("the writes that missed their row name it", () => {
+  it("the pause and its tenant are in the message", async () => {
+    const { pool } = recordedPool([[rowOf], []]);
+
+    const message = await messageOf(() =>
+      new PauseChanges(pool).resolve("default", "p", APPROVED, MID, RECIPIENTS, seenOf(pause)),
+    );
+
+    expect(message).toContain("the pause p of default");
+  });
+
+  it("a pause already sent is not written again by markSent, and is still pending", async () => {
+    const sentPause = { ...pause, isSent: true };
+    const { pool, sent } = recordedPool([
+      [{ record: JSON.parse(JSON.stringify(sentPause)) as unknown }],
+    ]);
+
+    const stillPending = await new PauseTimerChanges(pool).markSent("default", "p", RECIPIENTS);
+
+    expect(stillPending).toBe(true);
+    expect(writes(sent)).toBe(0);
+  });
+});
+
+describe("markSent's statements", () => {
+  const LOCK = "SELECT record FROM agboss_pauses WHERE tenant_id = $1 AND pause_id = $2 FOR UPDATE";
+  const sendUpdate = (sent: readonly Sent[]): Sent | undefined =>
+    sent.find(({ sql }) => sql.startsWith("UPDATE agboss_pauses SET record"));
+
+  it("a pause that is none is not sent, and the lock's read names the tenant and the pause", async () => {
+    const { pool, sent } = recordedPool([[]]);
+
+    const isPending = await new PauseTimerChanges(pool).markSent("default", "p", RECIPIENTS);
+
+    expect(isPending).toBe(false);
+    expect(sent[1]).toEqual({ sql: LOCK, values: ["default", "p"] });
+    expect(writes(sent)).toBe(0);
+  });
+
+  it("an unsent pending pause is written as sent, by tenant and pause, and is pending", async () => {
+    const { pool, sent } = recordedPool([[rowOf], [{}]]);
+
+    const isPending = await new PauseTimerChanges(pool).markSent("default", "p", RECIPIENTS);
+
+    const update = sendUpdate(sent);
+    expect(isPending).toBe(true);
+    expect(update?.sql).toBe(
+      "UPDATE agboss_pauses SET record = $3::jsonb WHERE tenant_id = $1 AND pause_id = $2",
+    );
+    expect(update?.values.slice(0, 2)).toEqual(["default", "p"]);
+    expect(JSON.parse(String(update?.values[2]))).toMatchObject({ pauseId: "p", isSent: true });
+    expect(sent.at(-1)?.sql).toBe("COMMIT");
+  });
+
+  it("the write that changed no row is damage, naming the pause", async () => {
+    const { pool, sent } = recordedPool([[rowOf], []]);
+
+    const message = await messageOf(() =>
+      new PauseTimerChanges(pool).markSent("default", "p", RECIPIENTS),
+    );
+
+    expect(message).toContain("the pause p of default");
+    expect(sent.at(-1)?.sql).toBe("ROLLBACK");
+  });
+
+  it("a pause that closed before it was sent is marked sent and is no longer pending", async () => {
+    const closed = {
+      ...pause,
+      status: PauseStatus.Cancelled,
+      resolution: PauseResolution.Cancelled,
+    };
+    const { pool } = recordedPool([
+      [{ record: JSON.parse(JSON.stringify(closed)) as unknown }],
+      [{}],
+    ]);
+
+    const isPending = await new PauseTimerChanges(pool).markSent("default", "p", RECIPIENTS);
+
+    expect(isPending).toBe(false);
+  });
 });

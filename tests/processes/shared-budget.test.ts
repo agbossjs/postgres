@@ -2,7 +2,7 @@
  * AC1 (agbossjs/agboss#483): two processes share one tenant's daily budget in PostgreSQL. Each
  * spends through a scripted transport provider of a fixed cost ($5 a call, the day allows $10):
  * A's call and B's call both count toward the tenant's day, and the next call — on whichever
- * process makes it — is refused with `BudgetExceededError` before it reaches the provider. With a
+ * process makes it — is refused with `LimitError.Budget` before it reaches the provider. With a
  * ledger per process each would still have $5 left. Another tenant's day is untouched.
  */
 import { describe, expect, it } from "vitest";
@@ -18,7 +18,7 @@ const spend = (name: string, tenantId: string) => ({
 });
 
 const REFUSED = {
-  name: "BudgetExceededError",
+  name: "LimitError.Budget",
   message: expect.stringMatching(/tenant acme spent \$10 today; process-tenant-budget allows \$10/),
 };
 
@@ -62,7 +62,7 @@ describe("AC1: a tenant's daily budget across two processes", () => {
     await a.send("open");
 
     await expect(held).rejects.toMatchObject({
-      name: "BudgetExceededError",
+      name: "LimitError.Budget",
       message: expect.stringMatching(
         /tenant initech spent \$10 today; process-tenant-budget allows \$10/,
       ),

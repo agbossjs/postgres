@@ -19,6 +19,8 @@ export default async function requirePostgres(): Promise<() => Promise<void>> {
   // the test files' workers start after this setup and inherit the pinned URL
   const pinned = await pinnedUrl(url);
   process.env.AGBOSS_POSTGRES_TEST_URL = pinned;
+  // every process and every started layout of a test keys its business-key fingerprints alike (agbossjs/agboss#825)
+  process.env.AGBOSS_PROCESS_IDEMPOTENCY_KEY ??= "postgres-process-idempotency-key";
   const client = new pg.Client({ connectionString: pinned });
   try {
     await client.connect();
